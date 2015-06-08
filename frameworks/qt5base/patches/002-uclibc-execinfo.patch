@@ -1,0 +1,11 @@
+--- qtbase-opensource-src-5.4.1.orig/src/corelib/kernel/qcrashhandler.cpp	2015-05-27 21:29:18.327561992 +0200
++++ qtbase-opensource-src-5.4.1/src/corelib/kernel/qcrashhandler.cpp	2015-05-27 21:34:18.543553856 +0200
+@@ -62,7 +62,7 @@
+ 
+ QtCrashHandler QSegfaultHandler::callback = 0;
+ 
+-#if defined(__GLIBC__) && (__GLIBC__ >= 2) && !defined(__UCLIBC__) && !defined(QT_LINUXBASE)
++#if defined(__GLIBC__) && (__GLIBC__ >= 2) && (!defined(__UCLIBC__) || (defined(__UCLIBC__) && defined(UCLIBC_HAS_BACKTRACE))) && !defined(QT_LINUXBASE)
+ QT_BEGIN_INCLUDE_NAMESPACE
+ # include "qstring.h"
+ # include <execinfo.h>
