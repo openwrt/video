@@ -55,7 +55,7 @@ endef
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +icu +librt
+  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +icu +librt +libiconv-full
 endef
 
 define Package/qt5base-gui
@@ -121,25 +121,25 @@ endef
 define Package/qt5base-plugin-input-evdevkeyboard
   $(call Package/qt5base/Default)
   TITLE+=evdev keyboard (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 define Package/qt5base-plugin-input-evdevmouse
   $(call Package/qt5base/Default)
   TITLE+=evdev mouse (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 define Package/qt5base-plugin-input-evdevtablet
   $(call Package/qt5base/Default)
   TITLE+=evdev tablet (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 define Package/qt5base-plugin-input-evdevtouch
   $(call Package/qt5base/Default)
   TITLE+=evdev touch (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 ####### imageformats
@@ -167,19 +167,19 @@ endef
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 define Package/qt5base-plugin-platforms-minimal
   $(call Package/qt5base/Default)
   TITLE+=platform minimal (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 define Package/qt5base-plugin-platforms-offscreen
   $(call Package/qt5base/Default)
   TITLE+=platform offscreen (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +udev
 endef
 
 ###### sql
@@ -210,6 +210,11 @@ define Build/Prepare
 		./files/mkspecs/linux-openwrt-g++ \
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
+
+
+TARGET_CFLAGS+= -I$(STAGING_DIR)/usr/include/freetype2/ -I$(STAGING_DIR)/usr/lib/libiconv-full/include/ -liconv
+TARGET_CXXFLAGS+= -I$(STAGING_DIR)/usr/include/freetype2/ -I$(STAGING_DIR)/usr/lib/libiconv-full/include/ -liconv
+TARGET_LDFLAGS += -L$(STAGING_DIR)/usr/lib/libiconv-full/lib/ -liconv
 
 define Build/Configure
 	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
@@ -286,7 +291,7 @@ define Build/Configure
 			-no-cups \
 			-iconv \
 			-evdev \
-			-icu \
+			-no-icu \
 			-fontconfig \
 			-no-strip \
 			-no-pch \
