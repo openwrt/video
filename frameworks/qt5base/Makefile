@@ -259,8 +259,8 @@ define Build/Configure
 			-no-sse4.2 \
 			-no-avx \
 			-no-avx2 \
-			-no-mips_dsp \
-			-no-mips_dspr2 \
+			$(if $(findstring -mdsp,$(TARGET_CFLAGS)),,-no-mips_dsp)\
+			$(if $(findstring -mdspr2,$(TARGET_CFLAGS)),,-no-mips_dspr2)\
 			-force-pkg-config \
 			-system-zlib \
 			-mtdev \
