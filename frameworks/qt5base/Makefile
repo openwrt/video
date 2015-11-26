@@ -55,7 +55,7 @@ endef
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +icu +librt
+  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt
 endef
 
 define Package/qt5base-gui
@@ -286,7 +286,7 @@ define Build/Configure
 			-no-cups \
 			-iconv \
 			-evdev \
-			-icu \
+			-no-icu \
 			-fontconfig \
 			-no-strip \
 			-no-pch \
