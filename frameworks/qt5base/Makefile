@@ -260,7 +260,16 @@ define Build/Configure
 			-largefile \
 			-accessibility \
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite),-system-sqlite,-no-sql-sqlite2) \
+			-no-sql-db2 \
+			-no-sql-ibase \
+			-no-sql-mysql \
+			-no-sql-oci \
+			-no-sql-odbc \
+			-no-sql-psql \
+			-no-sql-sqlite \
+			-no-sql-tds \
 			-no-qml-debug \
+			-no-nis \
 			-no-sse2 \
 			-no-sse3 \
 			-no-ssse3 \
@@ -286,7 +295,7 @@ define Build/Configure
 			-no-xcb-xlib \
 			-no-glib \
 			-no-pulseaudio \
-			-alsa \
+			-no-alsa \
 			-no-gtkstyle \
 			-nomake tools \
 			-make examples \
@@ -295,7 +304,7 @@ define Build/Configure
 			-widgets \
 			-no-optimized-qmake \
 			-no-cups \
-			-iconv \
+			-no-iconv \
 			-evdev \
 			-no-icu \
 			-fontconfig \
