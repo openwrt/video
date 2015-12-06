@@ -1,0 +1,43 @@
+--- a/src/corelib/codecs/qiconvcodec.cpp
++++ b/src/corelib/codecs/qiconvcodec.cpp
+@@ -137,7 +137,7 @@ QIconvCodec::IconvState::IconvState(icon
+ 
+ QIconvCodec::IconvState::~IconvState()
+ {
+-    if (cd != reinterpret_cast<iconv_t>(-1))
++    if (cd != (iconv_t)-1)
+         iconv_close(cd);
+     if (buffer != array)
+         delete[] buffer;
+@@ -200,7 +200,7 @@ QString QIconvCodec::convertToUnicode(co
+     if (!*pstate) {
+         // first time, create the state
+         iconv_t cd = createIconv_t(UTF16, 0);
+-        if (cd == reinterpret_cast<iconv_t>(-1)) {
++        if (cd == (iconv_t)-1) {
+             static int reported = 0;
+             if (!reported++) {
+                 fprintf(stderr,
+@@ -345,19 +345,19 @@ QByteArray QIconvCodec::convertFromUnico
+     IconvState *&state = ts ? ts->localData() : temporaryState;
+     if (!state) {
+         iconv_t cd = createIconv_t(0, UTF16);
+-        if (cd != reinterpret_cast<iconv_t>(-1)) {
++        if (cd != (iconv_t)-1) {
+             if (!setByteOrder(cd)) {
+                 perror("QIconvCodec::convertFromUnicode: using Latin-1 for conversion, iconv failed for BOM");
+ 
+                 iconv_close(cd);
+-                cd = reinterpret_cast<iconv_t>(-1);
++                cd = (iconv_t)-1;
+ 
+                 return QString(uc, len).toLatin1();
+             }
+         }
+         state = new IconvState(cd);
+     }
+-    if (state->cd == reinterpret_cast<iconv_t>(-1)) {
++    if (state->cd == (iconv_t)-1) {
+         static int reported = 0;
+         if (!reported++) {
+             fprintf(stderr,
