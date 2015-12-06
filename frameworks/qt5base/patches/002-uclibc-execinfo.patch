@@ -1,6 +1,6 @@
---- qtbase-opensource-src-5.4.1.orig/src/corelib/kernel/qcrashhandler.cpp	2015-05-27 21:29:18.327561992 +0200
-+++ qtbase-opensource-src-5.4.1/src/corelib/kernel/qcrashhandler.cpp	2015-05-27 21:34:18.543553856 +0200
-@@ -62,7 +62,7 @@
+--- a/src/corelib/kernel/qcrashhandler.cpp
++++ b/src/corelib/kernel/qcrashhandler.cpp
+@@ -62,7 +62,7 @@ QT_BEGIN_NAMESPACE
  
  QtCrashHandler QSegfaultHandler::callback = 0;
  
