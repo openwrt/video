@@ -31,6 +31,15 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ./files/qmake.mk
 
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite \
+	CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg \
+	CONFIG_PACKAGE_qt5base-network \
+	CONFIG_PACKAGE_qt5base-gui \
+	CONFIG_PACKAGE_qt5base-plugin-imageformats-gif \
+	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
+	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal
+
 define Package/qt5base/Default
   SECTION:=video-frameworks
   CATEGORY:=Video
@@ -250,7 +259,7 @@ define Build/Configure
 			-shared \
 			-largefile \
 			-accessibility \
-			-system-sqlite \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite),-system-sqlite,-no-sql-sqlite2) \
 			-no-qml-debug \
 			-no-sse2 \
 			-no-sse3 \
@@ -265,11 +274,11 @@ define Build/Configure
 			-system-zlib \
 			-mtdev \
 			-no-journald \
-			-system-libpng \
-			-system-libjpeg \
+			$(if $(CONFIG_PACKAGE_qt5base-gui),-system-libpng,-no-libpng) \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg),-system-libjpeg,-no-libjpeg) \
 			-system-freetype \
 			-no-harfbuzz \
-			-openssl-linked \
+			$(if $(CONFIG_PACKAGE_qt5base-network),-openssl-linked,-no-openssl) \
 			-system-pcre \
 			-system-xcb \
 			-system-xkbcommon \
@@ -281,7 +290,8 @@ define Build/Configure
 			-no-gtkstyle \
 			-nomake tools \
 			-make examples \
-			-gui \
+			$(if $(CONFIG_PACKAGE_qt5base-gui),-gui,-no-gui) \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-gif),,-no-gif) \
 			-widgets \
 			-no-optimized-qmake \
 			-no-cups \
@@ -297,9 +307,9 @@ define Build/Configure
 			-no-xcb \
 			-no-eglfs \
 			-no-directfb \
-			-linuxfb \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),-linuxfb,-no-linuxfb) \
 			-no-kms \
-			-qpa minimal \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-minimal),,-qpa minimal) \
 			-xplatform linux-openwrt-g++ \
 			-no-opengl \
 			-no-system-proxies \
