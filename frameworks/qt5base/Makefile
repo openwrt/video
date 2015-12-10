@@ -298,10 +298,10 @@ define Build/Configure
 			-no-alsa \
 			-no-gtkstyle \
 			-nomake tools \
-			-make examples \
+			$(if $(CONFIG_PACKAGE_qt5base-examples),-make examples,-nomake examples) \
 			$(if $(CONFIG_PACKAGE_qt5base-gui),-gui,-no-gui) \
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-gif),,-no-gif) \
-			-widgets \
+			$(if $(CONFIG_PACKAGE_qt5base-widgets),-widgets,-no-widgets) \
 			-no-optimized-qmake \
 			-no-cups \
 			$(if $(CONFIG_BUILD_NLS),-iconv,-no-iconv) \
