@@ -260,14 +260,14 @@ define Build/Configure
 			-shared \
 			-largefile \
 			-accessibility \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite),-system-sqlite,-no-sql-sqlite2) \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite),-system-sqlite,-no-sql-sqlite) \
 			-no-sql-db2 \
 			-no-sql-ibase \
 			-no-sql-mysql \
 			-no-sql-oci \
 			-no-sql-odbc \
 			-no-sql-psql \
-			-no-sql-sqlite \
+			-no-sql-sqlite2 \
 			-no-sql-tds \
 			-no-qml-debug \
 			-no-nis \
