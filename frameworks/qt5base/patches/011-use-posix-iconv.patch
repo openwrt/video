@@ -1,0 +1,17 @@
+--- a/config.tests/unix/iconv/iconv.pro
++++ b/config.tests/unix/iconv/iconv.pro
+@@ -1,3 +1,3 @@
+ SOURCES = iconv.cpp
+ CONFIG -= qt dylib
+-mac|mingw|qnx:LIBS += -liconv
++mac|mingw|qnx|linux:LIBS += -liconv
+--- a/src/corelib/codecs/codecs.pri
++++ b/src/corelib/codecs/codecs.pri
+@@ -44,6 +44,7 @@ contains(QT_CONFIG,icu) {
+             contains(QT_CONFIG,iconv) {
+                     HEADERS += codecs/qiconvcodec_p.h
+                     SOURCES += codecs/qiconvcodec.cpp
++                    LIBS_PRIVATE *= -liconv
+             } else:contains(QT_CONFIG,gnu-libiconv) {
+                     HEADERS += codecs/qiconvcodec_p.h
+                     SOURCES += codecs/qiconvcodec.cpp

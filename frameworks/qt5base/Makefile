@@ -38,8 +38,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-gui \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-gif \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
-	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
-	CONFIG_PACKAGE_libiconv-full
+	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal
 
 define Package/qt5base/Default
   SECTION:=video-frameworks
@@ -66,7 +65,7 @@ endef
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt +PACKAGE_libiconv-full:libiconv-full
+  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt $(ICONV_DEPENDS)
 endef
 
 define Package/qt5base-gui
@@ -305,7 +304,7 @@ define Build/Configure
 			-widgets \
 			-no-optimized-qmake \
 			-no-cups \
-			$(if $(CONFIG_PACKAGE_libiconv-full),-iconv,-no-iconv) \
+			$(if $(CONFIG_BUILD_NLS),-iconv,-no-iconv) \
 			-evdev \
 			-no-icu \
 			-fontconfig \
