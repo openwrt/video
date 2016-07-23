@@ -6,7 +6,6 @@
 #
 
 # TODO / known bugs:
-# - plugins don't work when sstrip is used for stripping
 # - only framebuffer (linuxfb) support for now, XBC/DirectFB to come - thus no GL thus no qtquick2 / QML2, as it has a hard dependency on GL
 # - host_build functionality seems to be broken - qmake doesn't switch to the host toolchain (linux-g++) when host_build gets invoked
 
@@ -39,6 +38,22 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-gif \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal
+
+# Do not use sstrip for QT5. When sstrip is used the QT5 plugin loading does
+# not work, because of QT''s internal elf parser, see
+# https://bugreports.qt.io/browse/QTBUG-52567
+# Use the code from the gcc package to use strip instaed.
+ifneq ($(CONFIG_USE_SSTRIP),)
+  STRIP:=$(TARGET_CROSS)strip $(call qstrip,$(CONFIG_STRIP_ARGS))
+  RSTRIP:= \
+    export CROSS="$(TARGET_CROSS)" \
+		$(if $(CONFIG_KERNEL_KALLSYMS),NO_RENAME=1) \
+		$(if $(CONFIG_KERNEL_PROFILING),KEEP_SYMBOLS=1); \
+    NM="$(TARGET_CROSS)nm" \
+    STRIP="$(STRIP)" \
+    STRIP_KMOD="$(SCRIPT_DIR)/strip-kmod.sh" \
+    $(SCRIPT_DIR)/rstrip.sh
+endif
 
 define Package/qt5base/Default
   SECTION:=video-frameworks
