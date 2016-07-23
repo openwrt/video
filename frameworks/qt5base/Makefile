@@ -434,7 +434,7 @@ define Package/qt5base-plugin-platforms-offscreen/install
 	$(call Build/Install/Plugins,$(1),platforms,libqoffscreen)
 endef
 
-define Package/qt5base-plugin-sqldrivers/install
+define Package/qt5base-plugin-sqldrivers-sqlite/install
 	$(call Build/Install/Plugins,$(1),sqldrivers,libqsqlite)
 endef
 
