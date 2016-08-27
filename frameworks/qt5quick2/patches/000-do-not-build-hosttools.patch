@@ -1,0 +1,40 @@
+--- a/tools/tools.pro	2016-06-11 14:05:08.000000000 +0200
++++ b/tools/tools.pro	2016-08-26 14:21:46.134171309 +0200
+@@ -1,15 +1,15 @@
+ TEMPLATE = subdirs
+ SUBDIRS += \
+-    qmlmin \
+-    qmlimportscanner
++#    qmlmin \
++#    qmlimportscanner
+ 
+ qmlmin.CONFIG = host_build
+ qmlimportscanner.CONFIG = host_build
+ 
+ !android|android_app {
+     SUBDIRS += \
+-        qml \
+-        qmllint
++#        qml \
++#        qmllint
+ 
+     !contains(QT_CONFIG, no-qml-debug): SUBDIRS += qmlprofiler
+ 
+--- a/src/qmldevtools/qmldevtools.pro	2016-06-11 14:05:08.000000000 +0200
++++ b/src/qmldevtools/qmldevtools.pro	2016-08-26 14:20:10.322580100 +0200
+@@ -13,10 +13,10 @@
+ clang:if(greaterThan(QT_CLANG_MAJOR_VERSION, 3)|greaterThan(QT_CLANG_MINOR_VERSION, 3)): \
+     WERROR += -Wno-error=unused-const-variable
+ 
+-include(../3rdparty/masm/masm-defs.pri)
+-include(../qml/parser/parser.pri)
+-include(../qml/jsruntime/jsruntime.pri)
+-include(../qml/compiler/compiler.pri)
+-include(../qml/memory/memory.pri)
++#include(../3rdparty/masm/masm-defs.pri)
++#include(../qml/parser/parser.pri)
++#include(../qml/jsruntime/jsruntime.pri)
++#include(../qml/compiler/compiler.pri)
++#include(../qml/memory/memory.pri)
+ 
+ load(qt_module)
