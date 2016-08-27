@@ -1,20 +1,20 @@
 #
-# Copyright (C) 2015 OpenWrt.org
-# Author: Mirko Vogt <mirko@openwrt.org>
+# Copyright (C) 2016 OpenWrt.org
+# Author: Mirko Vogt <mirko-openwrt@nanl.de>
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
 
 # TODO / known bugs:
-# - only framebuffer (linuxfb) support for now, XBC/DirectFB to come - thus no GL thus no qtquick2 / QML2, as it has a hard dependency on GL
-# - host_build functionality seems to be broken - qmake doesn't switch to the host toolchain (linux-g++) when host_build gets invoked
+# - plugins don't work when sstrip is used for stripping
+# - no X11/wayland/xcb/kms support so far - primary target is linuxfb
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.4.2
+PKG_VERSION:=5.7.0
 PKG_RELEASE:=1
-PKG_MD5SUM:=67a95eec79ffc4a14f516ad6f3d24c96
+PKG_MD5SUM:=184f9460b40752d71b15b827260580c2
 
 PKG_SYS_NAME:=qtbase-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
@@ -31,13 +31,17 @@ include $(INCLUDE_DIR)/nls.mk
 include ./files/qmake.mk
 
 PKG_CONFIG_DEPENDS:= \
-	CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg \
+	CONFIG_PACKAGE_qt5base-plugin-imageformats-png \
 	CONFIG_PACKAGE_qt5base-network \
 	CONFIG_PACKAGE_qt5base-gui \
-	CONFIG_PACKAGE_qt5base-plugin-imageformats-gif \
+	CONFIG_PACKAGE_qt5base-gl \
+	CONFIG_PACKAGE_qt5base-widgets \
+	CONFIG_PACKAGE_qt5base-examples \
+	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
-	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal
+#	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
+#	CONFIG_PACKAGE_qt5base-plugin-platforms-minimalegl \
 
 # Do not use sstrip for QT5. When sstrip is used the QT5 plugin loading does
 # not work, because of QT''s internal elf parser, see
@@ -60,7 +64,7 @@ define Package/qt5base/Default
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
   TITLE:=Qt5base
-  DEPENDS:=qt5base
+  DEPENDS+=qt5base
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
 endef
@@ -77,16 +81,22 @@ define Package/qt5base-concurrent
   DEPENDS+=+qt5base-core
 endef
 
+define Package/qt5base-gl
+  $(call Package/qt5base/Default)
+  TITLE+=gl
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets
+endef
+
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt $(ICONV_DEPENDS)
+  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) #+icu
 endef
 
 define Package/qt5base-gui
   $(call Package/qt5base/Default)
   TITLE+=gui
-  DEPENDS+=+qt5base-core +libpng
+  DEPENDS+=+qt5base-core +qt5quick2-2d-sw-renderer-GLstubs +libpng +fontconfig +libfreetype +libudev
 endef
 
 define Package/qt5base-network
@@ -169,11 +179,11 @@ endef
 
 ####### imageformats
 
-define Package/qt5base-plugin-imageformats-gif
-  $(call Package/qt5base/Default)
-TITLE+=imageformat gif (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui
-endef
+#define Package/qt5base-plugin-imageformats-gif
+#  $(call Package/qt5base/Default)
+#TITLE+=imageformat gif (plugin)
+#  DEPENDS+=+qt5base-core +qt5base-gui
+#endef
 
 define Package/qt5base-plugin-imageformats-ico
   $(call Package/qt5base/Default)
@@ -188,6 +198,18 @@ define Package/qt5base-plugin-imageformats-jpeg
 endef
 
 ####### platforms
+
+#define Package/qt5base-plugin-platforms-eglfs
+#  $(call Package/qt5base/Default)
+#  TITLE+=platform eglfs (plugin)
+#  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+#endef
+
+#define Package/qt5base-plugin-platforms-minimalegl
+#  $(call Package/qt5base/Default)
+#  TITLE+=platform minimalegl (plugin)
+#  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+#endef
 
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
@@ -209,11 +231,11 @@ endef
 
 ###### sql
 
-define Package/qt5base-plugin-sqldrivers-sqlite
-  $(call Package/qt5base/Default)
-  TITLE+=sqldriver sqlite (plugin)
-  DEPENDS+=+qt5base-core +qt5base-sql +libsqlite3
-endef
+#define Package/qt5base-plugin-sqldrivers-sqlite
+#  $(call Package/qt5base/Default)
+#  TITLE+=sqldriver sqlite (plugin)
+#  DEPENDS+=+qt5base-core +qt5base-sql +libsqlite3
+#endef
 
 define Package/qt5base-examples
   $(call Package/qt5base/Default)
@@ -226,7 +248,8 @@ define Package/qt5base-examples
 		+qt5base-sql \
 		+qt5base-xml \
 		+qt5base-printSupport \
-		+qt5base-concurrent 
+		+qt5base-concurrent \
+		+qt5base-gl
 endef
 
 define Build/Prepare
@@ -235,6 +258,10 @@ define Build/Prepare
 		./files/mkspecs/linux-openwrt-g++ \
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
+
+TARGET_CFLAGS += \
+	  -I$(STAGING_DIR)/usr/include/freetype2 \
+	  -I$(STAGING_DIR)/usr/include/libdrm
 
 define Build/Configure
 	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
@@ -249,6 +276,7 @@ define Build/Configure
 			-prefix $(QT_INSTALL_PREFIX) \
 			-extprefix $(QT_EXTPREFIX) \
 			-hostprefix $(QT_HOST_PREFIX) \
+			-no-gcc-sysroot \
 			-bindir $(QT_INSTALL_BINS) \
 			-headerdir $(QT_INSTALL_HEADERS) \
 			-libdir $(QT_INSTALL_LIBS) \
@@ -268,41 +296,46 @@ define Build/Configure
 			-hostdatadir $(QT_HOST_DATA) \
 			-v \
 			-release \
+			-no-optimized-tools \
 			-opensource \
 			-confirm-license \
-			-c++11 \
 			-shared \
 			-largefile \
 			-accessibility \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-sqldrivers-sqlite),-system-sqlite,-no-sql-sqlite) \
 			-no-sql-db2 \
 			-no-sql-ibase \
 			-no-sql-mysql \
 			-no-sql-oci \
 			-no-sql-odbc \
 			-no-sql-psql \
+			-no-sql-sqlite \
 			-no-sql-sqlite2 \
 			-no-sql-tds \
+			-system-sqlite \
 			-no-qml-debug \
-			-no-nis \
-			-no-sse2 \
 			-no-sse3 \
 			-no-ssse3 \
 			-no-sse4.1 \
 			-no-sse4.2 \
 			-no-avx \
 			-no-avx2 \
-			$(if $(findstring -mdsp,$(TARGET_CFLAGS)),,-no-mips_dsp)\
-			$(if $(findstring -mdspr2,$(TARGET_CFLAGS)),,-no-mips_dspr2)\
+			-no-avx512 \
+			$(if $(findstring -mdsp,$(TARGET_CFLAGS)),,-no-mips_dsp) \
+			$(if $(findstring -mdspr2,$(TARGET_CFLAGS)),,-no-mips_dspr2) \
+			-no-mips_dspr2 \
 			-force-pkg-config \
 			-system-zlib \
-			-mtdev \
+			-no-mtdev \
 			-no-journald \
+			-syslog \
+			-no-gif \
 			$(if $(CONFIG_PACKAGE_qt5base-gui),-system-libpng,-no-libpng) \
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg),-system-libjpeg,-no-libjpeg) \
+			-system-doubleconversion \
 			-system-freetype \
 			-no-harfbuzz \
 			$(if $(CONFIG_PACKAGE_qt5base-network),-openssl-linked,-no-openssl) \
+			-no-libproxy \
 			-system-pcre \
 			-system-xcb \
 			-system-xkbcommon \
@@ -311,16 +344,18 @@ define Build/Configure
 			-no-glib \
 			-no-pulseaudio \
 			-no-alsa \
-			-no-gtkstyle \
+			-no-gtk \
+			-no-optimized-qmake \
 			-nomake tools \
+			-make examples \
 			$(if $(CONFIG_PACKAGE_qt5base-examples),-make examples,-nomake examples) \
 			$(if $(CONFIG_PACKAGE_qt5base-gui),-gui,-no-gui) \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-gif),,-no-gif) \
 			$(if $(CONFIG_PACKAGE_qt5base-widgets),-widgets,-no-widgets) \
-			-no-optimized-qmake \
+			-no-nis \
 			-no-cups \
 			$(if $(CONFIG_BUILD_NLS),-iconv,-no-iconv) \
 			-evdev \
+			-no-tslib \
 			-no-icu \
 			-fontconfig \
 			-no-strip \
@@ -330,14 +365,18 @@ define Build/Configure
 			-no-use-gold-linker \
 			-no-xcb \
 			-no-eglfs \
+			-no-kms \
+			-no-gbm \
 			-no-directfb \
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),-linuxfb,-no-linuxfb) \
-			-no-kms \
+			-no-mirclient \
+			-opengl \
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-minimal),,-qpa minimal) \
-			-xplatform linux-openwrt-g++ \
-			-no-opengl \
-			-no-system-proxies \
+			-no-libinput \
+			-no-gstreamer \
+			-system-proxies \
 			-no-warnings-are-errors \
+			-xplatform linux-openwrt-g++ \
 	)
 endef
 
@@ -360,6 +399,10 @@ endef
 
 define Package/qt5base-core/install
 	$(call Build/Install/Libs,$(1),libQt5Core)
+endef
+
+define Package/qt5base-gl/install
+	$(call Build/Install/Libs,$(1),libQt5OpenGL)
 endef
 
 define Package/qt5base-gui/install
@@ -410,9 +453,9 @@ define Package/qt5base-plugin-input-evdevtouch/install
 	$(call Build/Install/Plugins,$(1),generic,libqevdevtouchplugin)
 endef
 
-define Package/qt5base-plugin-imageformats-gif/install
-	$(call Build/Install/Plugins,$(1),imageformats,libqgif)
-endef
+#define Package/qt5base-plugin-imageformats-gif/install
+#	$(call Build/Install/Plugins,$(1),imageformats,libqgif)
+#endef
 
 define Package/qt5base-plugin-imageformats-ico/install
 	$(call Build/Install/Plugins,$(1),imageformats,libqico)
@@ -426,6 +469,14 @@ define Package/qt5base-plugin-platforms-linuxfb/install
 	$(call Build/Install/Plugins,$(1),platforms,libqlinuxfb)
 endef
 
+#define Package/qt5base-plugin-platforms-eglfs/install
+#	$(call Build/Install/Plugins,$(1),platforms,libqeglfs)
+#endef
+
+#define Package/qt5base-plugin-platforms-minimalegl/install
+#	$(call Build/Install/Plugins,$(1),platforms,libqminimalegl)
+#endef
+
 define Package/qt5base-plugin-platforms-minimal/install
 	$(call Build/Install/Plugins,$(1),platforms,libqminimal)
 endef
@@ -434,9 +485,9 @@ define Package/qt5base-plugin-platforms-offscreen/install
 	$(call Build/Install/Plugins,$(1),platforms,libqoffscreen)
 endef
 
-define Package/qt5base-plugin-sqldrivers-sqlite/install
-	$(call Build/Install/Plugins,$(1),sqldrivers,libqsqlite)
-endef
+#define Package/qt5base-plugin-sqldrivers-sqlite/install
+#	$(call Build/Install/Plugins,$(1),sqldrivers,libqsqlite)
+#endef
 
 define Package/qt5base-examples/install
 	$(call Build/Install/Examples,$(1))
@@ -446,6 +497,7 @@ $(eval $(call BuildPackage,qt5base))
 $(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-core))
 $(eval $(call BuildPackage,qt5base-gui))
+$(eval $(call BuildPackage,qt5base-gl))
 $(eval $(call BuildPackage,qt5base-network))
 $(eval $(call BuildPackage,qt5base-printSupport))
 $(eval $(call BuildPackage,qt5base-sql))
@@ -457,11 +509,13 @@ $(eval $(call BuildPackage,qt5base-plugin-input-evdevkeyboard))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevmouse))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevtablet))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevtouch))
-$(eval $(call BuildPackage,qt5base-plugin-imageformats-gif))
+#$(eval $(call BuildPackage,qt5base-plugin-imageformats-gif))
 $(eval $(call BuildPackage,qt5base-plugin-imageformats-ico))
 $(eval $(call BuildPackage,qt5base-plugin-imageformats-jpeg))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-linuxfb))
+#$(eval $(call BuildPackage,qt5base-plugin-platforms-eglfs))
+#$(eval $(call BuildPackage,qt5base-plugin-platforms-minimalegl))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-minimal))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-offscreen))
-$(eval $(call BuildPackage,qt5base-plugin-sqldrivers-sqlite))
+#$(eval $(call BuildPackage,qt5base-plugin-sqldrivers-sqlite))
 $(eval $(call BuildPackage,qt5base-examples))

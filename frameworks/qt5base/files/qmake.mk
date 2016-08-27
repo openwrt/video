@@ -74,8 +74,8 @@ define Build/Configure/Default
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 	qmake \
-		-o $(PKG_BUILD_DIR)/$(2)/Makefile \
-		$(PKG_BUILD_DIR)/$(2)/$(if $(1),$(1),$(PKG_NAME)).pro
+		-o $(PKG_BUILD_DIR)/$(MAKE_PATH)/Makefile \
+		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1),$(PKG_NAME)).pro
 endef
 
 # we need to pass everything to $(MAKE) as well, as Makefiles may invoke qmake once again for creating further Makefiles
@@ -138,7 +138,7 @@ define Build/Install/Examples
 		$(PKG_INSTALL_DIR)/$(QT_INSTALL_EXAMPLES)/* \
 		$(1)/$(QT_INSTALL_EXAMPLES)/
 
-	$(FIND) $(1)/usr/share/qt5/examples/ \
+	$(FIND) $(1)/$(QT_INSTALL_EXAMPLES) \
 		-type f \( -name '*.cpp' -o -name '*.h' -o -name '*.pro' -o -name '*.pri' \) | \
 		$(XARGS) $(RM) -vf
 endef
