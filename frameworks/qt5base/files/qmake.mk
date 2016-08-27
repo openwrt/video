@@ -65,8 +65,6 @@ QT_HOST_LIBS:=$(QT_HOST_PREFIX)/lib
 QMAKE_SPEC:=linux-g++
 QMAKE_XSPEC:=linux-openwrt-g++
 
-QMAKE_SPECFILE:=$(QT_HOST_DATA)/mkspecs/$(QMAKE_XSPEC)
-
 PKG_INSTALL_DIR_ROOT:=$(PKG_INSTALL_DIR)
 PKG_INSTALL_DIR:=$(PKG_INSTALL_DIR_ROOT)/$(STAGING_DIR)
 
@@ -76,7 +74,6 @@ define Build/Configure/Default
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 	qmake \
-		-spec $(QMAKE_SPECFILE) \
 		-o $(PKG_BUILD_DIR)/$(2)/Makefile \
 		$(PKG_BUILD_DIR)/$(2)/$(if $(1),$(1),$(PKG_NAME)).pro
 endef
