@@ -1,0 +1,11 @@
+--- qtbase-opensource-src-5.8.0-beta/configure.pri.orig	2016-11-20 20:06:38.811897204 +0100
++++ qtbase-opensource-src-5.8.0-beta/configure.pri	2016-11-20 20:06:54.279928752 +0100
+@@ -174,7 +174,7 @@
+                     "Disabling pkg-config since PKG_CONFIG_SYSROOT_DIR is not set." \
+                     "Set this variable to your sysroot for pkg-config to function correctly when" \
+                     "cross-compiling or use -pkg-config to override this test.")
+-                return(false)
++#                return(false)
+             }
+ 
+             pkgConfigSysrootDir = $$sysroot
