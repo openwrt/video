@@ -1,6 +1,0 @@
---- a/config.tests/unix/iconv/iconv.pro
-+++ b/config.tests/unix/iconv/iconv.pro
-@@ -1,2 +1,2 @@
- CONFIG -= qt dylib       
--mac|mingw|qnx|haiku:LIBS += -liconv
-+mac|mingw|qnx|haiku|linux:LIBS += -liconv
