@@ -80,11 +80,13 @@ endef
 
 # we need to pass everything to $(MAKE) as well, as Makefiles may invoke qmake once again for creating further Makefiles
 define Build/Compile/Default
-	+TARGET_CROSS="$(TARGET_CROSS)" \
+	+$(MAKE_VARS) \
+	TARGET_CROSS="$(TARGET_CROSS)" \
 	TARGET_CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 		$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
+			$(MAKE_FLAGS) \
 			$(1)
 endef
 
