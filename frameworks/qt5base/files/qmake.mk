@@ -78,15 +78,18 @@ define Build/Configure/Default
 		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1),$(PKG_NAME)).pro
 endef
 
-# we need to pass everything to $(MAKE) as well, as Makefiles may invoke qmake once again for creating further Makefiles
+# We need to pass all qmake related variables to $(MAKE) as well, as (generated) Makefiles may invoke qmake once again for creating further Makefiles.
+# Actually we'd also like to pass $MAKE_VARS and $MAKE_FLAGS to also make ordinary non-qmake generated Makefiles calling toolchain executables
+# like $CC/$CXX/.. work, however this would interfere with qmake generated Makefiles, since they expect variables being set differently.
+# For example qmake generated Makefiles expect $AR to also contain ar's arguments, while ordinary Makefiles don't.
+# Until we find a way to disginguish both kinds of Makefiles, we will neglect ordinary Makefiles calling toolchain executables.
+# Mixing qmake generated and ordinary Makfiles - both calling toolchain executables - is probably a very rare case anyway.
 define Build/Compile/Default
-	+$(MAKE_VARS) \
-	TARGET_CROSS="$(TARGET_CROSS)" \
+	+TARGET_CROSS="$(TARGET_CROSS)" \
 	TARGET_CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 		$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
-			$(MAKE_FLAGS) \
 			$(1)
 endef
 
