@@ -82,6 +82,7 @@ endef
 define Package/qt5quick2-qml-models
   $(call Package/qt5quick2/Default)
   TITLE+=QML models
+  DEPENDS+=+qt5quick2-qml
 endef
 
 define Package/qt5quick2-qml-folderlistmodel
@@ -184,7 +185,7 @@ define Package/qt5quick2-qml-statemachine/install
 endef
 
 define Package/qt5quick2-qml-models/install
-	$(call Build/Install/QMLplugin,$(1),QtQML/StateMachine,*)
+	$(call Build/Install/QMLplugin,$(1),QtQml/Models.2,*)
 endef
 
 define Package/qt5quick2-qml-folderlistmodel/install
