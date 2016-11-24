@@ -18,7 +18,6 @@ PKG_SOURCE_URL:=http://download.qt-project.org/development_releases/qt/$(basenam
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
 PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
@@ -32,6 +31,7 @@ define Package/qt5quick2-controls2
   TITLE:=qt5quick2-controls2
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
+  DEPENDS:=+qt5quick2-quick
 endef
 
 define Build/Configure
@@ -45,6 +45,7 @@ define Build/InstallDev
 endef
 
 define Package/qt5quick2-controls2/install
+	$(call Build/Install/Libs,$(1),libQt5QuickTemplates2)
 	$(call Build/Install/Libs,$(1),libQt5QuickControls2)
 
 	$(INSTALL_DIR) \
