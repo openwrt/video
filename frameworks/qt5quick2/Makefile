@@ -8,9 +8,9 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION:=5.8.0-beta
+PKG_VERSION:=5.8.0-rc
 PKG_RELEASE:=1
-PKG_MD5SUM:=5b984473f70cfd20fba8267c7268f2fe
+PKG_MD5SUM:=1df3d20503a2b104fe436f83fabd2f5e
 
 PKG_SYS_NAME:=qtdeclarative-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
@@ -30,16 +30,16 @@ define Package/qt5quick2/Default
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
   TITLE:=Qt5quick2
-  DEPENDS+=qt5quick2
+#  DEPENDS+=qt5quick2
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
 endef
 
-define Package/qt5quick2
-  $(call Package/qt5quick2/Default)
-  DEPENDS:=
-  MENU:=1
-endef
+# define Package/qt5quick2
+#   $(call Package/qt5quick2/Default)
+#   DEPENDS:=
+#   MENU:=1
+# endef
 
 define Package/qt5quick2-qml
   $(call Package/qt5quick2/Default)
@@ -50,7 +50,7 @@ endef
 define Package/qt5quick2-quick
   $(call Package/qt5quick2/Default)
   TITLE+=quick
-  DEPENDS+=+qt5quick2-qml +qt5base-gui +qt5quick2-2d-sw-renderer-GLstubs
+  DEPENDS+=+qt5quick2-qml +qt5base-gui
 endef
 
 define Package/qt5quick2-test
@@ -221,7 +221,7 @@ define Package/qt5quick2-qml-quick/install
 endef
 
 
-$(eval $(call BuildPackage,qt5quick2))
+#$(eval $(call BuildPackage,qt5quick2))
 $(eval $(call BuildPackage,qt5quick2-qml))
 $(eval $(call BuildPackage,qt5quick2-quick))
 $(eval $(call BuildPackage,qt5quick2-test))

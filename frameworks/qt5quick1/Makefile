@@ -35,11 +35,11 @@ define Package/qt5quick1/Default
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
 endef
 
-define Package/qt5quick1
-  $(call Package/qt5quick1/Default)
-  DEPENDS:=+qt5base +qt5script
-  MENU:=1
-endef
+# define Package/qt5quick1
+#   $(call Package/qt5quick1/Default)
+#   DEPENDS:=+qt5base +qt5script
+#   MENU:=1
+# endef
 
 define Package/qt5quick1-declarative
   $(call Package/qt5quick1/Default)
@@ -86,7 +86,7 @@ define Package/qt5quick1-examples/install
 	$(call Build/Install/Examples,$(1))
 endef
 
-$(eval $(call BuildPackage,qt5quick1))
+# $(eval $(call BuildPackage,qt5quick1))
 $(eval $(call BuildPackage,qt5quick1-declarative))
 $(eval $(call BuildPackage,qt5quick1-imports))
 $(eval $(call BuildPackage,qt5quick1-examples))

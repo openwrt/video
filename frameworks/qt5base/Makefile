@@ -12,9 +12,9 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.8.0-beta
+PKG_VERSION:=5.8.0-rc
 PKG_RELEASE:=1
-PKG_MD5SUM:=3f4ab8a104166270368764fb057e6581
+PKG_MD5SUM:=e71df4a4f99f8006e74d63c6a7d61af9
 
 PKG_SYS_NAME:=qtbase-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
@@ -64,16 +64,15 @@ define Package/qt5base/Default
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
   TITLE:=Qt5base
-  DEPENDS+=qt5base
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
 endef
 
-define Package/qt5base
-  $(call Package/qt5base/Default)
-  DEPENDS:=
-  MENU:=1
-endef
+# define Package/qt5base
+#   $(call Package/qt5base/Default)
+#   DEPENDS:=
+#   MENU:=1
+# endef
 
 define Package/qt5base-concurrent
   $(call Package/qt5base/Default)
@@ -508,7 +507,7 @@ define Package/qt5base-examples/install
 	$(call Build/Install/Examples,$(1))
 endef
 
-$(eval $(call BuildPackage,qt5base))
+# $(eval $(call BuildPackage,qt5base))
 $(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-core))
 $(eval $(call BuildPackage,qt5base-gui))

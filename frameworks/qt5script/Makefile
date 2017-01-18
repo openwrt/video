@@ -30,16 +30,17 @@ define Package/qt5script/Default
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
   TITLE:=Qt5script
-  DEPENDS:=qt5script +qt5base-core
+#  DEPENDS:=qt5script +qt5base-core
+  DEPENDS:=+qt5base-core
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
 endef
 
-define Package/qt5script
-  $(call Package/qt5script/Default)
-  DEPENDS:=+qt5base
-  MENU:=1
-endef
+# define Package/qt5script
+#   $(call Package/qt5script/Default)
+#   DEPENDS:=+qt5base
+#   MENU:=1
+# endef
 
 define Package/qt5script-script
   $(call Package/qt5script/Default)
@@ -80,7 +81,7 @@ define Package/qt5script-examples/install
 	$(call Build/Install/Examples,$(1))
 endef
 
-$(eval $(call BuildPackage,qt5script))
+#$(eval $(call BuildPackage,qt5script))
 $(eval $(call BuildPackage,qt5script-script))
 $(eval $(call BuildPackage,qt5script-scriptTools))
 $(eval $(call BuildPackage,qt5script-examples))
