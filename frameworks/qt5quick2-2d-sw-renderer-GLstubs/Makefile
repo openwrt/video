@@ -28,7 +28,6 @@ PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $
 
 PKG_BUILD_DIR=$(BUILD_DIR)/qtdeclarative-render2d-opensource-src-$(PKG_VERSION)-GLstubs/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
 
 include $(INCLUDE_DIR)/package.mk
 
