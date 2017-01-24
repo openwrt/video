@@ -9,3 +9,14 @@
              }
  
              pkgConfigSysrootDir = $$sysroot
+--- qtbase-opensource-src-5.8.0-rc/mkspecs/features/qt_functions.prf.orig	2017-01-19 17:52:11.741970700 +0100
++++ qtbase-opensource-src-5.8.0-rc/mkspecs/features/qt_functions.prf	2017-01-19 17:52:06.641997235 +0100
+@@ -272,7 +272,7 @@
+                         warning("Disabling pkg-config since PKG_CONFIG_SYSROOT_DIR is not set.")
+                         warning("Set this variable to your sysroot for pkg-config to function")
+                         warning("correctly when cross-compiling.")
+-                        return()
++#                        return()
+                     }
+ 
+                     pkgConfigSysrootDir = $$sysroot
