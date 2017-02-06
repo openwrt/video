@@ -75,7 +75,7 @@ define Build/Configure/Default
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 	qmake \
 		-o $(PKG_BUILD_DIR)/$(MAKE_PATH)/Makefile \
-		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1),$(PKG_NAME)).pro
+		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
 endef
 
 # We need to pass all qmake related variables to $(MAKE) as well, as (generated) Makefiles may invoke qmake once again for creating further Makefiles.
