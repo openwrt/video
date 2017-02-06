@@ -12,13 +12,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.8.0-rc
+PKG_VERSION:=5.8.0
 PKG_RELEASE:=1
-PKG_MD5SUM:=e71df4a4f99f8006e74d63c6a7d61af9
+PKG_HASH:=c17111ae02a44dc7be1ec2cf979a47ee9e58edf4904041a525c21f4fa53fc005
 
 PKG_SYS_NAME:=qtbase-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/development_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1

@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2-controls2
-PKG_VERSION:=5.8.0-rc
+PKG_VERSION:=5.8.0
 PKG_RELEASE:=1
-PKG_MD5SUM:=54fc452366663b4b1120ac9fb95bfb6b
+PKG_HASH:=b099866ec74f13cf0047274c61f0486d1eba27716fa07b69f682c54d3a4ade1b
 
 PKG_SYS_NAME:=qtquickcontrols2-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/development_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1

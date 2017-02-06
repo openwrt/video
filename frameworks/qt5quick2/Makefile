@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION:=5.8.0-rc
+PKG_VERSION:=5.8.0
 PKG_RELEASE:=1
-PKG_MD5SUM:=1df3d20503a2b104fe436f83fabd2f5e
+PKG_HASH:=32941eb9ad12d8735dfc64de8b50b5ab830a6d8705a421c57369de7cb5708a46
 
 PKG_SYS_NAME:=qtdeclarative-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/development_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
