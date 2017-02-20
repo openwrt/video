@@ -21,12 +21,15 @@ PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
 PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
+HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
+HOST_BUILD_PARALLEL:=1
 PKG_BUILD_DEPENDS:=librpc
 PKG_INSTALL:=1
 PKG_USE_MIPS16:=0
 
 include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
 include ./files/qmake.mk
 
@@ -283,6 +286,7 @@ define Build/Configure
 			-prefix $(QT_INSTALL_PREFIX) \
 			-extprefix $(QT_EXTPREFIX) \
 			-hostprefix $(QT_HOST_PREFIX) \
+			-hostdatadir $(QT_HOST_PREFIX)/share \
 			-no-gcc-sysroot \
 			-bindir $(QT_INSTALL_BINS) \
 			-headerdir $(QT_INSTALL_HEADERS) \
@@ -390,6 +394,89 @@ define Build/Configure
 	)
 endef
 
+
+define Host/Configure
+	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
+	# Usually used variables such as CC/CXX/CFLAGS/CXXFLAGS/LDFLAGS would be used for compilation of host tools (qmake, moc, etc.),
+	# hence we use the TARGET_* nomenclature.
+	( cd $(HOST_BUILD_DIR) ; \
+		TARGET_CFLAGS="$(HOST_CFLAGS)" \
+		TARGET_CXXFLAGS="$(HOST_CFLAGS) $(HOST_CXXFLAGS)" \
+		TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
+		./configure \
+			-prefix $(STAGING_DIR_HOST) \
+			-hostprefix $(STAGING_DIR_HOST) \
+			-hostdatadir $(STAGING_DIR_HOST)/share \
+			-datadir $(STAGING_DIR_HOST)/share \
+			-archdatadir $(STAGING_DIR_HOST)/lib \
+			-no-gcc-sysroot \
+			-verbose \
+			-opensource \
+			-confirm-license \
+			-release \
+			-no-optimized-tools \
+			-no-strip \
+			-shared \
+			-no-framework \
+			-nomake tools \
+			-nomake examples \
+			-no-compile-examples \
+			-gui \
+			-no-widgets \
+			-no-dbus \
+			-no-accessibility \
+			-no-qml-debug \
+			-qt-doubleconversion \
+			-no-glib \
+			-no-eventfd \
+			-no-inotify \
+			-no-icu \
+			-qt-pcre \
+			-qt-zlib \
+			-no-journald \
+			-no-syslog \
+			-no-ssl \
+			-no-openssl \
+			-no-cups \
+			-no-fontconfig \
+			-qt-freetype \
+			-no-harfbuzz \
+			-no-gtk \
+			-no-opengl \
+			-no-xcb-xlib \
+			-no-xcb \
+			-no-directfb \
+			-no-eglfs \
+			-no-gbm \
+			-no-kms \
+			-no-linuxfb \
+			-no-mirclient \
+			-no-xcb \
+			-evdev \
+			-no-libinput \
+			-no-mtdev \
+			-no-tslib \
+			-no-xinput2 \
+			-no-xkbcommon-x11 \
+			-no-xkbcommon-evdev \
+			-no-gif \
+			-no-ico \
+			-qt-libpng \
+			-no-libjpeg \
+			-no-sql-db2 \
+			-no-sql-ibase \
+			-no-sql-mysql \
+			-no-sql-oci \
+			-no-sql-odbc \
+			-no-sql-psql \
+			-no-sql-sqlite \
+			-no-sql-sqlite2 \
+			-no-sql-tds \
+			-no-libproxy \
+			-no-xkbcommon \
+	)
+endef
+
 define Build/InstallDev
 	$(INSTALL_DIR) \
 		$(STAGING_DIR)/host/mk
@@ -401,6 +488,32 @@ define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
 	$(call Build/Install/Libs,$(1),*)
+endef
+
+define Host/Install
+	$(call Host/Install/Default)
+
+	$(INSTALL_DIR) \
+	  $(STAGING_DIR_HOST)/bin \
+	  $(STAGING_DIR_HOST)/lib \
+	  $(STAGING_DIR_HOST)/include \
+	  $(STAGING_DIR_HOST)/share
+
+	$(CP) \
+	  $(HOST_INSTALL_DIR)/lib/* \
+	  $(STAGING_DIR_HOST)/lib/
+
+	$(CP) \
+	  $(HOST_INSTALL_DIR)/include/* \
+	  $(STAGING_DIR_HOST)/include/
+
+	$(CP) \
+	  $(HOST_INSTALL_DIR)/share/* \
+	  $(STAGING_DIR_HOST)/share/
+
+	$(CP) \
+	  $(HOST_INSTALL_DIR)/bin/qmake \
+	  $(STAGING_DIR_HOST)/bin/qmake_host
 endef
 
 define Package/qt5base-concurrent/install
@@ -534,3 +647,4 @@ $(eval $(call BuildPackage,qt5base-plugin-platforms-offscreen))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-vnc))
 #$(eval $(call BuildPackage,qt5base-plugin-sqldrivers-sqlite))
 $(eval $(call BuildPackage,qt5base-examples))
+$(eval $(call HostBuild))

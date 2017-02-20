@@ -37,7 +37,7 @@
 #    objects on the target platform. Tihs behaviour wasn't observed so far, however 
 #    one might use the QT_INSTALL_* variables for some weird reason during runtime.
 
-
+# for target builds (STAGING_DIR)
 QT_EXTPREFIX:=$(STAGING_DIR)/$(CONFIGURE_PREFIX)
 QT_SYSROOT:=
 QT_INSTALL_CONFIGURATION:=/etc/qt5
@@ -56,6 +56,7 @@ QT_INSTALL_IMPORTS:=$(QT_INSTALL_ARCHDATA)/imports
 QT_INSTALL_QML:=$(QT_INSTALL_ARCHDATA)/qml
 QT_INSTALL_EXAMPLES:=$(QT_INSTALL_ARCHDATA)/examples
 QT_INSTALL_DEMOS:=$(QT_INSTALL_EXAMPLES)
+# for host builds defined in target project files (STAGING_DIR)/host
 QT_HOST_EXTPREFIX:=$(STAGING_DIR)/host
 QT_HOST_PREFIX:=$(QT_HOST_EXTPREFIX)
 QT_HOST_DATA:=$(QT_HOST_PREFIX)/share
@@ -68,6 +69,11 @@ QMAKE_XSPEC:=linux-openwrt-g++
 PKG_INSTALL_DIR_ROOT:=$(PKG_INSTALL_DIR)
 PKG_INSTALL_DIR:=$(PKG_INSTALL_DIR_ROOT)/$(STAGING_DIR)
 
+# for target independant host builds (STAGING_DIR_HOST)
+HOST_INSTALL_DIR_ROOT:=$(HOST_INSTALL_DIR)
+HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR_HOST)
+#HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR)
+
 define Build/Configure/Default
 	TARGET_CROSS="$(TARGET_CROSS)" \
 	TARGET_CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
@@ -76,6 +82,12 @@ define Build/Configure/Default
 	qmake \
 		-o $(PKG_BUILD_DIR)/$(MAKE_PATH)/Makefile \
 		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
+endef
+
+define Host/Configure/Default
+	qmake_host \
+		-o $(HOST_BUILD_DIR)/$(MAKE_PATH)/Makefile \
+		$(HOST_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
 endef
 
 # We need to pass all qmake related variables to $(MAKE) as well, as (generated) Makefiles may invoke qmake once again for creating further Makefiles.
@@ -93,9 +105,23 @@ define Build/Compile/Default
 			$(1)
 endef
 
+define Host/Compile/Default
+	+TARGET_CFLAGS="$(HOST_CPPFLAGS) $(HOST_CFLAGS)" \
+	TARGET_CXXFLAGS="$(HOST_CPPFLAGS) $(HOST_CXXFLAGS)" \
+	TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
+		$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
+			$(1)
+endef
+
 define Build/Install/Default
 	INSTALL_ROOT="$(PKG_INSTALL_DIR_ROOT)" \
 		$(MAKE) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
+			$(1) install
+endef
+
+define Host/Install/Default
+	INSTALL_ROOT="$(HOST_INSTALL_DIR_ROOT)" \
+		$(MAKE) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
 endef
 
