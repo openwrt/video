@@ -135,12 +135,6 @@ endef
 
 ####
 
-define Build/Configure
-	$(call Build/Configure/Default,qtdeclarative)
-endef
-
-###
-
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))

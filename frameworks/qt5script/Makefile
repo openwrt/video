@@ -59,10 +59,6 @@ define Package/qt5script-examples
   DEPENDS+=+qt5script-scriptTools
 endef
 
-define Build/Configure
-	$(call Build/Configure/Default,qtscript)
-endef
-
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))

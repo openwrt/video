@@ -59,10 +59,6 @@ define Package/qt5quick1-examples
   DEPENDS+=+qt5quick1-declarative
 endef
 
-define Build/Configure
-	$(call Build/Configure/Default,qtquick1)
-endef
-
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))

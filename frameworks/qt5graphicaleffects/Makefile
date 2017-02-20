@@ -34,10 +34,6 @@ define Package/qt5graphicaleffects
   DEPENDS:=+qt5quick2-quick
 endef
 
-define Build/Configure
-	$(call Build/Configure/Default,qtgraphicaleffects)
-endef
-
 define Build/InstallDev
 endef
 

@@ -34,10 +34,6 @@ define Package/qt5quick2-controls2
   DEPENDS:=+qt5quick2-quick
 endef
 
-define Build/Configure
-	$(call Build/Configure/Default,qtquickcontrols2)
-endef
-
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
