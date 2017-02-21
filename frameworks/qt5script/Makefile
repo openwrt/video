@@ -56,7 +56,7 @@ endef
 define Package/qt5script-examples
   $(call Package/qt5script/Default)
   TITLE+=examples
-  DEPENDS+=+qt5script-scriptTools
+  DEPENDS+=+qt5script-scriptTools @BROKEN
 endef
 
 define Build/InstallDev
