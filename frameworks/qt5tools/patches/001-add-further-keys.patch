@@ -1,6 +1,6 @@
 diff -ruN qttools-opensource-src-5.8.0.orig/src/kmap2qmap/main.cpp qttools-opensource-src-5.8.0/src/kmap2qmap/main.cpp
 --- qttools-opensource-src-5.8.0.orig/src/kmap2qmap/main.cpp	2017-01-02 07:50:13.000000000 +0100
-+++ qttools-opensource-src-5.8.0/src/kmap2qmap/main.cpp	2017-02-21 03:07:04.565561784 +0100
++++ qttools-opensource-src-5.8.0/src/kmap2qmap/main.cpp	2017-02-21 03:31:59.598892309 +0100
 @@ -270,6 +270,8 @@
      { "Pause",         Qt::Key_Pause },
      { "VolumeDown",    Qt::Key_VolumeDown },
@@ -10,11 +10,12 @@ diff -ruN qttools-opensource-src-5.8.0.orig/src/kmap2qmap/main.cpp qttools-opens
      { "MediaTogglePlayPause", Qt::Key_MediaTogglePlayPause },
      { "MediaPlay",     Qt::Key_MediaPlay },
      { "MediaPause",    Qt::Key_MediaPause },
-@@ -286,6 +288,11 @@
+@@ -286,6 +288,12 @@
      { "ToggleCallHangup", Qt::Key_ToggleCallHangup },
      { "VoiceDial"       , Qt::Key_VoiceDial },
      { "LastNumberRedial", Qt::Key_LastNumberRedial },
 +    { "Phone",            Qt::Key_Phone },
++    { "HomePage",         Qt::Key_HomePage },
 +    { "Menu",             Qt::Key_Menu },
 +    { "Back",             Qt::Key_Back },
 +    { "LaunchMail",       Qt::Key_LaunchMail },
@@ -22,7 +23,7 @@ diff -ruN qttools-opensource-src-5.8.0.orig/src/kmap2qmap/main.cpp qttools-opens
  
      { "KP_0",        Qt::Key_0 | Qt::KeypadModifier },
      { "KP_1",        Qt::Key_1 | Qt::KeypadModifier },
-@@ -696,8 +703,8 @@
+@@ -696,8 +704,8 @@
              if (kcpos >= 0 && kcpos < (tokens.count()-3) && tokens[kcpos+2] == "=") {
                  quint16 keycode = tokens[kcpos+1].toInt();
  
