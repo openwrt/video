@@ -1,0 +1,12 @@
+--- qttools-opensource-src-5.8.0.orig/src/src.pro	2017-01-02 07:50:13.000000000 +0100
++++ qttools-opensource-src-5.8.0/src/src.pro	2017-02-21 02:58:04.974231681 +0100
+@@ -14,7 +14,8 @@
+ 
+ SUBDIRS += linguist \
+     qdoc \
+-    qtattributionsscanner
++    qtattributionsscanner \
++    kmap2qmap
+ 
+ !android|android_app: SUBDIRS += qtplugininfo
+ 
