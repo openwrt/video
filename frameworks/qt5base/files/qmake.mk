@@ -74,18 +74,21 @@ HOST_INSTALL_DIR_ROOT:=$(HOST_INSTALL_DIR)
 HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR_HOST)
 #HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR)
 
+QMAKE_TARGET=$(STAGING_DIR)/bin/qmake
+QMAKE_HOST=$(STAGING_DIR_HOST)/bin/qmake
+
 define Build/Configure/Default
 	TARGET_CROSS="$(TARGET_CROSS)" \
 	TARGET_CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
-	qmake \
+	$(QMAKE_TARGET) \
 		-o $(PKG_BUILD_DIR)/$(MAKE_PATH)/Makefile \
 		$(PKG_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
 endef
 
 define Host/Configure/Default
-	qmake_host \
+	$(QMAKE_HOST) \
 		-o $(HOST_BUILD_DIR)/$(MAKE_PATH)/Makefile \
 		$(HOST_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
 endef
@@ -106,9 +109,6 @@ define Build/Compile/Default
 endef
 
 define Host/Compile/Default
-	+TARGET_CFLAGS="$(HOST_CPPFLAGS) $(HOST_CFLAGS)" \
-	TARGET_CXXFLAGS="$(HOST_CPPFLAGS) $(HOST_CXXFLAGS)" \
-	TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
 		$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
 			$(1)
 endef
