@@ -522,8 +522,8 @@ define Host/Install
 	  $(STAGING_DIR_HOST)/share/
 
 	$(CP) \
-	  $(HOST_INSTALL_DIR)/bin/qmake \
-	  $(STAGING_DIR_HOST)/bin/qmake_host
+	  $(HOST_INSTALL_DIR)/bin/* \
+	  $(STAGING_DIR_HOST)/bin/
 endef
 
 define Package/qt5base-concurrent/install
