@@ -27,6 +27,16 @@ HOST_BUILD_PARALLEL:=1
 PKG_BUILD_DEPENDS:=librpc
 PKG_INSTALL:=1
 PKG_USE_MIPS16:=0
+# Yes, the host build depends on the target build. This is not a mistake!
+# The target build provides the (target specific) qmake.mk file which
+# is also used for host builds.
+# Host projects depend on qt5base/host which however don't build
+# if qt5base didn't install the qmake.mk file before.
+# Benefit of the target build providing qmake.mk instead of the host build
+# is that the host build really only needs to be built, if there're targets
+# which actually depend on it. At the time of this writing, only qt5tools
+# makes use of the host build.
+HOST_BUILD_DEPENDS:=qt5base
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
