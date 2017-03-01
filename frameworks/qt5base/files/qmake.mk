@@ -93,17 +93,28 @@ define Host/Configure/Default
 		$(HOST_BUILD_DIR)/$(MAKE_PATH)/$(if $(1),$(1).pro,)
 endef
 
-# We need to pass all qmake related variables to $(MAKE) as well, as (generated) Makefiles may invoke qmake once again for creating further Makefiles.
-# Actually we'd also like to pass $MAKE_VARS and $MAKE_FLAGS to also make ordinary non-qmake generated Makefiles calling toolchain executables
-# like $CC/$CXX/.. work, however this would interfere with qmake generated Makefiles, since they expect variables being set differently.
-# For example qmake generated Makefiles expect $AR to also contain ar's arguments, while ordinary Makefiles don't.
-# Until we find a way to disginguish both kinds of Makefiles, we will neglect ordinary Makefiles calling toolchain executables.
-# Mixing qmake generated and ordinary Makfiles - both calling toolchain executables - is probably a very rare case anyway.
+# We need to pass all qmake (TARGET_*) related variables to $(MAKE) as well, as
+# (generated) Makefiles may invoke qmake once again for creating further Makefiles.
+# Actually we'd also like to pass all other vars (defined in $MAKE_VARS and
+# $MAKE_FLAGS) to also make ordinary non-qmake generated Makefiles calling tool-
+# chain executables like $CC/$CXX/$AR.. work, however this would interfere with
+# qmake generated Makefiles, since they expect variables being set differently.
+# For example qmake generated Makefiles expect $AR to also contain ar's arguments,
+# while ordinary Makefiles don't.
+# Until we find a way to disginguish both kinds of Makefiles, we will neglect
+# ordinary Makefiles calling toolchain executables, however as they might take
+# $CFLAGS/CXXFLAGS into account (e.g. flags as -D*), we pass at least those
+# hoping to not interfere / break something.
+# Mixing qmake generated and ordinary Makfiles - both calling toolchain execut-
+# ables - is probably a very rare case anyway.
 define Build/Compile/Default
 	+TARGET_CROSS="$(TARGET_CROSS)" \
 	TARGET_CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
 	TARGET_CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
+	CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
+	CXXFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CXXFLAGS)" \
+	LDFLAGS="$(TARGET_LDFLAGS)" \
 		$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
 			$(1)
 endef
