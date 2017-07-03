@@ -12,9 +12,9 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.8.0
+PKG_VERSION:=5.9.1
 PKG_RELEASE:=1
-PKG_HASH:=c17111ae02a44dc7be1ec2cf979a47ee9e58edf4904041a525c21f4fa53fc005
+PKG_HASH:=bc9a21e9f6fff9629019fdf9f989f064751d5073c3a28dc596def92f4d4275c6
 
 PKG_SYS_NAME:=qtbase-opensource-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
@@ -102,7 +102,7 @@ endef
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) #+icu
+  DEPENDS+=+libpthread +zlib +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) #+icu
 endef
 
 define Package/qt5base-gui
