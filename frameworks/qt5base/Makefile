@@ -108,7 +108,7 @@ endef
 define Package/qt5base-gui
   $(call Package/qt5base/Default)
   TITLE+=gui
-  DEPENDS+=+qt5base-core +qt5quick2-2d-sw-renderer-GLstubs +libpng +fontconfig +libfreetype +libudev
+  DEPENDS+=+qt5base-core +qt5quick2-2d-sw-renderer-GLstubs +libpng +fontconfig +libfreetype
 endef
 
 define Package/qt5base-network
@@ -165,28 +165,34 @@ endef
 
 ####### generic / input
 
+define Package/qt5base-plugin-input-libinput
+  $(call Package/qt5base/Default)
+  TITLE+=libinput (plugin)
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+endef
+
 define Package/qt5base-plugin-input-evdevkeyboard
   $(call Package/qt5base/Default)
   TITLE+=evdev keyboard (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput
 endef
 
 define Package/qt5base-plugin-input-evdevmouse
   $(call Package/qt5base/Default)
   TITLE+=evdev mouse (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtablet
   $(call Package/qt5base/Default)
   TITLE+=evdev tablet (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtouch
   $(call Package/qt5base/Default)
   TITLE+=evdev touch (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput
 endef
 
 ####### imageformats
@@ -226,7 +232,7 @@ endef
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libinput
 endef
 
 define Package/qt5base-plugin-platforms-minimal
@@ -244,7 +250,7 @@ endef
 define Package/qt5base-plugin-platforms-vnc
   $(call Package/qt5base/Default)
   TITLE+=platform vnc (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +libinput
 endef
 
 
@@ -380,7 +386,7 @@ define Build/Configure
 			-no-mirclient \
 			-no-xcb \
 			-evdev \
-			-no-libinput \
+			-libinput \
 			-no-mtdev \
 			-no-tslib \
 			-no-xinput2 \
@@ -570,6 +576,10 @@ define Package/qt5base-plugin-bearer-generic/install
 	$(call Build/Install/Plugins,$(1),bearer,libqgenericbearer)
 endef
 
+define Package/qt5base-plugin-input-libinput/install
+	$(call Build/Install/Plugins,$(1),generic,libqlibinputplugin)
+endef
+
 define Package/qt5base-plugin-input-evdevkeyboard/install
 	$(call Build/Install/Plugins,$(1),generic,libqevdevkeyboardplugin)
 endef
@@ -642,6 +652,7 @@ $(eval $(call BuildPackage,qt5base-test))
 $(eval $(call BuildPackage,qt5base-widgets))
 $(eval $(call BuildPackage,qt5base-xml))
 $(eval $(call BuildPackage,qt5base-plugin-bearer-generic))
+$(eval $(call BuildPackage,qt5base-plugin-input-libinput))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevkeyboard))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevmouse))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevtablet))
