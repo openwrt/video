@@ -53,6 +53,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-examples \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
+	CONFIG_PACKAGE_qt5base-plugin-input-libinput \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-minimalegl \
 
@@ -174,25 +175,25 @@ endef
 define Package/qt5base-plugin-input-evdevkeyboard
   $(call Package/qt5base/Default)
   TITLE+=evdev keyboard (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevmouse
   $(call Package/qt5base/Default)
   TITLE+=evdev mouse (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtablet
   $(call Package/qt5base/Default)
   TITLE+=evdev tablet (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtouch
   $(call Package/qt5base/Default)
   TITLE+=evdev touch (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 ####### imageformats
@@ -232,7 +233,7 @@ endef
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-platforms-minimal
@@ -250,7 +251,7 @@ endef
 define Package/qt5base-plugin-platforms-vnc
   $(call Package/qt5base/Default)
   TITLE+=platform vnc (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 
@@ -385,8 +386,9 @@ define Build/Configure
 			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),-linuxfb,-no-linuxfb) \
 			-no-mirclient \
 			-no-xcb \
+			-libudev \
 			-evdev \
-			-libinput \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-input-libinput),-libinput,-no-libinput) \
 			-no-mtdev \
 			-no-tslib \
 			-no-xinput2 \
