@@ -1,0 +1,32 @@
+From a51a71ba6b08fcd761d5b0547bcd5d65f341d837 Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <mirko-qt@nanl.de>
+Date: Mon, 27 Nov 2017 20:25:38 +0100
+Subject: [PATCH 1/2] QFbCursor::pointerEvent(): Fix SEGV if
+ QT_QPA_FB_HIDECURSOR is set
+
+getCurrentRect() accesses mCursorImage.image() which is NULL in case of
+QT_QPA_FB_HIDECURSOR=1.
+Avoid respective calls in pointerEvent() by returning early in such
+case.
+
+Signed-off-by: Mirko Vogt <mirko-qt@nanl.de>
+---
+ src/platformsupport/fbconvenience/qfbcursor.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/platformsupport/fbconvenience/qfbcursor.cpp b/src/platformsupport/fbconvenience/qfbcursor.cpp
+index 7daf3f4d0c..c7b1a71c04 100644
+--- a/src/platformsupport/fbconvenience/qfbcursor.cpp
++++ b/src/platformsupport/fbconvenience/qfbcursor.cpp
+@@ -112,6 +112,8 @@ void QFbCursor::pointerEvent(const QMouseEvent &e)
+     if (e.type() != QEvent::MouseMove)
+         return;
+     m_pos = e.screenPos().toPoint();
++    if (!mVisible)
++        return;
+     mCurrentRect = getCurrentRect();
+     if (mOnScreen || mScreen->geometry().intersects(mCurrentRect.translated(mScreen->geometry().topLeft())))
+         setDirty();
+-- 
+2.15.0
+
