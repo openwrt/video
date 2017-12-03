@@ -439,7 +439,7 @@ define Host/Configure
 			-nomake tools \
 			-nomake examples \
 			-no-compile-examples \
-			-no-gui \
+			-gui \
 			-no-widgets \
 			-no-dbus \
 			-no-accessibility \
@@ -470,7 +470,7 @@ define Host/Configure
 			-no-linuxfb \
 			-no-mirclient \
 			-no-xcb \
-			-no-evdev \
+			-evdev \
 			-no-libinput \
 			-no-mtdev \
 			-no-tslib \
