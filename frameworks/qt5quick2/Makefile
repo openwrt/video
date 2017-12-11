@@ -146,7 +146,7 @@ define Build/Install/QMLplugin
 	  $(1)/$(QT_INSTALL_QML)/$(2)
 
 	$(CP) \
-	  $(PKG_INSTALL_DIR)/$(QT_INSTALL_QML)/$(2)/{plugins.qmltypes,qmldir,$(3).{so,qml}*} \
+	  $(PKG_INSTALL_DIR)/$(QT_INSTALL_QML)/$(2)/{plugins.qmltypes,qmldir,$(3).{so,qml,js}*} \
 	  $(1)/$(QT_INSTALL_QML)/$(2)/ \
 	  || true
 endef
@@ -192,6 +192,8 @@ endef
 
 define Package/qt5quick2-qml-test/install
 	$(call Build/Install/QMLplugin,$(1),QtTest,*)
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(CP) $(PKG_INSTALL_DIR)/usr/bin/qmltestrunner $(1)/usr/bin/
 endef
 
 define Package/qt5quick2-qml-layouts/install
