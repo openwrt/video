@@ -18,6 +18,8 @@ diff --git a/src/platformsupport/fbconvenience/qfbcursor.cpp b/src/platformsuppo
 index 7daf3f4d0c..c7b1a71c04 100644
 --- a/src/platformsupport/fbconvenience/qfbcursor.cpp
 +++ b/src/platformsupport/fbconvenience/qfbcursor.cpp
+--- a/src/platformsupport/fbconvenience/qfbcursor.cpp
++++ b/src/platformsupport/fbconvenience/qfbcursor.cpp
 @@ -112,6 +112,8 @@ void QFbCursor::pointerEvent(const QMouseEvent &e)
      if (e.type() != QEvent::MouseMove)
          return;
@@ -27,6 +29,13 @@ index 7daf3f4d0c..c7b1a71c04 100644
      mCurrentRect = getCurrentRect();
      if (mOnScreen || mScreen->geometry().intersects(mCurrentRect.translated(mScreen->geometry().topLeft())))
          setDirty();
--- 
-2.15.0
+@@ -165,6 +167,9 @@ void QFbCursor::setCursor(const uchar *data, const uchar *mask, int width, int h
+ #ifndef QT_NO_CURSOR
+ void QFbCursor::changeCursor(QCursor * widgetCursor, QWindow *window)
+ {
++    if (!mVisible)
++        return;
++
+     Q_UNUSED(window);
+     const Qt::CursorShape shape = widgetCursor ? widgetCursor->shape() : Qt::ArrowCursor;
 
