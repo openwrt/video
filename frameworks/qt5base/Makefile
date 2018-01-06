@@ -360,7 +360,7 @@ define Build/Configure
 			-no-glib \
 			-eventfd \
 			-no-inotify \
-			$(if $(CONFIG_BUILD_NLS),-no-iconv,-no-iconv) \
+			$(if $(CONFIG_BUILD_NLS),-iconv,-no-iconv) \
 			-no-icu \
 			-system-pcre \
 			-system-zlib \
