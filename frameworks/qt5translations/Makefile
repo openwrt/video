@@ -7,44 +7,35 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=qt5graphicaleffects
+PKG_NAME:=qt5translations
 PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=0d2ea4bc73b9df13a4b739dcbc1e3c7b298c7e682f7f9252b232e3bde7b63eda
+PKG_HASH:=45c43268d9df50784d4d8ca345fce9288a1055fd074ac0ef508097f7aeba22fe
 
-PKG_SYS_NAME:=qtgraphicaleffects-everywhere-src-$(PKG_VERSION)
+PKG_SYS_NAME:=qttranslations-everywhere-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
 PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
 PKG_INSTALL:=1
+PKG_BUILD_DEPENDS:=qt5tools/host
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 -include $(STAGING_DIR)/host/mk/qmake.mk
 
-define Package/qt5graphicaleffects
+define Package/qt5translations
   SECTION:=video-frameworks
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
-  TITLE:=qt5graphicaleffects
+  TITLE:=qt5translations
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
-  DEPENDS:=+qt5quick2-quick @BROKEN # depends on GL support, but currently we only support software rendering
 endef
 
-define Build/InstallDev
+define Package/qt5translations/install
+	$(call Build/Install/Translations,$(1),*)
 endef
 
-define Package/qt5graphicaleffects/install
-	$(INSTALL_DIR) \
-	  $(1)/usr/lib/qt5/qml/QtGraphicalEffects
-
-	$(CP) \
-	  $(PKG_INSTALL_DIR)/usr/lib/qt5/qml/QtGraphicalEffects/* \
-	  $(1)/usr/lib/qt5/qml/QtGraphicalEffects/
-endef
-
-$(eval $(call BuildPackage,qt5graphicaleffects))
+$(eval $(call BuildPackage,qt5translations))

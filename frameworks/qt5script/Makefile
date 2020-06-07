@@ -1,6 +1,6 @@
 #
-# Copyright (C) 2015 OpenWrt
-# Author: Mirko Vogt <mirko@openwrt.org>
+# Copyright (C) 2020 OpenWrt
+# Author: Mirko Vogt <mirko-openwrt@nanl.de>
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5script
-PKG_VERSION:=5.9.1
+PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=176a08865d5f66437b0f279fc5d7f381f359f20bafbffcebdcac61e86415188f
+PKG_HASH:=02dc21b309621876a89671be27cea86a58e74a96aa28da65fe1b37a3aad29373
 
-PKG_SYS_NAME:=qtscript-opensource-src-$(PKG_VERSION)
+PKG_SYS_NAME:=qtscript-everywhere-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
@@ -33,7 +33,7 @@ define Package/qt5script/Default
 #  DEPENDS:=qt5script +qt5base-core
   DEPENDS:=+qt5base-core
   URL:=http://qt.io
-  MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
+  MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
 endef
 
 # define Package/qt5script

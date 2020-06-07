@@ -1,6 +1,6 @@
 #
-# Copyright (C) 2015 OpenWrt
-# Author: Mirko Vogt <mirko@openwrt.org>
+# Copyright (C) 2020 OpenWrt
+# Author: Mirko Vogt <mirko-openwrt@nanl.de>
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
@@ -8,13 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2-controls2
-PKG_VERSION:=5.9.1
+PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=203be0321112d1513b722fce463f9e30d7d00befb33349901d9517f4f13408ff
+PKG_HASH:=839abda9b58cd8656b2e5f46afbb484e63df466481ace43318c4c2022684648f
 
-PKG_SYS_NAME:=qtquickcontrols2-opensource-src-$(PKG_VERSION)
+PKG_SYS_NAME:=qtquickcontrols2-everywhere-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
@@ -30,7 +30,7 @@ define Package/qt5quick2-controls2
   SUBMENU:=Frameworks and Toolkits
   TITLE:=qt5quick2-controls2
   URL:=http://qt.io
-  MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
+  MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
   DEPENDS:=+qt5quick2-quick
 endef
 

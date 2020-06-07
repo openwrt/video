@@ -1,0 +1,81 @@
+From e9097ab24832e42df6e16093e5c3b775dbcf2367 Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <mirko-openwrt@nanl.de>
+Date: Fri, 5 Jun 2020 12:46:36 +0000
+Subject: [PATCH] GNU iconv() - at least in OpenWrt - behaves like POSIX
+ iconv()
+
+GNU iconv() had the terrible idea of introducing a build variant for its
+iconv() function, where the second argument can either be a `char **` or
+a `const char **` depending on a macro set under whatever certain
+circumstances at build time, resulting in different function signatures.
+
+Despite those two possible variants, the project only mentions the
+non-const one in their manual page.
+
+Since this didn't seem to be enough trouble for its users, they seem to
+have changed the default variant from `const char **` to `char **` at
+some point, while leaving the manual page as it is, now stating the
+non-default, hence in most cases probably wrong, signature.
+
+Qt assumes GNU iconv() has the nowadays non-default function signature
+(`const char **`), and distiguishes that way from the POSIX one.
+Another issue with Qt and GNU iconv(): While we can easily make the test
+work for GNU iconv with its default iconv()-signature, Qt assumes that if
+the GNU-iconv succeeds, the present version of iconv is POSIX- 
+incompatible - which however isn't true in our case.
+
+However we also can't just use the POSIX iconv test, as the Qt test for
+POSIX iconv fails on GNU iconv for another reason: GNU iconv requires
+explicit linker flags (`-liconv`), which the Qt test for POSIX iconv
+however implicitly drops when the target system is linux.
+
+This was extensively discussed in a Qt bug report:
+https://bugreports.qt.io/projects/QTBUG/issues/QTBUG-84708
+
+The only good thing seems to be that Qt's configure script is also buggy 
+and counter-intuitive, resulting in 'gnu' not being accepted as iconv
+variant when using the default single-dash format for specifying
+configure options:
+https://bugreports.qt.io/projects/QTBUG/issues/QTBUG-84687
+So most likely there's nobody using Qt with GNU iconv anyway.
+
+This patch is what I came up with being the smallest changeset.
+May it work.
+---
+ src/corelib/codecs/qiconvcodec.cpp | 5 -----
+ src/corelib/configure.json         | 2 +-
+ 2 files changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/src/corelib/codecs/qiconvcodec.cpp b/src/corelib/codecs/qiconvcodec.cpp
+index 9c397279..8d43e6c8 100644
+--- a/src/corelib/codecs/qiconvcodec.cpp
++++ b/src/corelib/codecs/qiconvcodec.cpp
+@@ -180,12 +180,7 @@ QString QIconvCodec::convertToUnicode(const char* chars, int len, ConverterState
+     IconvState *state = *pstate;
+     size_t inBytesLeft = len;
+     // best case assumption, each byte is converted into one UTF-16 character, plus 2 bytes for the BOM
+-#if !QT_CONFIG(posix_libiconv)
+-    // GNU doesn't disagree with POSIX :/
+-    const char *inBytes = chars;
+-#else
+     char *inBytes = const_cast<char *>(chars);
+-#endif
+ 
+     QByteArray in;
+     if (remainingCount) {
+diff --git a/src/corelib/configure.json b/src/corelib/configure.json
+index c5e04232..32237bc4 100644
+--- a/src/corelib/configure.json
++++ b/src/corelib/configure.json
+@@ -72,7 +72,7 @@
+             "test": {
+                 "main": [
+                     "iconv_t x = iconv_open(\"\", \"\");",
+-                    "const char *inp;",
++                    "char *inp;",
+                     "char *outp;",
+                     "size_t inbytes, outbytes;",
+                     "iconv(x, &inp, &inbytes, &outp, &outbytes);",
+-- 
+2.20.1
+

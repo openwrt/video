@@ -1,6 +1,6 @@
 #
-# Copyright (C) 2015 OpenWrt.org
-# Author: Mirko Vogt <mirko@openwrt.org>
+# Copyright (C) 2020 OpenWrt.org
+# Author: Mirko Vogt <mirko-openwrt@nanl.de>
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
@@ -161,6 +161,15 @@ define Build/Install/Libs
 	$(CP) \
 		$(PKG_INSTALL_DIR)/$(QT_INSTALL_LIBS)/$(2).so* \
 		$(1)/$(QT_INSTALL_LIBS)/
+endef
+
+define Build/Install/Translations
+	$(INSTALL_DIR) \
+		$(1)/$(QT_INSTALL_TRANSLATIONS)
+
+	$(CP) \
+		$(PKG_INSTALL_DIR)/$(QT_INSTALL_TRANSLATIONS)/$(2).qm \
+		$(1)/$(QT_INSTALL_TRANSLATIONS)/
 endef
 
 define Build/Install/Plugins

@@ -23,14 +23,3 @@ diff -ruN qttools-opensource-src-5.8.0.orig/src/kmap2qmap/main.cpp qttools-opens
  
      { "KP_0",        Qt::Key_0 | Qt::KeypadModifier },
      { "KP_1",        Qt::Key_1 | Qt::KeypadModifier },
-@@ -696,8 +704,8 @@
-             if (kcpos >= 0 && kcpos < (tokens.count()-3) && tokens[kcpos+2] == "=") {
-                 quint16 keycode = tokens[kcpos+1].toInt();
- 
--                if (keycode <= 0 || keycode > 0x1ff /* KEY_MAX */) {
--                    parseWarning("keycode out of range [0..0x1ff]");
-+                if (keycode <= 0 || keycode > 0x2ff /* KEY_MAX */) {
-+                    parseWarning("keycode out of range [0..0x2ff]");
-                     break;
-                 }
- 

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 OpenWrt.org
+# Copyright (C) 2020 OpenWrt.org
 # Author: Mirko Vogt <mirko-openwrt@nanl.de>
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
@@ -12,19 +12,18 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.9.1
+PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
 PKG_HASH:=bc9a21e9f6fff9629019fdf9f989f064751d5073c3a28dc596def92f4d4275c6
 
-PKG_SYS_NAME:=qtbase-opensource-src-$(PKG_VERSION)
+PKG_SYS_NAME:=qtbase-everywhere-src-$(PKG_VERSION)
 PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=http://download.qt-project.org/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
 HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
 HOST_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=librpc
 PKG_INSTALL:=1
 PKG_USE_MIPS16:=0
 # Yes, the host build depends on the target build. This is not a mistake!
@@ -45,7 +44,6 @@ include ./files/qmake.mk
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg \
-	CONFIG_PACKAGE_qt5base-plugin-imageformats-png \
 	CONFIG_PACKAGE_qt5base-network \
 	CONFIG_PACKAGE_qt5base-gui \
 	CONFIG_PACKAGE_qt5base-gl \
@@ -54,6 +52,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
 	CONFIG_PACKAGE_qt5base-plugin-input-libinput \
+#	CONFIG_PACKAGE_qt5base-plugin-imageformats-png \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-minimalegl \
 
@@ -79,7 +78,7 @@ define Package/qt5base/Default
   SUBMENU:=Frameworks and Toolkits
   TITLE:=Qt5base
   URL:=http://qt.io
-  MAINTAINER:=Mirko Vogt <mirko@openwrt.org>
+  MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
 endef
 
 # define Package/qt5base
@@ -97,19 +96,19 @@ endef
 define Package/qt5base-gl
   $(call Package/qt5base/Default)
   TITLE+=gl
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets @BROKEN
 endef
 
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) #+icu
+  DEPENDS+=+libpthread +zlib +libzstd +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
 endef
 
 define Package/qt5base-gui
   $(call Package/qt5base/Default)
   TITLE+=gui
-  DEPENDS+=+qt5base-core +qt5quick2-2d-sw-renderer-GLstubs +libpng +fontconfig +libfreetype
+  DEPENDS+=+qt5base-core +libpng +fontconfig +libfreetype
 endef
 
 define Package/qt5base-network
@@ -216,6 +215,12 @@ define Package/qt5base-plugin-imageformats-jpeg
   DEPENDS+=+qt5base-core +qt5base-gui +libjpeg
 endef
 
+#define Package/qt5base-plugin-imageformats-png
+#  $(call Package/qt5base/Default)
+#  TITLE+=imageformat png (plugin)
+#  DEPENDS+=+qt5base-core +qt5base-gui +libpng
+#endef
+
 ####### platforms
 
 #define Package/qt5base-plugin-platforms-eglfs
@@ -294,121 +299,112 @@ define Build/Configure
 	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
 	# Usually used variables such as CC/CXX/CFLAGS/CXXFLAGS/LDFLAGS would be used for compilation of host tools (qmake, moc, etc.),
 	# hence we use the TARGET_* nomenclature.
+	# 
+	# NOTES:
+	#  - icu support currently depends on selection of icu package which is not ideal, since unpredictable.
+	#  - icu support overrides iconv support
 	( cd $(PKG_BUILD_DIR) ; \
 		TARGET_CROSS="$(TARGET_CROSS)" \
 		TARGET_CFLAGS="$(TARGET_CFLAGS)" \
 		TARGET_CXXFLAGS="$(TARGET_CFLAGS) $(TARGET_CXXFLAGS)" \
 		TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
+		PKG_CONFIG_SYSROOT_DIR="$(STAGING_DIR)" \
 		./configure \
-			-prefix $(QT_INSTALL_PREFIX) \
-			-extprefix $(QT_EXTPREFIX) \
-			-hostprefix $(QT_HOST_PREFIX) \
-			-hostdatadir $(QT_HOST_PREFIX)/share \
-			-no-gcc-sysroot \
-			-bindir $(QT_INSTALL_BINS) \
-			-headerdir $(QT_INSTALL_HEADERS) \
-			-libdir $(QT_INSTALL_LIBS) \
-			-archdatadir $(QT_INSTALL_ARCHDATA) \
-			-plugindir $(QT_INSTALL_PLUGINS) \
-			-libexecdir $(QT_INSTALL_LIBEXECS) \
-			-importdir $(QT_INSTALL_IMPORTS) \
-			-qmldir $(QT_INSTALL_QML) \
-			-datadir $(QT_INSTALL_DATA) \
-			-docdir $(QT_INSTALL_DOCS) \
-			-translationdir $(QT_INSTALL_TRANSLATIONS) \
-			-sysconfdir $(QT_INSTALL_CONFIGURATION) \
-			-examplesdir $(QT_INSTALL_EXAMPLES) \
-			-testsdir $(QT_INSTALL_TESTS) \
-			-hostbindir $(QT_HOST_BINS) \
-			-hostlibdir $(QT_HOST_LIBS) \
-			-hostdatadir $(QT_HOST_DATA) \
-			-verbose \
-			-opensource \
-			-confirm-license \
-			-release \
-			-no-optimized-tools \
-			-no-strip \
-			-shared \
-			-no-framework \
-			-xplatform linux-openwrt-g++ \
-			-no-sse3 \
-			-no-ssse3 \
-			-no-sse4.1 \
-			-no-sse4.2 \
-			-no-avx \
-			-no-avx2 \
-			-no-avx512 \
-			$(if $(findstring -mdsp,$(TARGET_CFLAGS)),,-no-mips_dsp) \
-			$(if $(findstring -mdspr2,$(TARGET_CFLAGS)),,-no-mips_dspr2) \
-			-no-reduce-exports \
-			-no-reduce-relocations \
-			-no-pch \
-			-no-use-gold-linker \
-			-no-warnings-are-errors \
-			-pkg-config \
-			-no-optimized-qmake \
-			-nomake tools \
-			-make examples \
-			$(if $(CONFIG_PACKAGE_qt5base-examples),-compile-examples,-no-compile-examples) \
-			$(if $(CONFIG_PACKAGE_qt5base-examples),-make examples,-nomake examples) \
-			$(if $(CONFIG_PACKAGE_qt5base-gui),-gui,-no-gui) \
-			$(if $(CONFIG_PACKAGE_qt5base-widgets),-widgets,-no-widgets) \
-			-no-dbus \
-			-accessibility \
-			-no-qml-debug \
-			-system-doubleconversion \
-			-no-glib \
-			-eventfd \
-			-no-inotify \
-			$(if $(CONFIG_BUILD_NLS),-iconv,-no-iconv) \
-			-no-icu \
-			-system-pcre \
-			-system-zlib \
-			-no-journald \
-			-no-syslog \
-			-ssl \
-			$(if $(CONFIG_PACKAGE_qt5base-network),-openssl-linked,-no-openssl) \
-			-system-proxies \
-			-no-cups \
-			-fontconfig \
-			-system-freetype \
-			-no-harfbuzz \
-			-no-gtk \
-			-opengl \
-			-no-xcb-xlib \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-minimal),,-qpa minimal) \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),,-qpa linuxfb) \
-			-system-xcb \
-			-no-directfb \
-			-no-eglfs \
-			-no-gbm \
-			-no-kms \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),-linuxfb,-no-linuxfb) \
-			-no-mirclient \
-			-no-xcb \
-			-libudev \
-			-evdev \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-input-libinput),-libinput,-no-libinput) \
-			-no-mtdev \
-			-no-tslib \
-			-no-xinput2 \
-			-no-xkbcommon-x11 \
-			-no-xkbcommon-evdev \
-			-no-gif \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-ico),-ico,-no-ico) \
-			$(if $(CONFIG_PACKAGE_qt5base-gui),-system-libpng,-no-libpng) \
-			$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg),-system-libjpeg,-no-libjpeg) \
-			-no-sql-db2 \
-			-no-sql-ibase \
-			-no-sql-mysql \
-			-no-sql-oci \
-			-no-sql-odbc \
-			-no-sql-psql \
-			-no-sql-sqlite \
-			-no-sql-sqlite2 \
-			-no-sql-tds \
-			-no-libproxy \
-			-system-xkbcommon \
+			--prefix=$(QT_INSTALL_PREFIX) \
+			--extprefix=$(QT_EXTPREFIX) \
+			--hostprefix=$(QT_HOST_PREFIX) \
+			--gcc-sysroot=no \
+			--bindir=$(QT_INSTALL_BINS) \
+			--headerdir=$(QT_INSTALL_HEADERS) \
+			--libdir=$(QT_INSTALL_LIBS) \
+			--archdatadir=$(QT_INSTALL_ARCHDATA) \
+			--plugindir=$(QT_INSTALL_PLUGINS) \
+			--libexecdir=$(QT_INSTALL_LIBEXECS) \
+			--importdir=$(QT_INSTALL_IMPORTS) \
+			--qmldir=$(QT_INSTALL_QML) \
+			--datadir=$(QT_INSTALL_DATA) \
+			--docdir=$(QT_INSTALL_DOCS) \
+			--translationdir=$(QT_INSTALL_TRANSLATIONS) \
+			--sysconfdir=$(QT_INSTALL_CONFIGURATION) \
+			--examplesdir=$(QT_INSTALL_EXAMPLES) \
+			--testsdir=$(QT_INSTALL_TESTS) \
+			--hostbindir=$(QT_HOST_BINS) \
+			--hostlibdir=$(QT_HOST_LIBS) \
+			--hostdatadir=$(QT_HOST_DATA) \
+			--verbose=yes \
+			--opensource \
+			--confirm-license \
+			--release=yes \
+			--optimized-tools=no \
+			--optimize-size=no \
+			--strip=no \
+			--shared=yes \
+			--framework=no \
+			--xplatform=linux-openwrt-g++ \
+			--reduce-exports=no \
+			--reduce-relocations=no \
+			--pch=no \
+			--ltcg=no \
+			--use-gold-linker=no \
+			--warnings-are-errors=no \
+			--pkg-config=yes \
+			--compile-examples=$(if $(CONFIG_PACKAGE_qt5base-examples),yes,no) \
+			$(if $(CONFIG_PACKAGE_qt5base-examples),,--nomake=examples) \
+			--gui=$(if $(CONFIG_PACKAGE_qt5base-gui),yes,no) \
+			--widgets=$(if $(CONFIG_PACKAGE_qt5base-widgets),yes,no) \
+			--dbus=no \
+			--accessibility=yes \
+			--doubleconversion=system \
+			--glib=no \
+			--eventfd=no \
+			--inotify=no \
+			--iconv=$(if $(CONFIG_BUILD_NLS),$(if $(CONFIG_LIBC_USE_GLIBC)$(CONFIG_LIBC_USE_MUSL),posix)$(if $(CONFIG_LIBC_USE_UCLIBC),gnu),no) \
+			--icu=$(if $(CONFIG_PACKAGE_icu),yes,no) \
+			--pcre=system \
+			--zlib=system \
+			--journald=no \
+			--syslog=no \
+			--ssl=$(if $(CONFIG_PACKAGE_qt5base-network),yes,no) \
+			--openssl-linked$(if $(CONFIG_PACKAGE_qt5base-network),,=no) \
+			--libproxy=no \
+			--system-proxies=yes \
+			--cups=no \
+			--fontconfig=yes \
+			--freetype=system \
+			--harfbuzz=no \
+			--gtk=no \
+			--opengl=no \
+			--opengles3=no \
+			--egl=no \
+			--xcb-xlib=no \
+			--qpa=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),linuxfb,) \
+			--directfb=no \
+			--eglfs=no \
+			--gbm=no \
+			--linuxfb=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),yes,no) \
+			--xcb=no \
+			\
+			--libudev=yes \
+			--evdev=yes \
+			--libinput=$(if $(CONFIG_PACKAGE_qt5base-plugin-input-libinput),yes,no) \
+			--mtdev=no \
+			--tslib=no \
+			--bundled-xcb-xinput=no \
+			--xkbcommon=no \
+			--gif=$(if $(CONFIG_PACKAGE_qt5base-gui),yes,no) \
+			--ico=$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-ico),yes,no) \
+			--libjpeg=$(if $(CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg),system,no) \
+			--libpng=system \
+			--sql-db2=no \
+			--sql-ibase=no \
+			--sql-mysql=no \
+			--sql-oci=no \
+			--sql-odbc=no \
+			--sql-psql=no \
+			--sql-sqlite=no \
+			--sql-sqlite2=no \
+			--sql-tds=no \
+			--sqlite=no \
 	)
 endef
 
@@ -422,76 +418,85 @@ define Host/Configure
 		TARGET_CXXFLAGS="$(HOST_CFLAGS) $(HOST_CXXFLAGS)" \
 		TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
 		./configure \
-			-prefix $(STAGING_DIR_HOST) \
-			-hostprefix $(STAGING_DIR_HOST) \
-			-hostdatadir $(STAGING_DIR_HOST)/share \
-			-datadir $(STAGING_DIR_HOST)/share \
-			-archdatadir $(STAGING_DIR_HOST)/lib \
-			-no-gcc-sysroot \
-			-verbose \
-			-opensource \
-			-confirm-license \
-			-release \
-			-no-optimized-tools \
-			-no-strip \
-			-shared \
-			-no-framework \
-			-nomake tools \
-			-nomake examples \
-			-no-compile-examples \
-			-gui \
-			-no-widgets \
-			-no-dbus \
-			-no-accessibility \
-			-no-qml-debug \
-			-qt-doubleconversion \
-			-no-glib \
-			-no-eventfd \
-			-no-inotify \
-			-no-icu \
-			-qt-pcre \
-			-qt-zlib \
-			-no-journald \
-			-no-syslog \
-			-no-ssl \
-			-no-openssl \
-			-no-cups \
-			-no-fontconfig \
-			-qt-freetype \
-			-no-harfbuzz \
-			-no-gtk \
-			-no-opengl \
-			-no-xcb-xlib \
-			-no-xcb \
-			-no-directfb \
-			-no-eglfs \
-			-no-gbm \
-			-no-kms \
-			-no-linuxfb \
-			-no-mirclient \
-			-no-xcb \
-			-evdev \
-			-no-libinput \
-			-no-mtdev \
-			-no-tslib \
-			-no-xinput2 \
-			-no-xkbcommon-x11 \
-			-no-xkbcommon-evdev \
-			-no-gif \
-			-no-ico \
-			-qt-libpng \
-			-no-libjpeg \
-			-no-sql-db2 \
-			-no-sql-ibase \
-			-no-sql-mysql \
-			-no-sql-oci \
-			-no-sql-odbc \
-			-no-sql-psql \
-			-no-sql-sqlite \
-			-no-sql-sqlite2 \
-			-no-sql-tds \
-			-no-libproxy \
-			-no-xkbcommon \
+			--prefix=$(STAGING_DIR_HOST) \
+			--hostprefix=$(STAGING_DIR_HOST) \
+			--hostdatadir=$(STAGING_DIR_HOST)/share \
+			--datadir=$(STAGING_DIR_HOST)/share \
+			--archdatadir=$(STAGING_DIR_HOST)/lib \
+			--gcc-sysroot=no \
+			--verbose=yes \
+			--opensource \
+			--confirm-license \
+			--release=yes \
+			--optimized-tools=no \
+			--optimize-size=no \
+			--strip=no \
+			--shared=yes \
+			--framework=no \
+			--reduce-exports=no \
+			--reduce-relocations=no \
+			--pch=no \
+			--ltcg=no \
+			--use-gold-linker=no \
+			--warnings-are-errors=no \
+			--pkg-config=yes \
+			--compile-examples=no \
+			--make=libs \
+			--nomake=tools \
+			--nomake=examples \
+			--gui=yes \
+			--widgets=no \
+			--dbus=no \
+			--accessibility=no \
+			--doubleconversion=qt \
+			--glib=no \
+			--eventfd=no \
+			--inotify=no \
+			--iconv=no \
+			--icu=no \
+			--pcre=qt \
+			--zlib=qt \
+			--journald=no \
+			--syslog=no \
+			--ssl=no \
+			--libproxy=no \
+			--system-proxies=no \
+			--cups=no \
+			--fontconfig=no \
+			--freetype=qt \
+			--harfbuzz=no \
+			--gtk=no \
+			--opengl=no \
+			--opengles3=no \
+			--egl=no \
+			--xcb-xlib=no \
+			--directfb=no \
+			--eglfs=no \
+			--gbm=no \
+			--linuxfb=no \
+			--xcb=no \
+			\
+			--libudev=no \
+			--evdev=no \
+			--libinput=no \
+			--mtdev=no \
+			--tslib=no \
+			--bundled-xcb-xinput=no \
+			--xkbcommon=yes \
+			--gif=no \
+			--ico=no \
+			--libjpeg=no \
+			--libpng=no \
+			--sql-db2=no \
+			--sql-ibase=no \
+			--sql-mysql=no \
+			--sql-oci=no \
+			--sql-odbc=no \
+			--sql-psql=no \
+			--sql-sqlite=no \
+			--sql-sqlite2=no \
+			--sql-tds=no \
+			--sqlite=no \
 	)
 endef
 
@@ -610,6 +615,10 @@ define Package/qt5base-plugin-imageformats-jpeg/install
 	$(call Build/Install/Plugins,$(1),imageformats,libqjpeg)
 endef
 
+#define Package/qt5base-plugin-imageformats-png/install
+#	$(call Build/Install/Plugins,$(1),imageformats,libqpng)
+#endef
+
 define Package/qt5base-plugin-platforms-linuxfb/install
 	$(call Build/Install/Plugins,$(1),platforms,libqlinuxfb)
 endef
@@ -662,6 +671,7 @@ $(eval $(call BuildPackage,qt5base-plugin-input-evdevtouch))
 #$(eval $(call BuildPackage,qt5base-plugin-imageformats-gif))
 $(eval $(call BuildPackage,qt5base-plugin-imageformats-ico))
 $(eval $(call BuildPackage,qt5base-plugin-imageformats-jpeg))
+#$(eval $(call BuildPackage,qt5base-plugin-imageformats-png))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-linuxfb))
 #$(eval $(call BuildPackage,qt5base-plugin-platforms-eglfs))
 #$(eval $(call BuildPackage,qt5base-plugin-platforms-minimalegl))
