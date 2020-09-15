@@ -42,6 +42,9 @@ include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
 include ./files/qmake.mk
 
+# hard disable udev support for now
+CONFIG_PACKAGE_qt5base-input-autodiscovery:=
+
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg \
 	CONFIG_PACKAGE_qt5base-network \
@@ -49,6 +52,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-gl \
 	CONFIG_PACKAGE_qt5base-widgets \
 	CONFIG_PACKAGE_qt5base-examples \
+	CONFIG_PACKAGE_qt5base-input-autodiscovery \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
 	CONFIG_PACKAGE_qt5base-plugin-input-libinput \
@@ -174,25 +178,25 @@ endef
 define Package/qt5base-plugin-input-evdevkeyboard
   $(call Package/qt5base/Default)
   TITLE+=evdev keyboard (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevmouse
   $(call Package/qt5base/Default)
   TITLE+=evdev mouse (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtablet
   $(call Package/qt5base/Default)
   TITLE+=evdev tablet (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtouch
   $(call Package/qt5base/Default)
   TITLE+=evdev touch (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 ####### imageformats
@@ -238,7 +242,7 @@ endef
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-platforms-minimal
@@ -256,7 +260,7 @@ endef
 define Package/qt5base-plugin-platforms-vnc
   $(call Package/qt5base/Default)
   TITLE+=platform vnc (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 
@@ -291,9 +295,6 @@ define Build/Prepare
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
 
-# TARGET_CFLAGS += \
-# 	  -I$(STAGING_DIR)/usr/include/freetype2 \
-# 	  -I$(STAGING_DIR)/usr/include/libdrm
 
 define Build/Configure
 	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
@@ -383,8 +384,7 @@ define Build/Configure
 			--gbm=no \
 			--linuxfb=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),yes,no) \
 			--xcb=no \
-			\
-			--libudev=yes \
+			--libudev=$(if $(CONFIG_PACKAGE_qt5base-input-autodiscovery),yes,no) \
 			--evdev=yes \
 			--libinput=$(if $(CONFIG_PACKAGE_qt5base-plugin-input-libinput),yes,no) \
 			--mtdev=no \
@@ -485,7 +485,6 @@ define Host/Configure
 			--gbm=no \
 			--linuxfb=no \
 			--xcb=no \
-			\
 			--libudev=no \
 			--evdev=no \
 			--libinput=no \
