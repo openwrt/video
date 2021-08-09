@@ -1,0 +1,6 @@
+config BUILD_qt5base-core_INOTIFY
+    bool "Use native inotify support on Linux"
+    depends on PACKAGE_qt5base-core
+    default y
+    help
+        Compiles qt5's QFileSystemWatcher with support for inotify on Linux. Otherwise QFileSystemWatcher uses polling as fallback."

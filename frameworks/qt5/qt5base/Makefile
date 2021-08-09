@@ -56,6 +56,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
 	CONFIG_PACKAGE_qt5base-plugin-input-libinput \
+	CONFIG_BUILD_qt5base-core_INOTIFY \
 #	CONFIG_PACKAGE_qt5base-plugin-imageformats-png \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-minimalegl \
@@ -89,6 +90,10 @@ define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
   DEPENDS+=+libpthread +zlib +libzstd +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
+endef
+
+define Package/qt5base-core/config
+        source "$(SOURCE)/Config.in"
 endef
 
 define Package/qt5base-concurrent
@@ -352,7 +357,7 @@ define Build/Configure
 			--doubleconversion=system \
 			--glib=no \
 			--eventfd=no \
-			--inotify=no \
+			--inotify=$(if $(CONFIG_BUILD_qt5base-core_INOTIFY),yes,no) \
 			--iconv=$(if $(CONFIG_BUILD_NLS),$(if $(CONFIG_LIBC_USE_GLIBC)$(CONFIG_LIBC_USE_MUSL),posix)$(if $(CONFIG_LIBC_USE_UCLIBC),gnu),no) \
 			--icu=$(if $(CONFIG_PACKAGE_icu),yes,no) \
 			--pcre=system \
