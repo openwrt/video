@@ -85,11 +85,11 @@ define Package/qt5base/Default
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
 endef
 
-# define Package/qt5base
-#   $(call Package/qt5base/Default)
-#   DEPENDS:=
-#   MENU:=1
-# endef
+define Package/qt5base-core
+  $(call Package/qt5base/Default)
+  TITLE+=core
+  DEPENDS+=+libpthread +zlib +libzstd +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
+endef
 
 define Package/qt5base-concurrent
   $(call Package/qt5base/Default)
@@ -101,12 +101,6 @@ define Package/qt5base-gl
   $(call Package/qt5base/Default)
   TITLE+=gl
   DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets @BROKEN
-endef
-
-define Package/qt5base-core
-  $(call Package/qt5base/Default)
-  TITLE+=core
-  DEPENDS+=+libpthread +zlib +libzstd +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
 endef
 
 define Package/qt5base-gui
@@ -537,6 +531,10 @@ define Package/qt5base-core/install
 	$(call Build/Install/Libs,$(1),libQt5Core)
 endef
 
+define Package/qt5base-concurrent/install
+	$(call Build/Install/Libs,$(1),libQt5Concurrent)
+endef
+
 define Package/qt5base-gl/install
 	$(call Build/Install/Libs,$(1),libQt5OpenGL)
 endef
@@ -642,8 +640,8 @@ define Package/qt5base-examples/install
 endef
 
 # $(eval $(call BuildPackage,qt5base))
-$(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-core))
+$(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-gui))
 $(eval $(call BuildPackage,qt5base-gl))
 $(eval $(call BuildPackage,qt5base-network))
