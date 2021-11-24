@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=21.1.7
+PKG_VERSION:=21.3.0
 PKG_RELEASE:=$(AUTORELEASE)
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=e9e67c10654f2e4bf15b944bb048007a614292aa4792b1b7512eb700b7b3a7bb
+PKG_HASH:=a2753c09deef0ba14d35ae8a2ceff3fe5cd13698928c7bb62c2ec8736eb09ce1
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -70,7 +70,7 @@ define Package/libxatracker
   SUBMENU:=Video
   TITLE:=Mesa3D libxatracker
   URL:=https://www.mesa3d.org
-  DEPENDS:=+libstdcpp +zlib +libdrm +libexpat
+  DEPENDS:=+libstdcpp +zlib +libdrm +libexpat @(aarch64||arm||i386||i686||x86_64)
 endef
 
 define Package/libxatracker/description
@@ -116,7 +116,7 @@ define Package/libvulkan-broadcom
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Video
-  DEPENDS:=libmesa @(arm||aarch64)
+  DEPENDS:=libmesa @(arm||aarch64) @BROKEN
   TITLE:=Broadcom Vulkan driver
   URL:=https://www.mesa3d.org
 endef
@@ -169,7 +169,6 @@ GALLIUM_DRIVERS:=kmsro swrast vc4 virgl
 
 ifneq ($(CONFIG_LIBDRM_INTEL),)
   DRI_DRIVERS+=i965
-  VULKAN_DRIVERS+=intel
   GALLIUM_DRIVERS+=i915
 endif
 
@@ -184,21 +183,8 @@ ifneq ($(CONFIG_LIBDRM_RADEON),)
 # r600 and radeonsi require LLVM
 endif
 
-ifeq ($(ARCH),x86_64)
-  GALLIUM_DRIVERS+=svga
-endif
-
-ifeq ($(ARCH),i386)
-  GALLIUM_DRIVERS+=svga
-endif
-
-ifeq ($(ARCH),i686)
-  GALLIUM_DRIVERS+=svga
-endif
-
 ifeq ($(ARCH),aarch64)
   GALLIUM_DRIVERS+=freedreno etnaviv panfrost lima
-  VULKAN_DRIVERS+=broadcom freedreno
 ifneq ($(CONFIG_LIBDRM_NOUVEAU),)
   GALLIUM_DRIVERS+=tegra
 endif
@@ -206,7 +192,6 @@ endif
 
 ifeq ($(ARCH),arm)
   GALLIUM_DRIVERS+=freedreno etnaviv panfrost lima
-  VULKAN_DRIVERS+=broadcom freedreno
 ifneq ($(CONFIG_LIBDRM_NOUVEAU),)
   GALLIUM_DRIVERS+=tegra
 endif
@@ -220,6 +205,29 @@ ifeq ($(ARCH),mipsel)
   GALLIUM_DRIVERS+=etnaviv
 endif
 
+ifeq ($(ARCH),x86_64)
+  GALLIUM_DRIVERS+=svga
+endif
+
+ifeq ($(ARCH),i386)
+  GALLIUM_DRIVERS+=svga
+endif
+
+ifeq ($(ARCH),i686)
+  GALLIUM_DRIVERS+=svga
+endif
+
+ifneq ($(CONFIG_PACKAGE_libvulkan-broadcom),)
+  VULKAN_DRIVERS+=broadcom
+endif
+
+ifneq ($(CONFIG_PACKAGE_libvulkan-freedreno),)
+  VULKAN_DRIVERS+=freedreno
+endif
+
+ifneq ($(CONFIG_PACKAGE_libvulkan-intel),)
+  VULKAN_DRIVERS+=intel
+endif
 
 MESON_ARGS += \
 	-Dplatforms=wayland \
@@ -241,6 +249,8 @@ MESON_ARGS += \
 	-Dshared-glapi=enabled \
 	-Ddraw-use-llvm=false \
 	-Dscanner_bin="$(STAGING_DIR_HOSTPKG)/bin/wayland-scanner"
+
+TARGET_CFLAGS += -I$(MESON_BUILD_DIR)/src/broadcom/
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/include

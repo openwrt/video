@@ -1,6 +1,6 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -1830,12 +1830,17 @@ endif
+@@ -1973,12 +1973,17 @@ endif
  # TODO: symbol mangling
  
  if with_platform_wayland
@@ -25,7 +25,7 @@
    dep_wayland_client = dependency('wayland-client', version : '>=1.18')
 --- a/meson_options.txt
 +++ b/meson_options.txt
-@@ -456,6 +456,11 @@ option(
+@@ -486,6 +486,11 @@ option(
    value : 25,
    description : 'Android Platform SDK version. Default: Nougat version.'
  )
