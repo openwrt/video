@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland-protocols
-PKG_VERSION:=1.21
+PKG_VERSION:=1.24
 PKG_RELEASE:=$(AUTORELEASE)
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases/
-PKG_HASH:=b99945842d8be18817c26ee77dafa157883af89268e15f4a5a1a1ff3ffa4cde5
+PKG_HASH:=bff0d8cffeeceb35159d6f4aa6bab18c807b80642c9d50f66cba52ecf7338bc2
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -15,6 +15,7 @@ PKG_LICENSE_FILES:=COPYING
 PKG_INSTALL:=1
 
 PKG_BUILD_DEPENDS:=wayland
+HOST_BUILD_DEPENDS:=wayland/host
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/meson.mk
