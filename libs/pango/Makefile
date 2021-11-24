@@ -30,12 +30,8 @@ define Package/libpango
 endef
 
 MESON_ARGS += \
-	-Dgnome=false \
 	-Dintrospection=disabled \
-	-Dvapi=disabled \
 	-Dgtk_doc=false \
-	-Dtests=false \
-	-Dinstalled_tests=false \
 	-Dsysprof=disabled
 
 define package/libpango/decription
