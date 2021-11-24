@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland
-PKG_VERSION:=1.19.0
+PKG_VERSION:=1.19.92
 PKG_RELEASE:=$(AUTORELEASE)
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases/
-PKG_HASH:=baccd902300d354581cd5ad3cc49daa4921d55fb416a5883e218750fef166d15
+PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases
+PKG_HASH:=f8cbd8a8c713ed393e63e7c6ac81c6b9ef5a49a2b631717377fa78b80ac34cfa
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -14,6 +14,7 @@ PKG_LICENSE_FILES:=COPYING
 
 PKG_INSTALL:=1
 PKG_BUILD_DEPENDS:=libffi/host libxml2/host expat/host wayland/host
+HOST_BUILD_DEPENDS:=$(PKG_BUILD_DEPENDS)
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
@@ -48,6 +49,8 @@ MESON_HOST_ARGS += \
 	-Dlibraries=false \
 	-Ddocumentation=false \
 	-Ddtd_validation=true
+
+HOST_LDFLAGS += $(STAGING_DIR_HOST)/lib/libz.a -lm
 
 MESON_ARGS += \
 	-Dscanner=true \
