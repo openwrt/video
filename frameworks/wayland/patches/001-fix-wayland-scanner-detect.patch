@@ -1,6 +1,6 @@
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -59,8 +59,12 @@ if get_option('scanner')
+@@ -70,8 +70,12 @@ if get_option('scanner')
  endif
  
  if meson.is_cross_build() or not get_option('scanner')
@@ -17,8 +17,8 @@
  endif
 --- a/meson_options.txt
 +++ b/meson_options.txt
-@@ -6,6 +6,10 @@ option('scanner',
-   description: 'Compile wayland-scanner binary',
+@@ -10,6 +10,10 @@ option('tests',
+   description: 'Compile Wayland tests',
    type: 'boolean',
    value: 'true')
 +option('scanner_bin',
