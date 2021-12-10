@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland
-PKG_VERSION:=1.19.92
+PKG_VERSION:=1.20.0
 PKG_RELEASE:=$(AUTORELEASE)
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases
-PKG_HASH:=f8cbd8a8c713ed393e63e7c6ac81c6b9ef5a49a2b631717377fa78b80ac34cfa
+PKG_HASH:=b8a034154c7059772e0fdbd27dbfcda6c732df29cae56a82274f6ec5d7cd8725
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
