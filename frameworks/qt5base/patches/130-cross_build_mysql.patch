@@ -1,0 +1,20 @@
+Description: call pkgconfig in order to be able to cross build qtbase with MySql.
+ Qt's build system calls mysql_config... which won't work in a cross build
+ environment like Debian's, as it will throw an exec format error.
+ .
+ In order to solve this call pkgconfig and use mysqlclient.pc.
+Author: Helmut Grohne <helmut@subdivi.de>
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=971604
+Forwarded: not-needed
+Reviewed-by: Lisandro Damián Nicanor Pérez Meyer <lisandro@debian.org>
+
+--- qtbase-opensource-src-5.14.2+dfsg.orig/src/plugins/sqldrivers/configure.json
++++ qtbase-opensource-src-5.14.2+dfsg/src/plugins/sqldrivers/configure.json
+@@ -67,6 +67,7 @@
+             },
+             "headers": "mysql.h",
+             "sources": [
++                { "type": "pkgConfig", "args": "mysqlclient" },
+                 { "type": "mysqlConfig", "query": "--libs_r", "cleanlibs": true },
+                 { "type": "mysqlConfig", "query": "--libs", "cleanlibs": true },
+                 { "type": "mysqlConfig", "query": "--libs_r", "cleanlibs": false },

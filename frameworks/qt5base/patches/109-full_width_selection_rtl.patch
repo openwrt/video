@@ -1,0 +1,33 @@
+Description: fix QTextFormat::FullWidthSelection for right-to-left text layouts
+ Using the QTextFormat::FullWidthSelection property to select a line
+ would previously not take into account right-to-left text layouts.
+ .
+ With this patch, the whole line should now be drawn correctly for both
+ left-to-right, and right-to-left layouts.
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=a7894855f2f59028
+Last-Update: 2021-08-15
+
+--- a/src/gui/text/qtextlayout.cpp
++++ b/src/gui/text/qtextlayout.cpp
+@@ -1169,10 +1169,17 @@ void QTextLayout::draw(QPainter *p, cons
+                 QRectF fullLineRect(tl.rect());
+                 fullLineRect.translate(position);
+                 fullLineRect.setRight(QFIXED_MAX);
+-                if (!selectionEndInLine)
+-                    region.addRect(clipIfValid(QRectF(lineRect.topRight(), fullLineRect.bottomRight()), clip));
+-                if (!selectionStartInLine)
+-                    region.addRect(clipIfValid(QRectF(fullLineRect.topLeft(), lineRect.bottomLeft()), clip));
++
++                const bool rightToLeft = d->isRightToLeft();
++
++                if (!selectionEndInLine) {
++                    region.addRect(clipIfValid(rightToLeft ? QRectF(fullLineRect.topLeft(), lineRect.bottomLeft())
++                                                           : QRectF(lineRect.topRight(), fullLineRect.bottomRight()), clip));
++                }
++                if (!selectionStartInLine) {
++                    region.addRect(clipIfValid(rightToLeft ? QRectF(lineRect.topRight(), fullLineRect.bottomRight())
++                                                           : QRectF(fullLineRect.topLeft(), lineRect.bottomLeft()), clip));
++                }
+             } else if (!selectionEndInLine
+                 && isLastLineInBlock
+                 &&!(d->option.flags() & QTextOption::ShowLineAndParagraphSeparators)) {
