@@ -74,7 +74,7 @@ define Package/libxatracker
   SUBMENU:=Video
   TITLE:=Mesa3D libxatracker
   URL:=https://www.mesa3d.org
-  DEPENDS:=+libstdcpp +zlib +libdrm +libexpat @(aarch64||arm||i386||i686||x86_64)
+  DEPENDS:=+libstdcpp +zlib +libdrm +libexpat +libzstd @(aarch64||arm||i386||i686||x86_64)
 endef
 
 define Package/libxatracker/description
@@ -108,7 +108,7 @@ define Package/libosmesa
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Video
-  DEPENDS:=+libglapi +libstdcpp +zlib +libwayland +wayland-protocols
+  DEPENDS:=+libglapi +libstdcpp +zlib +libwayland +libzstd +wayland-protocols
   TITLE:=off-screen Mesa library
   URL:=https://www.mesa3d.org
 endef
@@ -159,7 +159,7 @@ define Package/libmesadri-$(subst _,-,$(firstword $(subst :, ,$(1))))
   SUBMENU:=Video
   TITLE:=Mesa3D DRI $(firstword $(subst :, ,$(1))) plugin
   URL:=https://www.mesa3d.org
-  DEPENDS:=libmesa $(wordlist 2,$(words $(subst :, ,$(1))),$(subst :, ,$(1)))
+  DEPENDS:=libmesa +libsensors +libzstd $(wordlist 2,$(words $(subst :, ,$(1))),$(subst :, ,$(1)))
 endef
 endef
 
