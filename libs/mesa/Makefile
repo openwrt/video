@@ -12,7 +12,7 @@ PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
 
 PKG_INSTALL:=1
-PKG_BUILD_DEPENDS:=python3/host
+PKG_BUILD_DEPENDS:=Mako/host
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_LIBDRM_INTEL \
@@ -21,12 +21,8 @@ PKG_CONFIG_DEPENDS:= \
 
 TARGET_CPPFLAGS+=-Wno-format -Wno-format-security
 
-PYTHON3_PKG_BUILD:=0
-HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
-
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/meson.mk
-include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 DRI_PLUGINS := \
 	armada-drm:@(aarch64||arm) \
@@ -255,11 +251,6 @@ MESON_ARGS += \
 	-Dscanner_bin="$(STAGING_DIR_HOSTPKG)/bin/wayland-scanner"
 
 TARGET_CFLAGS += -I$(MESON_BUILD_DIR)/src/broadcom/
-
-define Build/Configure
-	$(call Py3Build/InstallBuildDepends)
-	$(call Build/Configure/Meson)
-endef
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/include
