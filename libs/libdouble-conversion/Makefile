@@ -23,7 +23,7 @@ PKG_LICENSE:=BSD-3c
 PKG_LICENSE_FILES:=COPYING LICENSE
 
 CMAKE_INSTALL:=1
-PKG_BUILD_FLAGS:=gc-sections
+PKG_BUILD_FLAGS:=gc-sections lto
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
@@ -49,7 +49,7 @@ CMAKE_OPTIONS += \
 	-DBUILD_SHARED_LIBS=ON \
 	-DBUILD_TESTING=OFF
 
-TARGET_CXXFLAGS += -fno-rtti -flto
+TARGET_CXXFLAGS += -fno-rtti
 
 define Package/libdouble-conversion/install
 	$(INSTALL_DIR) $(1)/usr/lib
