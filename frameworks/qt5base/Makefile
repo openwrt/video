@@ -25,7 +25,7 @@ HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
 PKG_BUILD_PARALLEL:=1
 HOST_BUILD_PARALLEL:=1
 PKG_INSTALL:=1
-PKG_USE_MIPS16:=0
+PKG_BUILD_FLAGS:=no-mips16
 # Yes, the host build depends on the target build. This is not a mistake!
 # The target build provides the (target specific) qmake.mk file which
 # is also used for host builds.
