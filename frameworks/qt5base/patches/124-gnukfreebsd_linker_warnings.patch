@@ -1,0 +1,40 @@
+Description: catch linker warnings in some config tests
+ Without this, qmake wrongly thinks that the tests succeed, for example:
+ .
+ ./config.tests/unix/futimens/futimens.cpp:44: warning: futimens is not implemented and will always fail
+ test config.corelib.tests.futimens succeeded
+Author: Dmitry Shachnev <mitya57@debian.org>
+Forwarded: https://codereview.qt-project.org/163214 (rejected)
+Bug: https://bugs.debian.org/827935
+Last-Update: 2019-03-02
+
+---
+ src/corelib/configure.json |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/src/corelib/configure.json
++++ b/src/corelib/configure.json
+@@ -331,6 +331,7 @@
+             "label": "O_CLOEXEC",
+             "type": "compile",
+             "test": {
++                "qmake": "QMAKE_LFLAGS += -Wl,--fatal-warnings",
+                 "head": "#define _GNU_SOURCE 1",
+                 "include": [ "sys/types.h", "sys/socket.h", "fcntl.h", "unistd.h" ],
+                 "main": [
+@@ -386,6 +387,7 @@
+                 "include": "sys/stat.h",
+                 "main": "futimens(-1, 0);",
+                 "qmake": [
++                    "QMAKE_LFLAGS += -Wl,--fatal-warnings",
+                     "# Block futimens() on Apple platforms unless it's available on ALL",
+                     "# deployment targets. This simplifies the logic at the call site",
+                     "# dramatically, as it isn't strictly needed compared to futimes().",
+@@ -414,6 +416,7 @@
+             "label": "getentropy()",
+             "type": "compile",
+             "test": {
++                "qmake": "QMAKE_LFLAGS += -Wl,--fatal-warnings",
+                 "include": "unistd.h",
+                 "main": [
+                     "char buf[32];",

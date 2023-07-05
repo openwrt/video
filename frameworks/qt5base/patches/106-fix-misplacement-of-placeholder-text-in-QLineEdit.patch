@@ -1,0 +1,53 @@
+Description: fix misplacement of placeholder text in QLineEdit with RTL content
+ The placeholder text was rendered in the wrong position after clicking
+ on the clear button in a QLineEdit with right-to-left content. The
+ button was still taking up space while it was fading out, so the first
+ paintEvent rendered the placeholder with space reserved for the clear
+ button. Once the button gets hidden, no new update was issued, so
+ garbage was left behind.
+ .
+ Fix this by not giving a fading-out clear button any margin space. The
+ result of this is that the placeholder text is visible underneath the
+ fading-out clear button. This is preferable to the placeholder text
+ being first rendered next to the fading-out clear button, and then
+ popping to the edge when the clear button is hidden (which would have
+ been the result of issuing a complete update for the line edit at the
+ end of the fade-out animation).
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=dc794f7622bc00f7
+Last-Update: 2021-06-16
+
+--- a/src/widgets/widgets/qlineedit_p.cpp
++++ b/src/widgets/widgets/qlineedit_p.cpp
+@@ -664,10 +664,18 @@ static int effectiveTextMargin(int defau
+     if (widgets.empty())
+         return defaultMargin;
+ 
+-    return defaultMargin + (parameters.margin + parameters.widgetWidth) *
+-           int(std::count_if(widgets.begin(), widgets.end(),
++    const auto visibleSideWidgetCount = std::count_if(widgets.begin(), widgets.end(),
+                              [](const QLineEditPrivate::SideWidgetEntry &e) {
+-                                 return e.widget->isVisibleTo(e.widget->parentWidget()); }));
++#if QT_CONFIG(animation)
++        // a button that's fading out doesn't get any space
++        if (auto* iconButton = qobject_cast<QLineEditIconButton*>(e.widget))
++            return iconButton->needsSpace();
++
++#endif
++        return e.widget->isVisibleTo(e.widget->parentWidget());
++    });
++
++    return defaultMargin + (parameters.margin + parameters.widgetWidth) * visibleSideWidgetCount;
+ }
+ 
+ QMargins QLineEditPrivate::effectiveTextMargins() const
+--- a/src/widgets/widgets/qlineedit_p.h
++++ b/src/widgets/widgets/qlineedit_p.h
+@@ -95,6 +95,8 @@ public:
+ 
+     bool shouldHideWithText() const;
+     void setHideWithText(bool hide);
++    // m_wasHidden is true unless the button is fading out
++    bool needsSpace() const { return m_wasHidden; }
+ #endif
+ 
+ protected:
