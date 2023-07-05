@@ -376,6 +376,7 @@ define Build/Configure
 			--directfb=no \
 			--eglfs=no \
 			--gbm=no \
+			--kms=no \
 			--linuxfb=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),yes,no) \
 			--xcb=no \
 			--libudev=$(if $(CONFIG_PACKAGE_qt5base-input-autodiscovery),yes,no) \
