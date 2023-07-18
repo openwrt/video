@@ -85,7 +85,7 @@ jobs:
 
           # fallback to test packages if nothing explicitly changes this is
           # should run if other mechanics in packages.git changed
-          PACKAGES="${PACKAGES:-vim attendedsysupgrade-common bmon}"
+          PACKAGES="${PACKAGES:-mesa weston}"
 
           echo "Building $PACKAGES"
           echo "PACKAGES=$PACKAGES" >> $GITHUB_ENV
