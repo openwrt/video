@@ -3,4 +3,26 @@ config BUILD_qt5base-core_INOTIFY
     depends on PACKAGE_qt5base-core
     default y
     help
-        Compiles qt5's QFileSystemWatcher with support for inotify on Linux. Otherwise QFileSystemWatcher uses polling as fallback."
+        "Compiles qt5's QFileSystemWatcher with support for inotify on Linux. Otherwise QFileSystemWatcher uses polling as fallback."
+
+config BUILD_qt5base-network_SSL
+    bool "Include native SSL support"
+    depends on PACKAGE_qt5base-network
+    default y
+
+config BUILD_qt5base-gui_DRM
+    bool "Include DRM support"
+    depends on PACKAGE_qt5base-gui
+    default y
+
+choice
+    prompt "Which OpenGL variant to use"
+    default BUILD_qt5base-gui_OPENGL_NONE
+
+config BUILD_qt5base-gui_OPENGL_OPENGLES2
+    bool "es2"
+
+config BUILD_qt5base-gui_OPENGL_NONE
+    bool "no"
+
+endchoice
