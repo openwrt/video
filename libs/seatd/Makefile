@@ -1,13 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=seatd
-PKG_VERSION:=0.6.3
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=0.9.1
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://git.sr.ht/~kennylevinsen/seatd
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
-PKG_MIRROR_HASH:=f3bcdf68b67ec48e637851031a839bff1835ca8462a03fa4f7556f431217af37
+PKG_MIRROR_HASH:=bf572e248ba9f4bd7808b3fdfad04719f72bf2d1702d4c3bb503a0688f341936
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -75,4 +75,3 @@ endef
 
 $(eval $(call BuildPackage,libseat))
 $(eval $(call BuildPackage,seatd))
-$(eval $(call HostBuild))
