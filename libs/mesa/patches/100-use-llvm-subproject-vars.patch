@@ -1,0 +1,74 @@
+--- a/meson.build
++++ b/meson.build
+@@ -1856,7 +1856,11 @@ endif
+ 
+ dep_clang = null_dep
+ if with_clc or with_gallium_clover
+-  llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++  if dep_llvm.type_name() == 'internal'
++    llvm_libdir = subproject('llvm').get_variable('libdir')
++  else
++    llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++  endif
+ 
+   dep_clang = cpp.find_library('clang-cpp', dirs : llvm_libdir, required : false)
+ 
+--- a/src/compiler/clc/meson.build
++++ b/src/compiler/clc/meson.build
+@@ -24,14 +24,14 @@ if not _shared_llvm
+ 
+   opencl_c_base_h = custom_target(
+     'opencl-c-base.h',
+-    input : [files_xxd, join_paths(clang_resource_dir, 'opencl-c-base.h')],
++    input : [files_xxd, 'opencl-c-base.h'],
+     output : 'opencl-c-base.h.h',
+     command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_base_source'],
+   )
+ 
+   opencl_c_h = custom_target(
+     'opencl-c.h',
+-    input : [files_xxd, join_paths(clang_resource_dir, 'opencl-c.h')],
++    input : [files_xxd, 'opencl-c.h'],
+     output : 'opencl-c.h.h',
+     command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_source'],
+   )
+--- a/src/gallium/frontends/clover/meson.build
++++ b/src/gallium/frontends/clover/meson.build
+@@ -31,6 +31,12 @@ if with_clover_spirv
+   clover_spirv_cpp_args += '-DHAVE_CLOVER_SPIRV'
+ endif
+ 
++if dep_llvm.type_name() == 'internal'
++  llvm_libdir = subproject('llvm').get_variable('libdir')
++else
++  llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++endif
++
+ libclllvm = static_library(
+   'clllvm',
+   files(
+@@ -50,7 +56,7 @@ libclllvm = static_library(
+     clover_opencl_cpp_args,
+     clover_spirv_cpp_args,
+     '-DCLANG_RESOURCE_DIR="@0@"'.format(join_paths(
+-      dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir'), 'clang',
++      llvm_libdir, 'clang',
+       dep_llvm.version(), 'include',
+     )),
+   ],
+--- a/src/gallium/targets/opencl/meson.build
++++ b/src/gallium/targets/opencl/meson.build
+@@ -12,7 +12,12 @@ if with_ld_version_script
+   opencl_link_deps += files('opencl.sym')
+ endif
+ 
+-llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++if dep_llvm.type_name() == 'internal'
++  llvm_libdir = subproject('llvm').get_variable('libdir')
++else
++  llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++endif
++
+ opencl_libname = with_opencl_icd ? 'MesaOpenCL' : 'OpenCL'
+ 
+ polly_dep = null_dep
