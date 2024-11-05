@@ -8,6 +8,6 @@ PROG=/usr/bin/seatd
 
 start_service() {
 	procd_open_instance
-	procd_set_param command "$PROG"
+	procd_set_param command "$PROG" -g video
 	procd_close_instance
 }
