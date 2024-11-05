@@ -1,0 +1,19 @@
+project('llvm', ['cpp'])
+
+cpp = meson.get_compiler('cpp')
+
+_deps = []
+_search = join_paths(meson.current_source_dir(), 'lib')
+foreach d : [@LLVM_LIBS@]
+ _deps += cpp.find_library(d, dirs : _search)
+endforeach
+
+dep_llvm = declare_dependency(
+ include_directories : include_directories('include'),
+ dependencies : _deps,
+ version : '@LLVM_VERSION@',
+)
+
+libdir = join_paths(meson.current_source_dir(), 'lib')
+has_rtti = true
+irbuilder_h = files('include/llvm/IR/IRBuilder.h')
