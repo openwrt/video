@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pango
-PKG_VERSION:=1.48.9
+PKG_VERSION:=1.54.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=@GNOME/$(PKG_NAME)/1.48
-PKG_HASH:=a913657d3fe5aa04c03958a3b5d3fc859e891b75cd81b873a819330f6c0872aa
+PKG_SOURCE_URL:=@GNOME/$(PKG_NAME)/$(basename $(PKG_VERSION))
+PKG_HASH:=8a9eed75021ee734d7fc0fdf3a65c3bba51dfefe4ae51a9b414a60c70b2d1ed8
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.0-or-later
@@ -15,6 +15,8 @@ PKG_CPE_ID:=cpe:/a:gnome:pango
 
 PKG_BUILD_DEPENDS:=glib2/host
 PKG_INSTALL:=1
+
+PKG_FORTIFY_SOURCE:=0
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
