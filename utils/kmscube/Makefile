@@ -1,13 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=kmscube
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2021-02-07
-PKG_SOURCE_VERSION:=9f63f359fab1b5d8e862508e4e51c9dfe339ccb0
+PKG_SOURCE_DATE:=2024-09-26
+PKG_SOURCE_VERSION:=b2f97f53e01e07a920761e5d3e3ba22898b794a4
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/mesa/kmscube
-PKG_MIRROR_HASH:=9b95a45789d81db6661be38d2c24181d7d90082edc5689225a6073d587f1235f
+PKG_MIRROR_HASH:=1958982dd4984eeb452d54b712ffa4d53bb840db22f767a4924b08e22791bea9
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -18,8 +18,8 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/meson.mk
 
 define Package/kmscube
-  SECTION:=libs
-  CATEGORY:=Libraries
+  SECTION:=utils
+  CATEGORY:=Utilities
   SUBMENU:=Video
   DEPENDS:=+glib2 +libmesa +libpng +gstreamer1-plugins-base +libgstreamer1 +libgst1allocators +libgst1video +libgst1app
   TITLE:=kmscube KMS/DRM/EGL example
