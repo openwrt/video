@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libxkbcommon
-PKG_VERSION:=1.3.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.7.0
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://xkbcommon.org/download/
-PKG_HASH:=7b09e098ea69bc3054f0c57a9a25fda571c4df22398811606e32b5fffeb75e7b
+PKG_HASH:=65782f0a10a4b455af9c6baab7040e2f537520caa2ec2092805cdfd36863b247
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -21,8 +21,7 @@ include $(INCLUDE_DIR)/meson.mk
 MESON_ARGS += \
 	-Denable-x11=false \
 	-Denable-docs=false \
-	-Denable-wayland=true \
-	-Dscanner_bin="$(STAGING_DIR_HOSTPKG)/bin/wayland-scanner"
+	-Denable-wayland=true
 
 define Package/libxkbcommon
   SECTION:=libs
