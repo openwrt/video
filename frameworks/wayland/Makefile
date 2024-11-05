@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland
-PKG_VERSION:=1.20.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.23.0
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases
-PKG_HASH:=b8a034154c7059772e0fdbd27dbfcda6c732df29cae56a82274f6ec5d7cd8725
+PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/wayland/-/releases/$(PKG_VERSION)/downloads/
+PKG_HASH:=05b3e1574d3e67626b5974f862f36b5b427c7ceeb965cb36a4e6c2d342e45ab2
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -27,6 +27,7 @@ define Package/libwayland
   TITLE:=wayland
   URL:=https://wayland.freedesktop.org/
   DEPENDS:=+libexpat +libffi
+  USERID:=:video=40
 endef
 
 define Package/libwayland/description
@@ -47,6 +48,7 @@ endef
 MESON_HOST_ARGS += \
 	-Dscanner=true \
 	-Dlibraries=false \
+	-Dtests=false \
 	-Ddocumentation=false \
 	-Ddtd_validation=true
 
@@ -66,11 +68,16 @@ define Build/InstallDev
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib/
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/pkgconfig/*.pc $(1)/usr/lib/pkgconfig
+	$(SED) 's/^wayland_scanner=$$$${bindir}\/\(.*\)/wayland_scanner=$$$${prefix_hostpkg}\/bin\/\1/' $(1)/usr/lib/pkgconfig/wayland-scanner.pc
 endef
 
 define Package/libwayland/install
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so.* $(1)/usr/lib/
+	$(INSTALL_DIR) $(1)/etc/profile.d
+	$(INSTALL_DATA) ./files/xdg-runtime-dir.profile $(1)/etc/profile.d/xdr-runtime-dir.sh
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/drm
+	$(INSTALL_BIN) ./files/video.hotplug $(1)/etc/hotplug.d/drm/wayland
 endef
 
 define Package/wayland-scanner/install
