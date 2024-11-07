@@ -1,0 +1,12 @@
+From https://gitlab.alpinelinux.org/alpine/aports/-/merge_requests/35711#note_243863
+_GNU_SOURCE is needed for cpu_set_t, and affinity disable is needed to work around lack of pthread_attr_setaffinity_np
+--- a/libraries/lzma/CMakeLists.txt
++++ b/libraries/lzma/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ make_release_only()
+ 
+-set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DZ7_PPMD_SUPPORT" )
++set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE -DZ7_PPMD_SUPPORT -DZ7_AFFINITY_DISABLE" )
+ 
+ find_package(Threads)
+ 
