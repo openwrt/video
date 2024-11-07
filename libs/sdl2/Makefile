@@ -134,8 +134,9 @@ endif
 endef
 
 define Package/libsdl2-tests
-  SECTION:=libs
-  CATEGORY:=Libraries
+  SECTION:=utils
+  CATEGORY:=Utilities
+  SUBMENU:=Video
   TITLE:=SDL installed tests
   URL:=https://www.libsdl.org
   DEPENDS:=+libsdl2
