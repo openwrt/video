@@ -1,0 +1,51 @@
+Description: adjust QMimeDatabase implementation
+ When multiple globs match, and the result from magic sniffing is
+ unrelated to any of those globs, globs have priority and one of them
+ should be picked up.
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=0cbbba2aa5b47224
+Last-Update: 2021-06-12
+
+--- a/src/corelib/mimetypes/qmimedatabase.cpp
++++ b/src/corelib/mimetypes/qmimedatabase.cpp
+@@ -389,20 +389,23 @@ QMimeType QMimeDatabasePrivate::mimeType
+         // Disambiguate conflicting extensions (if magic matching found something)
+         if (candidateByData.isValid() && magicAccuracy > 0) {
+             const QString sniffedMime = candidateByData.name();
+-            // If the sniffedMime matches a glob match, use it
++            // If the sniffedMime matches a highest-weight glob match, use it
+             if (candidatesByName.m_matchingMimeTypes.contains(sniffedMime)) {
+                 *accuracyPtr = 100;
+                 return candidateByData;
+             }
+-            for (const QString &m : qAsConst(candidatesByName.m_matchingMimeTypes)) {
++            for (const QString &m : qAsConst(candidatesByName.m_allMatchingMimeTypes)) {
+                 if (inherits(m, sniffedMime)) {
+                     // We have magic + pattern pointing to this, so it's a pretty good match
+                     *accuracyPtr = 100;
+                     return mimeTypeForName(m);
+                 }
+             }
+-            *accuracyPtr = magicAccuracy;
+-            return candidateByData;
++            if (candidatesByName.m_allMatchingMimeTypes.isEmpty()) {
++                // No glob, use magic
++                *accuracyPtr = magicAccuracy;
++                return candidateByData;
++            }
+         }
+     }
+ 
+--- a/src/corelib/mimetypes/qmimeglobpattern.cpp
++++ b/src/corelib/mimetypes/qmimeglobpattern.cpp
+@@ -83,7 +83,10 @@ void QMimeGlobMatchResult::addMatch(cons
+     }
+     if (!m_matchingMimeTypes.contains(mimeType)) {
+         m_matchingMimeTypes.append(mimeType);
+-        m_allMatchingMimeTypes.append(mimeType);
++        if (replace)
++            m_allMatchingMimeTypes.prepend(mimeType); // highest-weight first
++        else
++            m_allMatchingMimeTypes.append(mimeType);
+         m_knownSuffixLength = knownSuffixLength;
+     }
+ }

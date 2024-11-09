@@ -1,0 +1,113 @@
+From c47bb4478a4c3a29c0505d7d89755f40601b326f Mon Sep 17 00:00:00 2001
+From: Zhang Yu <zhangyub@uniontech.com>
+Date: Mon, 22 Feb 2021 09:25:01 +0800
+Subject: [PATCH] Fix invalid pointer return with QGridLayout::itemAt(-1)
+
+QGridLayout::takeAt() and QLayoutItem *itemAt() only check the upper bound.
+If the index < 0, these function will return invalid pointer.
+
+Fixes: QTBUG-91261
+Pick-to: 5.15 6.0 6.1
+Change-Id: Idfb9fb6228b9707f817353b04974da16205a835c
+Reviewed-by: Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+---
+
+diff --git a/src/widgets/kernel/qgridlayout.cpp b/src/widgets/kernel/qgridlayout.cpp
+index 121bae0..336a68c 100644
+--- a/src/widgets/kernel/qgridlayout.cpp
++++ b/src/widgets/kernel/qgridlayout.cpp
+@@ -149,14 +149,14 @@
+     QRect cellRect(int row, int col) const;
+ 
+     inline QLayoutItem *itemAt(int index) const {
+-        if (index < things.count())
++        if (index >= 0 && index < things.count())
+             return things.at(index)->item();
+         else
+             return nullptr;
+     }
+     inline QLayoutItem *takeAt(int index) {
+         Q_Q(QGridLayout);
+-        if (index < things.count()) {
++        if (index >= 0 && index < things.count()) {
+             if (QGridBox *b = things.takeAt(index)) {
+                 QLayoutItem *item = b->takeItem();
+                 if (QLayout *l = item->layout()) {
+@@ -184,7 +184,7 @@
+     }
+ 
+     void getItemPosition(int index, int *row, int *column, int *rowSpan, int *columnSpan) const {
+-        if (index < things.count()) {
++        if (index >= 0 && index < things.count()) {
+             const QGridBox *b =  things.at(index);
+             int toRow = b->toRow(rr);
+             int toCol = b->toCol(cc);
+diff --git a/tests/auto/widgets/kernel/qgridlayout/tst_qgridlayout.cpp b/tests/auto/widgets/kernel/qgridlayout/tst_qgridlayout.cpp
+index e3bd1d1..2cf2462 100644
+--- a/tests/auto/widgets/kernel/qgridlayout/tst_qgridlayout.cpp
++++ b/tests/auto/widgets/kernel/qgridlayout/tst_qgridlayout.cpp
+@@ -75,6 +75,7 @@
+     void taskQTBUG_40609_addingWidgetToItsOwnLayout();
+     void taskQTBUG_40609_addingLayoutToItself();
+     void taskQTBUG_52357_spacingWhenItemIsHidden();
++    void taskQTBUG_91261_itemIndexRange();
+     void replaceWidget();
+     void dontCrashWhenExtendsToEnd();
+ };
+@@ -1666,6 +1667,56 @@
+     QTRY_COMPARE_WITH_TIMEOUT(tempWidth, button1.width() + button3.width() + layout.spacing(), 1000);
+ }
+ 
++void tst_QGridLayout::taskQTBUG_91261_itemIndexRange()
++{
++    QWidget widget;
++    QGridLayout lay(&widget);
++    QPushButton *btn = new QPushButton(&widget);
++    lay.addWidget(btn, 0, 0);
++
++    {
++        auto ptr = lay.itemAt(-1);
++        QCOMPARE(ptr, nullptr);
++
++        ptr = lay.itemAt(0);
++        QCOMPARE(ptr->widget(), btn);
++
++        ptr = lay.itemAt(1);
++        QCOMPARE(ptr, nullptr);
++    }
++
++    {
++        int row = -1;
++        int column = -1;
++        int rowSpan;
++        int columnSpan;
++
++        lay.getItemPosition(-1, &row, &column, &rowSpan, &columnSpan);
++        QCOMPARE(row, -1);
++        QCOMPARE(column, -1);
++
++        lay.getItemPosition(1, &row, &column, &rowSpan, &columnSpan);
++        QCOMPARE(row, -1);
++        QCOMPARE(column, -1);
++
++        lay.getItemPosition(0, &row, &column, &rowSpan, &columnSpan);
++        QCOMPARE(row, 0);
++        QCOMPARE(column, 0);
++    }
++
++    {
++        auto ptr = lay.takeAt(-1);
++        QCOMPARE(ptr, nullptr);
++
++        ptr = lay.takeAt(1);
++        QCOMPARE(ptr, nullptr);
++
++        ptr = lay.takeAt(0);
++        QCOMPARE(ptr->widget(), btn);
++        delete ptr;
++    }
++}
++
+ void tst_QGridLayout::replaceWidget()
+ {
+     QWidget wdg;

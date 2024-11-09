@@ -1,0 +1,168 @@
+Author: Pino Toscano <toscano.pino@tiscali.it>
+Description: Initial GNU/kFreeBSD support
+ - add a gnukfreebsd-g++ qmake mkspec, mostly copied from the hurd-g++ one
+ - properly use LD_LIBRARY_PATH on GNU/* systems
+Last-Update: 2015-06-03
+Forwarded: no
+
+---
+ mkspecs/features/qt_functions.prf       |    2 
+ mkspecs/gnukfreebsd-g++/qmake.conf      |   54 ++++++++++++++++++++
+ mkspecs/gnukfreebsd-g++/qplatformdefs.h |   84 ++++++++++++++++++++++++++++++++
+ 3 files changed, 140 insertions(+)
+
+--- /dev/null
++++ b/mkspecs/gnukfreebsd-g++/qmake.conf
+@@ -0,0 +1,54 @@
++#
++# qmake configuration for gnukfreebsd-g++
++#
++
++MAKEFILE_GENERATOR      = UNIX
++QMAKE_PLATFORM         += gnukfreebsd
++CONFIG                 += incremental
++QMAKE_INCREMENTAL_STYLE = sublib
++
++QMAKE_CFLAGS_THREAD    += -D_REENTRANT
++QMAKE_CXXFLAGS_THREAD  += $$QMAKE_CFLAGS_THREAD
++QMAKE_LFLAGS_GCSECTIONS = -Wl,--gc-sections
++
++QMAKE_INCDIR            =
++QMAKE_LIBDIR            =
++QMAKE_INCDIR_X11        =
++QMAKE_LIBDIR_X11        =
++QMAKE_INCDIR_OPENGL     =
++QMAKE_LIBDIR_OPENGL     =
++QMAKE_INCDIR_OPENGL_ES2 = $$QMAKE_INCDIR_OPENGL
++QMAKE_LIBDIR_OPENGL_ES2 = $$QMAKE_LIBDIR_OPENGL
++QMAKE_INCDIR_EGL        =
++QMAKE_LIBDIR_EGL        =
++QMAKE_INCDIR_OPENVG     =
++QMAKE_LIBDIR_OPENVG     =
++
++QMAKE_LIBS              =
++QMAKE_LIBS_DYNLOAD      = -ldl
++QMAKE_LIBS_X11          = -lXext -lX11 -lm
++QMAKE_LIBS_NIS          = -lnsl
++QMAKE_LIBS_EGL          = -lEGL
++QMAKE_LIBS_OPENGL       = -lGL
++QMAKE_LIBS_OPENGL_ES2   = -lGLESv2
++QMAKE_LIBS_OPENVG       = -lOpenVG
++QMAKE_LIBS_THREAD       = -lpthread
++
++QMAKE_CFLAGS_XCB        =
++QMAKE_LIBS_XCB          =
++QMAKE_DEFINES_XCB       =
++
++QMAKE_AR                = ar cqs
++QMAKE_OBJCOPY           = objcopy
++QMAKE_NM                = nm -P
++QMAKE_RANLIB            =
++
++QMAKE_STRIP             = strip
++QMAKE_STRIPFLAGS_LIB   += --strip-unneeded
++QMAKE_INSTALL_FILE      = install -m 644 -p
++QMAKE_INSTALL_PROGRAM   = install -m 755 -p
++
++include(../common/unix.conf)
++include(../common/gcc-base-unix.conf)
++include(../common/g++-unix.conf)
++load(qt_config)
+--- /dev/null
++++ b/mkspecs/gnukfreebsd-g++/qplatformdefs.h
+@@ -0,0 +1,84 @@
++/****************************************************************************
++**
++** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
++** Contact: http://www.qt-project.org/legal
++**
++** This file is part of the qmake spec of the Qt Toolkit.
++**
++** $QT_BEGIN_LICENSE:LGPL21$
++** Commercial License Usage
++** Licensees holding valid commercial Qt licenses may use this file in
++** accordance with the commercial license agreement provided with the
++** Software or, alternatively, in accordance with the terms contained in
++** a written agreement between you and Digia. For licensing terms and
++** conditions see http://qt.digia.com/licensing. For further information
++** use the contact form at http://qt.digia.com/contact-us.
++**
++** GNU Lesser General Public License Usage
++** Alternatively, this file may be used under the terms of the GNU Lesser
++** General Public License version 2.1 or version 3 as published by the Free
++** Software Foundation and appearing in the file LICENSE.LGPLv21 and
++** LICENSE.LGPLv3 included in the packaging of this file. Please review the
++** following information to ensure the GNU Lesser General Public License
++** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
++** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
++**
++** In addition, as a special exception, Digia gives you certain additional
++** rights. These rights are described in the Digia Qt LGPL Exception
++** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
++**
++** $QT_END_LICENSE$
++**
++****************************************************************************/
++
++#ifndef QPLATFORMDEFS_H
++#define QPLATFORMDEFS_H
++
++// Get Qt defines/settings
++
++#include "qglobal.h"
++
++// Set any POSIX/XOPEN defines at the top of this file to turn on specific APIs
++
++// 1) need to reset default environment if _BSD_SOURCE is defined
++// 2) need to specify POSIX thread interfaces explicitly in glibc 2.0
++// 3) it seems older glibc need this to include the X/Open stuff
++#ifndef _GNU_SOURCE
++#  define _GNU_SOURCE
++#endif
++
++#include <unistd.h>
++
++
++// We are hot - unistd.h should have turned on the specific APIs we requested
++
++
++#include <pthread.h>
++#include <dirent.h>
++#include <fcntl.h>
++#include <grp.h>
++#include <pwd.h>
++#include <signal.h>
++#include <dlfcn.h>
++
++#include <sys/types.h>
++#include <sys/ioctl.h>
++#include <sys/ipc.h>
++#include <sys/time.h>
++#include <sys/shm.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/wait.h>
++#include <netinet/in.h>
++#ifndef QT_NO_IPV6IFNAME
++#include <net/if.h>
++#endif
++
++#include "../common/posix/qplatformdefs.h"
++
++#if defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE >= 500)
++#define QT_SNPRINTF             ::snprintf
++#define QT_VSNPRINTF            ::vsnprintf
++#endif
++
++#endif // QPLATFORMDEFS_H
+--- a/mkspecs/features/qt_functions.prf
++++ b/mkspecs/features/qt_functions.prf
+@@ -215,6 +215,8 @@ defineTest(qtAddTargetEnv) {
+             deppath.name = PATH
+         } else:contains(QMAKE_HOST.os, Linux|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS|HP-UX|QNX|GNU) {
+             deppath.name = LD_LIBRARY_PATH
++        } else:contains(QMAKE_HOST.os, ^GNU/.*) {
++            deppath.name = LD_LIBRARY_PATH
+         } else:contains(QMAKE_HOST.os, Haiku) {
+             deppath.name = LIBRARY_PATH
+         } else:equals(QMAKE_HOST.os, Darwin) {
