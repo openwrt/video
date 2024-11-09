@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=fribidi
-PKG_VERSION:=1.0.10
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.0.16
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://github.com/fribidi/fribidi/releases/download/v1.0.10/
-PKG_HASH:=7f1c687c7831499bcacae5e8675945a39bacbad16ecaa945e9454a32df653c01
+PKG_SOURCE_URL:=https://github.com/$(PKG_NAME)/$(PKG_NAME)/releases/download/v$(PKG_VERSION)
+PKG_HASH:=1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1

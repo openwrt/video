@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=21.3.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=24.2.6
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=a2753c09deef0ba14d35ae8a2ceff3fe5cd13698928c7bb62c2ec8736eb09ce1
+PKG_HASH:=2b68c4a6f204c1999815a457299f81c41ba7bf48c4674b0b2d1d8864f41f3709
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -96,7 +96,7 @@ define Package/libmesa
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Video
-  DEPENDS:=+libglapi +libstdcpp +zlib +libdrm +libwayland +wayland-protocols
+  DEPENDS:=+libglapi +libstdcpp +zlib +libdrm +libsensors +libwayland +libzstd +wayland-protocols
   TITLE:=Mesa3D OpenGL and friends
   URL:=https://www.mesa3d.org
 endef
@@ -128,17 +128,17 @@ endef
 define Package/libvulkan-broadcom/description
 endef
 
-define Package/libvulkan-freedreno
-  SECTION:=libs
-  CATEGORY:=Libraries
-  SUBMENU:=Video
-  DEPENDS:=libmesa @(arm||aarch64)
-  TITLE:=Freedreno Vulkan driver
-  URL:=https://www.mesa3d.org
-endef
-
-define Package/libvulkan-freedreno/description
-endef
+# define Package/libvulkan-freedreno
+#   SECTION:=libs
+#   CATEGORY:=Libraries
+#   SUBMENU:=Video
+#   DEPENDS:=libmesa @(arm||aarch64)
+#   TITLE:=Freedreno Vulkan driver
+#   URL:=https://www.mesa3d.org
+# endef
+#
+# define Package/libvulkan-freedreno/description
+# endef
 
 define Package/libvulkan-intel
   SECTION:=libs
@@ -165,37 +165,35 @@ endef
 
 $(foreach file,$(DRI_PLUGINS),$(eval $(call PluginGen,$(file))))
 
-DRI_DRIVERS:=
-GALLIUM_DRIVERS:=kmsro swrast vc4 virgl
+GALLIUM_DRIVERS:=softpipe vc4 virgl
 
 # requires LLVM:
 # VULKAN_DRIVERS:=swrast
 
 ifneq ($(CONFIG_LIBDRM_INTEL),)
-  DRI_DRIVERS+=i965
   GALLIUM_DRIVERS+=i915
 endif
 
 ifneq ($(CONFIG_LIBDRM_NOUVEAU),)
-  DRI_DRIVERS+=nouveau
   GALLIUM_DRIVERS+=nouveau
 endif
 
 ifneq ($(CONFIG_LIBDRM_RADEON),)
-  DRI_DRIVERS+=r100 r200
   GALLIUM_DRIVERS+=r300
 # r600 and radeonsi require LLVM
 endif
 
 ifeq ($(ARCH),aarch64)
-  GALLIUM_DRIVERS+=freedreno etnaviv panfrost lima
+  GALLIUM_DRIVERS+=etnaviv panfrost lima
+# freedreno doesn't detect Lua correctly
 ifneq ($(CONFIG_LIBDRM_NOUVEAU),)
   GALLIUM_DRIVERS+=tegra
 endif
 endif
 
 ifeq ($(ARCH),arm)
-  GALLIUM_DRIVERS+=freedreno etnaviv panfrost lima
+  GALLIUM_DRIVERS+=etnaviv panfrost lima
+# freedreno doesn't detect Lua correctly
 ifneq ($(CONFIG_LIBDRM_NOUVEAU),)
   GALLIUM_DRIVERS+=tegra
 endif
@@ -241,18 +239,16 @@ MESON_ARGS += \
 	-Dgbm=enabled \
 	-Dgles1=enabled \
 	-Dgles2=enabled \
-	-Dglvnd=false \
+	-Dglvnd=disabled \
 	-Dopengl=true \
 	-Dandroid-stub=false \
-	-Ddri-drivers=$(subst $(space),$(comma),$(strip $(DRI_DRIVERS))) \
 	-Dgallium-drivers=$(subst $(space),$(comma),$(strip $(GALLIUM_DRIVERS))) \
 	-Dvulkan-drivers=$(subst $(space),$(comma),$(strip $(VULKAN_DRIVERS))) \
 	-Dosmesa=true \
 	-Dtools= \
 	-Dllvm=disabled \
 	-Dshared-glapi=enabled \
-	-Ddraw-use-llvm=false \
-	-Dscanner_bin="$(STAGING_DIR_HOSTPKG)/bin/wayland-scanner"
+	-Ddraw-use-llvm=false
 
 TARGET_CFLAGS += -I$(MESON_BUILD_DIR)/src/broadcom/
 
@@ -266,8 +262,6 @@ define Build/InstallDev
 	$(CP) $(PKG_INSTALL_DIR)/usr/include/* $(1)/usr/include/
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib/
-	$(INSTALL_DIR) $(1)/usr/lib/dri
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/dri/* $(1)/usr/lib/dri/
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/pkgconfig/*.pc $(1)/usr/lib/pkgconfig
 endef
@@ -286,6 +280,7 @@ define Package/libmesa/install
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*GL*.so* $(1)/usr/lib/
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libgbm.so* $(1)/usr/lib/
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libgallium*.so* $(1)/usr/lib/
 	$(INSTALL_DIR) $(1)/usr/share/drirc.d
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/drirc.d/* $(1)/usr/share/drirc.d/
 endef
@@ -316,21 +311,10 @@ define Package/libvulkan-intel/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/vulkan/icd.d/intel_icd.generic.json $(1)/usr/share/vulkan/icd.d/
 endef
 
-define PluginInstall
-define Package/libmesadri-$(subst _,-,$(firstword $(subst :, ,$(1))))/install
-	$(INSTALL_DIR) $$(1)/usr/lib/dri
-	$(INSTALL_BIN) \
-		$(PKG_INSTALL_DIR)/usr/lib/dri/$(firstword $(subst :, ,$(1)))_dri.so \
-		$$(1)/usr/lib/dri
-endef
-endef
-
-$(foreach file,$(DRI_PLUGINS),$(eval $(call PluginInstall,$(file))))
-$(foreach file,$(DRI_PLUGINS),$(eval $(call BuildPackage,libmesadri-$(subst _,-,$(firstword $(subst :, ,$(file)))))))
 $(eval $(call BuildPackage,libxatracker))
 $(eval $(call BuildPackage,libglapi))
 $(eval $(call BuildPackage,libmesa))
 $(eval $(call BuildPackage,libosmesa))
 $(eval $(call BuildPackage,libvulkan-intel))
 $(eval $(call BuildPackage,libvulkan-broadcom))
-$(eval $(call BuildPackage,libvulkan-freedreno))
+# $(eval $(call BuildPackage,libvulkan-freedreno))

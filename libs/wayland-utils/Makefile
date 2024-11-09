@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland-utils
-PKG_VERSION:=1.0.0
-PKG_RELEASE:=$(AUTORELEASE)
+PKG_VERSION:=1.2.0
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://wayland.freedesktop.org/releases/
-PKG_HASH:=64fecc4c58e87ae9b302901abe10c2e8af69c7503c221a96ecd0700e0aa268c0
+PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/wayland-utils/-/releases/$(PKG_VERSION)/downloads/
+PKG_HASH:=d9278c22554586881802540751bcc42569262bf80cd9ac9b0fd12ff4bd09a9e4
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -24,14 +24,11 @@ define Package/wayland-info
   SUBMENU:=Video
   TITLE:=wayland-utils
   URL:=https://wayland.freedesktop.org/
-  DEPENDS:=+libwayland +wayland-protocols
+  DEPENDS:=+libwayland +wayland-protocols +libdrm
 endef
 
 define Package/wayland-info/description
 endef
-
-MESON_ARGS += \
-	-Dscanner_bin="$(STAGING_DIR_HOSTPKG)/bin/wayland-scanner"
 
 define Package/wayland-info/install
 	$(INSTALL_DIR) $(1)/usr/bin
