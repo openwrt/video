@@ -1,0 +1,18 @@
+--- a/libraries/lzma/CMakeLists.txt
++++ b/libraries/lzma/CMakeLists.txt
+@@ -2,8 +2,6 @@ make_release_only()
+ 
+ set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE -DZ7_PPMD_SUPPORT -D_7ZIP_AFFINITY_DISABLE" )
+ 
+-find_package(Threads)
+-
+ add_library( lzma STATIC
+ 	C/7zAlloc.c
+ 	C/7zArcIn.c
+@@ -48,4 +46,5 @@ add_library( lzma STATIC
+ 	C/XzEnc.c
+ 	C/XzIn.c
+ )
+-target_link_libraries( lzma Threads::Threads )
++
++target_link_libraries( lzma PUBLIC pthread )
