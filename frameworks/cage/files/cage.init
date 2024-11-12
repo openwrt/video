@@ -1,0 +1,46 @@
+#!/bin/sh /etc/rc.common
+START=99
+
+USE_PROCD=1
+
+cage_append_command() {
+	procd_append_param command "$@"
+}
+
+cage_append_env() {
+	procd_append_param env "$@"
+}
+
+cage() {
+	local cfg="$1"
+	local cmd user args noinput nogpu
+	local cagedir="/tmp/run/cage"
+	config_get cmd "$cfg" 'cmd'
+	config_get noinput "$cfg" 'noinput' '0'
+	config_get nogpu "$cfg" 'nogpu' '0'
+	config_get user "$cfg" 'user' 'root'
+
+	mkdir -p -m 0700 "$cagedir"
+	chown ${user}:root "$cagedir"
+
+	procd_open_instance
+	procd_set_param command /usr/bin/cage
+	procd_append_param command "--"
+	procd_append_param command "$cmd"
+	config_list_foreach "$cfg" args cage_append_command
+	procd_set_param file /etc/config/cage
+	procd_set_param respawn
+	procd_set_param env "XDG_RUNTIME_DIR=$cagedir"
+	[ "$noinput" != "0" ] && procd_append_param env "WLR_LIBINPUT_NO_DEVICES=1"
+	[ "$nogpu" != "0" ] && procd_append_param env "WLR_RENDERER_ALLOW_SOFTWARE=1"
+	config_list_foreach "$cfg" env cage_append_env
+	procd_set_param user "$user"
+	procd_set_param stderr 1
+	procd_set_param stdout 1
+	procd_close_instance
+}
+
+start_service() {
+	config_load cage
+	config_foreach cage cage
+}
