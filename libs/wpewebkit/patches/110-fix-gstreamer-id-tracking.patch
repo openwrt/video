@@ -1,0 +1,47 @@
+--- a/Source/WebCore/platform/graphics/gstreamer/mse/MediaSourcePrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/mse/MediaSourcePrivateGStreamer.cpp
+@@ -170,6 +170,7 @@ void MediaSourcePrivateGStreamer::startP
+     m_playerPrivate.startSource(tracks);
+ }
+ 
++#if !RELEASE_LOG_DISABLED
+ TrackID MediaSourcePrivateGStreamer::registerTrackId(TrackID preferredId)
+ {
+     ASSERT(isMainThread());
+@@ -203,6 +204,7 @@ bool MediaSourcePrivateGStreamer::unregi
+ 
+     return res;
+ }
++#endif
+ 
+ void MediaSourcePrivateGStreamer::notifyActiveSourceBuffersChanged()
+ {
+--- a/Source/WebCore/platform/graphics/gstreamer/mse/SourceBufferPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/mse/SourceBufferPrivateGStreamer.cpp
+@@ -270,6 +270,7 @@ WTFLogChannel& SourceBufferPrivateGStrea
+ }
+ #endif
+ 
++#if !RELEASE_LOG_DISABLED
+ std::optional<TrackID> SourceBufferPrivateGStreamer::tryRegisterTrackId(TrackID preferredId)
+ {
+     ASSERT(isMainThread());
+@@ -291,6 +292,18 @@ bool SourceBufferPrivateGStreamer::tryUn
+ 
+     return downcast<MediaSourcePrivateGStreamer>(mediaSource)->unregisterTrackId(trackId);
+ }
++#else
++std::optional<TrackID> SourceBufferPrivateGStreamer::tryRegisterTrackId(TrackID preferredId)
++{
++    return std::nullopt;
++}
++
++bool SourceBufferPrivateGStreamer::tryUnregisterTrackId(TrackID trackId)
++{
++    return false;
++}
++#endif
++
+ 
+ size_t SourceBufferPrivateGStreamer::platformMaximumBufferSize() const
+ {
