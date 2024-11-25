@@ -1,0 +1,11 @@
+--- a/llvm/cmake/config-ix.cmake
++++ b/llvm/cmake/config-ix.cmake
+@@ -481,6 +481,8 @@ elseif (LLVM_NATIVE_ARCH MATCHES "aarch6
+   set(LLVM_NATIVE_ARCH AArch64)
+ elseif (LLVM_NATIVE_ARCH MATCHES "arm64")
+   set(LLVM_NATIVE_ARCH AArch64)
++elseif (LLVM_NATIVE_ARCH MATCHES "arc")
++  set(LLVM_NATIVE_ARCH ARC)
+ elseif (LLVM_NATIVE_ARCH MATCHES "arm")
+   set(LLVM_NATIVE_ARCH ARM)
+ elseif (LLVM_NATIVE_ARCH MATCHES "avr")
