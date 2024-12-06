@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkeyboard-config
-PKG_VERSION:=2.24
+PKG_VERSION:=2.43
 PKG_RELEASE:=1
 
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.bz2
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://www.x.org/releases/individual/data/$(PKG_NAME)/
-PKG_HASH:=91b18580f46b4e4ea913707f6c8d68ab5286879c3a6591462f3b9e760d3ac4d7
+PKG_HASH:=c810f362c82a834ee89da81e34cd1452c99789339f46f6037f4b9e227dd06c01
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -15,11 +15,20 @@ PKG_LICENSE_FILES:=COPYING
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
 
-PKG_BUILD_DEPENDS:=libxslt/host intltool/host perl-xml-parser/host
+PKG_BUILD_DEPENDS:=libxslt/host intltool/host perl-xml-parser/host python3/host
+
+PYTHON3_PKG_BUILD:=0
+MESON_USE_STAGING_PYTHON:=1
+HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
 
 include $(INCLUDE_DIR)/package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+include $(INCLUDE_DIR)/meson.mk
 
-CONFIGURE_ARGS += --disable-runtime-deps
+MESON_VARS += PYTHONPATH="$(HOST_PYTHON3PATH)"
+
+MESON_ARGS += \
+	-Dnls=$(if $(CONFIG_BUILD_NLS),true,false)
 
 define Package/xkeyboard-config
   SECTION:=libs
