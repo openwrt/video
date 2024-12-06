@@ -23,7 +23,7 @@ define Package/libassimp
   SUBMENU:=Video
   TITLE:=Open Asset Importer Library
   URL:=https://github.com/assimp/assimp
-  DEPENDS:=+libstdcpp +zlib
+  DEPENDS:=+libstdcpp +minizip +zlib
 endef
 
 define Package/libassimp/description
