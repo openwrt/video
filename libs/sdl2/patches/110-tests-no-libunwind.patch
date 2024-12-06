@@ -1,0 +1,10 @@
+--- a/cmake/sdlchecks.cmake
++++ b/cmake/sdlchecks.cmake
+@@ -1406,7 +1406,4 @@ macro(CheckLibUnwind)
+     endif()
+   endif()
+ 
+-  if(found_libunwind)
+-    set(HAVE_LIBUNWIND_H TRUE)
+-  endif()
+ endmacro()
