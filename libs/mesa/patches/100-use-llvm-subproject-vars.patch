@@ -1,6 +1,48 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -1856,7 +1856,11 @@ endif
+@@ -1743,21 +1743,26 @@ _llvm = get_option('llvm')
+ dep_llvm = null_dep
+ with_llvm = false
+ if _llvm.allowed()
+-  dep_llvm = dependency(
+-    'llvm',
+-    method : host_machine.system() == 'windows' ? 'auto' : 'config-tool',
+-    version : _llvm_version,
+-    modules : llvm_modules,
+-    optional_modules : llvm_optional_modules,
+-    required : (
+-      with_amd_vk or with_gallium_radeonsi or with_gallium_clover or with_clc
+-      or _llvm.enabled()
+-    ),
+-    static : not _shared_llvm,
+-    fallback : ['llvm', 'dep_llvm'],
+-    include_type : 'system',
+-  )
+-  with_llvm = dep_llvm.found()
++  llvm_proj = subproject('llvm')
++  if llvm_proj.found()
++    dep_llvm = llvm_proj.get_variable('dep_llvm')
++    with_llvm = true
++  else
++    dep_llvm = dependency(
++      'llvm',
++      method : host_machine.system() == 'windows' ? 'auto' : 'config-tool',
++      version : _llvm_version,
++      modules : llvm_modules,
++      optional_modules : llvm_optional_modules,
++      required : (
++        with_amd_vk or with_gallium_radeonsi or with_gallium_clover or with_clc
++        or _llvm.enabled()
++      ),
++      static : not _shared_llvm,
++      fallback : ['llvm', 'dep_llvm'],
++      include_type : 'system',
++    )
++  endif
+ endif
+ if with_llvm
+   pre_args += '-DMESA_LLVM_VERSION_STRING="@0@"'.format(dep_llvm.version())
+@@ -1856,7 +1861,11 @@ endif
  
  dep_clang = null_dep
  if with_clc or with_gallium_clover
