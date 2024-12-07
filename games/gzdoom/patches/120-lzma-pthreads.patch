@@ -2,7 +2,7 @@
 +++ b/libraries/lzma/CMakeLists.txt
 @@ -2,8 +2,6 @@ make_release_only()
  
- set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE -DZ7_PPMD_SUPPORT -D_7ZIP_AFFINITY_DISABLE" )
+ set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE -DZ7_PPMD_SUPPORT -DZ7_AFFINITY_DISABLE" )
  
 -find_package(Threads)
 -
