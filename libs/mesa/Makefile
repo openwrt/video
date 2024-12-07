@@ -12,8 +12,12 @@ PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
 
 PKG_INSTALL:=1
-PKG_BUILD_DEPENDS:=glslang/host python3/host libva
-HOST_BUILD_DEPENDS:=python3/host spirv-tools/host
+
+# arc, powerpc and powerpc64 LLVM builds are currently broken, but powerpc{,64} would support JIT in theory
+LLVM_SUPPORTED:=(aarch64||arm||i386||i686||loongarch64||mips||mipsel||mips64||mips64el||riscv64||x86_64)
+
+PKG_BUILD_DEPENDS:=glslang/host python3/host libva (x86_64||i386||i686):mesa/host $(LLVM_SUPPORTED):llvm
+HOST_BUILD_DEPENDS:=python3/host spirv-tools/host llvm
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_libosmesa \
@@ -30,19 +34,10 @@ PYTHON3_PKG_BUILD:=0
 MESON_USE_STAGING_PYTHON:=1
 HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
 
-LLVM_SUPPORTED:=(aarch64||arm||i386||i686||loongarch64||mips||mipsel||mips64||mips64el||riscv64||x86_64)
-# arc, powerpc and powerpc64 LLVM builds are currently broken, but powerpc{,64} would support JIT in theory
-
 ifneq ($(CONFIG_aarch64)$(CONFIG_arm)$(CONFIG_i386)$(CONFIG_i686)$(CONFIG_loongarch64)$(CONFIG_mips)$(CONFIG_mipsel)$(CONFIG_mips64)$(CONFIG_mips64el)$(CONFIG_riscv64)$(CONFIG_x86_64),)
-PKG_BUILD_DEPENDS+=llvm
-HOST_BUILD_DEPENDS+=llvm
 MESA_USE_LLVM:=1
 else
 MESA_USE_LLVM:=
-endif
-
-ifneq ($(CONFIG_x86_64)$(CONFIG_i386)$(CONFIG_i686),)
-PKG_BUILD_DEPENDS+=mesa/host
 endif
 
 include $(TOPDIR)/feeds/packages/lang/rust/rust-values.mk
