@@ -48,7 +48,17 @@ endef
 
 define Host/Install
 	$(INSTALL_DIR) $(STAGING_DIR_HOSTPKG)/share/gzdoom
+	$(INSTALL_BIN) $(HOST_BUILD_DIR)/tools/re2c/re2c $(STAGING_DIR_HOSTPKG)/share/gzdoom
+	$(INSTALL_BIN) $(HOST_BUILD_DIR)/tools/lemon/lemon $(STAGING_DIR_HOSTPKG)/share/gzdoom
+	$(INSTALL_DATA) $(HOST_BUILD_DIR)/tools/lemon/lempar.c $(STAGING_DIR_HOSTPKG)/share/gzdoom
+	$(INSTALL_BIN) $(HOST_BUILD_DIR)/tools/zipdir/zipdir $(STAGING_DIR_HOSTPKG)/share/gzdoom
 	$(INSTALL_DATA) $(HOST_BUILD_DIR)/ImportExecutables.cmake $(STAGING_DIR_HOSTPKG)/share/gzdoom
+	$(SED) "s#$(HOST_BUILD_DIR)/tools/re2c/re2c#$(STAGING_DIR_HOSTPKG)/share/gzdoom/re2c#" \
+		$(STAGING_DIR_HOSTPKG)/share/gzdoom/ImportExecutables.cmake
+	$(SED) "s#$(HOST_BUILD_DIR)/tools/lemon/lemon#$(STAGING_DIR_HOSTPKG)/share/gzdoom/lemon#" \
+		$(STAGING_DIR_HOSTPKG)/share/gzdoom/ImportExecutables.cmake
+	$(SED) "s#$(HOST_BUILD_DIR)/tools/zipdir/zipdir#$(STAGING_DIR_HOSTPKG)/share/gzdoom/zipdir#" \
+		$(STAGING_DIR_HOSTPKG)/share/gzdoom/ImportExecutables.cmake
 endef
 
 define Host/Uninstall
