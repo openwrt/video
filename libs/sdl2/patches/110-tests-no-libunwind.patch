@@ -1,10 +1,10 @@
---- a/cmake/sdlchecks.cmake
-+++ b/cmake/sdlchecks.cmake
-@@ -1406,7 +1406,4 @@ macro(CheckLibUnwind)
-     endif()
-   endif()
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1622,7 +1622,6 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS
+       endif()
  
--  if(found_libunwind)
--    set(HAVE_LIBUNWIND_H TRUE)
--  endif()
- endmacro()
+     endif()
+-    CheckLibUnwind()
+ 
+     if(HAVE_DBUS_DBUS_H)
+       list(APPEND SOURCE_FILES "${SDL2_SOURCE_DIR}/src/core/linux/SDL_dbus.c")
