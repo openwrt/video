@@ -1,0 +1,29 @@
+From d57109285591594de5d37d9ad158e2616875be7c Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 30 Nov 2024 00:43:00 +0000
+Subject: [PATCH] evdev: cast ioctl request to int
+
+Compile on PPC64 fails with error:
+../common/evdev.c: In function 'evdev_revoke':
+../common/evdev.c:26:26: error: overflow in conversion from 'long unsigned int' to 'int' changes value from '2147763601' to '-2147203695' [-Werror=overflow]
+   26 |         return ioctl(fd, EVIOCREVOKE, NULL);
+
+Prevent overflow warning by using explicit cast to int.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+Link: https://git.sr.ht/~kennylevinsen/seatd/commit/d57109285591594de5d37d9ad158e2616875be7c
+---
+ common/evdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/common/evdev.c
++++ b/common/evdev.c
+@@ -23,7 +23,7 @@ int path_is_evdev(const char *path) {
+ }
+ 
+ int evdev_revoke(int fd) {
+-	return ioctl(fd, EVIOCREVOKE, NULL);
++	return ioctl(fd, (int)EVIOCREVOKE, NULL);
+ }
+ #else
+ int path_is_evdev(const char *path) {
