@@ -20,12 +20,39 @@ PKG_BUILD_DEPENDS:=glslang/host python3/host libva (x86_64||i386||i686):mesa/hos
 HOST_BUILD_DEPENDS:=python3/host spirv-tools/host llvm
 
 PKG_CONFIG_DEPENDS:= \
-	CONFIG_PACKAGE_libosmesa \
+	CONFIG_PACKAGE_libmesa-amd \
+	CONFIG_PACKAGE_libmesa-intel \
+	CONFIG_PACKAGE_libmesa-tegra \
+	CONFIG_PACKAGE_libmesa-etnaviv \
+	CONFIG_PACKAGE_libmesa-broadcom \
+	CONFIG_PACKAGE_libmesa-nouveau \
+	CONFIG_PACKAGE_libmesa-lima \
+	CONFIG_PACKAGE_libmesa-panfrost \
+	CONFIG_PACKAGE_libmesa-virgl \
+	CONFIG_PACKAGE_libmesa-zink \
+	CONFIG_PACKAGE_libmesa-softpipe \
+	CONFIG_PACKAGE_libmesa-llvmpipe \
+	CONFIG_PACKAGE_libopencl-amd \
+	CONFIG_PACKAGE_libopencl-intel \
+	CONFIG_PACKAGE_libopencl-tegra \
+	CONFIG_PACKAGE_libopencl-etnaviv \
+	CONFIG_PACKAGE_libopencl-broadcom \
+	CONFIG_PACKAGE_libopencl-nouveau \
+	CONFIG_PACKAGE_libopencl-lima \
+	CONFIG_PACKAGE_libopencl-panfrost \
+	CONFIG_PACKAGE_libopencl-virgl \
+	CONFIG_PACKAGE_libopencl-zink \
+	CONFIG_PACKAGE_libopencl-softpipe \
+	CONFIG_PACKAGE_libopencl-llvmpipe \
+	CONFIG_PACKAGE_libosmesa-softpipe \
+	CONFIG_PACKAGE_libosmesa-llvmpipe \
 	CONFIG_PACKAGE_libvulkan-broadcom \
+	CONFIG_PACKAGE_libvulkan-imagination \
 	CONFIG_PACKAGE_libvulkan-intel \
 	CONFIG_PACKAGE_libvulkan-intel-hasvk \
 	CONFIG_PACKAGE_libvulkan-lvp \
 	CONFIG_PACKAGE_libvulkan-nouveau \
+	CONFIG_PACKAGE_libvulkan-panfrost \
 	CONFIG_PACKAGE_libvulkan-radeon
 
 TARGET_CPPFLAGS+=-Wno-format -Wno-format-security
@@ -143,7 +170,7 @@ define Package/libmesa-broadcom
 $(call Package/libmesa/Default)
   TITLE+= (Broadcom)
   VARIANT:=broadcom
-  DEPENDS+=+libarchive @(aarch64||arm)
+  DEPENDS+=+libarchive @(aarch64||arm) @HAS_FPU
 endef
 
 define Package/libmesa-broadcom/description
@@ -278,7 +305,7 @@ define Package/libopencl-broadcom
 $(call Package/libopencl/Default)
   TITLE+= (Broadcom)
   VARIANT:=broadcom
-  DEPENDS+=@(aarch64||arm)
+  DEPENDS+=@(aarch64||arm) @HAS_FPU
 endef
 
 define Package/libopencl-broadcom/description
@@ -377,7 +404,7 @@ endef
 define Package/libvulkan-broadcom
 $(call Package/mesa/Default)
   DEPENDS:=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
-	   @(arm||aarch64)
+	   @(arm||aarch64) @HAS_FPU
   TITLE+= Broadcom Vulkan driver
   VARIANT:=vulkan
 endef
