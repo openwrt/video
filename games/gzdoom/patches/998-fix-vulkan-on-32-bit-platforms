@@ -1,0 +1,11 @@
+--- a/src/common/platform/posix/sdl/sdlglvideo.cpp
++++ b/src/common/platform/posix/sdl/sdlglvideo.cpp
+@@ -400,7 +400,7 @@ DFrameBuffer *SDLVideo::CreateFrameBuffe
+ 				builder.RequireExtension(names[i]);
+ 			auto instance = builder.Create();
+ 
+-			VkSurfaceKHR surfacehandle = nullptr;
++			VkSurfaceKHR surfacehandle = (VkSurfaceKHR)nullptr;
+ 			if (!I_CreateVulkanSurface(instance->Instance, &surfacehandle))
+ 				VulkanError("I_CreateVulkanSurface failed");
+ 

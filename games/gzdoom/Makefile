@@ -17,6 +17,7 @@ PKG_LICENSE_FILES:=COPYING LICENSE
 
 CMAKE_INSTALL:=1
 PKG_BUILD_DEPENDS:=gzdoom/host vulkan-loader
+PKG_BUILD_FLAGS:=no-mips16
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
@@ -32,12 +33,14 @@ CMAKE_OPTIONS += \
 	-DVULKAN_USE_XLIB=OFF \
 	-DVULKAN_USE_WAYLAND=ON
 
+TARGET_LDFLAGS += -latomic
+
 define Package/gzdoom
   SECTION:=games
   CATEGORY:=Games
   TITLE:=GZDoom
   URL:=https://zdoom.org/
-  DEPENDS:=+alsa-lib +glib2 +libbz2 +libstdcpp +libzmusic +libvpx +libsdl2 +USE_MUSL:musl-fts
+  DEPENDS:=+alsa-lib +glib2 +libatomic +libbz2 +libstdcpp +libzmusic +libvpx +libsdl2 +USE_MUSL:musl-fts @(ARCH_64BIT||BROKEN)
 endef
 
 define Package/gzdoom/description
