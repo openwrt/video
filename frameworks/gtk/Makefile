@@ -40,7 +40,8 @@ $(call Package/gtk/Default)
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
   DEPENDS:=$(ICONV_DEPENDS) $(INTL_DEPENDS) +fribidi +glib2 +harfbuzz +libcairo \
-	   +libepoxy +libgdk-pixbuf +libgraphene +libgstreamer1 +libpango +libxkbcommon
+	   +libepoxy +libgdk-pixbuf +libgraphene +libgstreamer1 +libgst1player \
+	   +libpango +libxkbcommon
   TITLE:=GTK library
 endef
 
