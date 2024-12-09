@@ -1,0 +1,31 @@
+From fe687ccb463fa42de923c5440259d89f781f3c69 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 9 Dec 2024 01:01:44 +0000
+Subject: [PATCH] currentStackPointer for Linux/PPC, Linux/PPC64
+
+Add inline assembly implementation to return the current stack
+pointer on Linux running on PowerPC and PowerPC64 archtecture.
+---
+ Source/WTF/wtf/StackPointer.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+--- a/Source/WTF/wtf/StackPointer.cpp
++++ b/Source/WTF/wtf/StackPointer.cpp
+@@ -160,6 +160,17 @@ asm (
+      ".previous" "\n"
+ );
+ 
++#elif CPU(PPC) || CPU(PPC64)
++asm (
++    ".text" "\n"
++    ".globl " SYMBOL_STRING(currentStackPointer) "\n"
++    SYMBOL_STRING(currentStackPointer) ":" "\n"
++
++    "mr 3, 1" "\n" // Move stack pointer (r1) to return register (r3)
++    "blr" "\n"     // Branch to link register (return)
++    ".previous" "\n"
++);
++
+ #else
+ #error "Unsupported platform: need implementation of currentStackPointer."
+ #endif

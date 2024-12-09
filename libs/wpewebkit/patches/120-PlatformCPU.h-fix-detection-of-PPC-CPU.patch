@@ -1,0 +1,24 @@
+From 25627ca5cd611bac7f53372c25ab6100f07d7b00 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 9 Dec 2024 01:50:49 +0000
+Subject: [PATCH] PlatformCPU.h: fix detection of PPC CPU
+
+Detection of PPC CPU currently relies on the CPU(BIG_ENDIAN) which
+is only defined further down in the same header file.
+Directly use byte-order macro just like the PPC64 to fix detection of
+32-bit PPC platforms.
+---
+ Source/WTF/wtf/PlatformCPU.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/WTF/wtf/PlatformCPU.h
++++ b/Source/WTF/wtf/PlatformCPU.h
+@@ -90,7 +90,7 @@
+     || defined(_M_PPC)         \
+     || defined(__PPC))         \
+     && !CPU(PPC64)             \
+-    && CPU(BIG_ENDIAN)
++    && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+ #define WTF_CPU_PPC 1
+ #define WTF_CPU_KNOWN 1
+ #endif
