@@ -38,8 +38,8 @@ CMAKE_OPTIONS += \
 	-DENABLE_SPELLCHECK=OFF \
 	-DENABLE_SPEECH_SYNTHESIS=OFF \
 	-DENABLE_TOUCH_EVENTS=ON \
-	-DENABLE_JIT=ON \
-	-DENABLE_C_LOOP=OFF \
+	-DENABLE_JIT=$(if $(CONFIG_arm_v7)$(CONFIG_aarch64)$(CONFIG_riscv64)$(CONFIG_x86_64),ON,OFF) \
+	-DENABLE_C_LOOP=$(if $(CONFIG_arm_v7)$(CONFIG_aarch64)$(CONFIG_riscv64)$(CONFIG_x86_64),OFF,ON) \
 	-DENABLE_WEBGL=ON \
 	-DENABLE_VIDEO=ON \
 	-DPORT=WPE \
@@ -64,7 +64,8 @@ define Package/libwpewebkit
 	   +libgst1fft +libgst1gl +libgst1pbutils +libgst1tag \
 	   +libgst1transcoder +libgst1video +libinput +libjpeg +libpng \
 	   +libseccomp +libsoup3 +libsqlite3 +libtasn1 +libudev +libwayland \
-	   +libwebp +libwpe +libxml2 +libxslt +zlib
+	   +libwebp +libwpe +libxml2 +libxslt +zlib \
+	   @(arm_v7||i386||i686||ARCH_64BIT)
 endef
 
 define Package/libwpewebkit/description
