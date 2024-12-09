@@ -1,0 +1,21 @@
+Author: Pino Toscano <toscano.pino@tiscali.it>
+Description: Avoid unconditional PATH_MAX usage
+ Use a "safe" size in case PATH_MAX is not defined; in the end, this should not
+ be used, as a allocating realpath() will be used instead.
+Forwarded: no
+Last-Update: 2020-04-19
+
+--- a/src/corelib/io/qfilesystemengine_unix.cpp
++++ b/src/corelib/io/qfilesystemengine_unix.cpp
+@@ -689,7 +689,11 @@ QFileSystemEntry QFileSystemEngine::cano
+     Q_UNUSED(data);
+     return QFileSystemEntry(slowCanonicalized(absoluteName(entry).filePath()));
+ #else
++#ifdef PATH_MAX
+     char stack_result[PATH_MAX+1];
++#else
++    char stack_result[4096+1];
++#endif
+     char *resolved_name = nullptr;
+ # if defined(Q_OS_DARWIN) || defined(Q_OS_ANDROID)
+     // On some Android and macOS versions, realpath() will return a path even if

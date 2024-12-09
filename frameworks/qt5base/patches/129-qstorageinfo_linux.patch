@@ -1,0 +1,28 @@
+Author: Pino Toscano <toscano.pino@tiscali.it>
+Description: Limit Linux-only code with Q_OS_LINUX
+ The QStorageInfo/QStorageIterator implementation used for Linux is used also
+ on Hurd, as it uses an interface provided by GNU libc.
+ QStorageIterator::device() tries to use PATH_MAX (unavailable on the Hurd)
+ to lookup a /dev/block/ path, which exists on Linux only; hence, perform that
+ check within a Q_OS_LINUX block.
+Forwarded: no
+Last-Update: 2020-04-19
+
+--- a/src/corelib/io/qstorageinfo_unix.cpp
++++ b/src/corelib/io/qstorageinfo_unix.cpp
+@@ -566,6 +566,7 @@ inline QByteArray QStorageIterator::file
+ 
+ inline QByteArray QStorageIterator::device() const
+ {
++#ifdef Q_OS_LINUX
+     // check that the device exists
+     if (mnt.mnt_fsname[0] == '/' && access(mnt.mnt_fsname, F_OK) != 0) {
+         // It doesn't, so let's try to resolve the dev_t from /dev/block.
+@@ -581,6 +582,7 @@ inline QByteArray QStorageIterator::devi
+             return dev;
+         }
+     }
++#endif
+     return QByteArray(mnt.mnt_fsname);
+ }
+ 
