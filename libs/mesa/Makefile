@@ -33,17 +33,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_libmesa-softpipe \
 	CONFIG_PACKAGE_libmesa-llvmpipe \
 	CONFIG_PACKAGE_libopencl-amd \
-	CONFIG_PACKAGE_libopencl-intel \
-	CONFIG_PACKAGE_libopencl-tegra \
-	CONFIG_PACKAGE_libopencl-etnaviv \
-	CONFIG_PACKAGE_libopencl-broadcom \
 	CONFIG_PACKAGE_libopencl-nouveau \
-	CONFIG_PACKAGE_libopencl-lima \
-	CONFIG_PACKAGE_libopencl-panfrost \
-	CONFIG_PACKAGE_libopencl-virgl \
-	CONFIG_PACKAGE_libopencl-zink \
-	CONFIG_PACKAGE_libopencl-softpipe \
-	CONFIG_PACKAGE_libopencl-llvmpipe \
 	CONFIG_PACKAGE_libosmesa-softpipe \
 	CONFIG_PACKAGE_libosmesa-llvmpipe \
 	CONFIG_PACKAGE_libvulkan-broadcom \
@@ -258,38 +248,6 @@ endef
 define Package/libopencl-amd/description
 endef
 
-define Package/libopencl-intel
-$(call Package/libopencl/Default)
-  TITLE+= (Intel)
-  VARIANT:=intel
-  DEPENDS+=@(i386||i686||x86_64)
-endef
-
-define Package/libopencl-intel/description
-endef
-
-
-define Package/libopencl-tegra
-$(call Package/libopencl/Default)
-  TITLE+= (nVidia Tegra)
-  VARIANT:=tegra
-  DEPENDS+=@(aarch64||arm)
-endef
-
-define Package/libopencl-tegra/description
-endef
-
-
-define Package/libopencl-etnaviv
-$(call Package/libopencl/Default)
-  TITLE+= (Vivante)
-  VARIANT:=etnaviv
-  DEPENDS+=@(aarch64||arm||mips||mipsel||mips64||mips64el)
-endef
-
-define Package/libopencl-etnaviv/description
-endef
-
 
 define Package/libopencl-nouveau
 $(call Package/libopencl/Default)
@@ -298,80 +256,6 @@ $(call Package/libopencl/Default)
 endef
 
 define Package/libopencl-nouveau/description
-endef
-
-
-define Package/libopencl-broadcom
-$(call Package/libopencl/Default)
-  TITLE+= (Broadcom)
-  VARIANT:=broadcom
-  DEPENDS+=@(aarch64||arm) @HAS_FPU
-endef
-
-define Package/libopencl-broadcom/description
-endef
-
-
-define Package/libopencl-lima
-$(call Package/libopencl/Default)
-  TITLE+= (ARM Mali 400)
-  VARIANT:=lima
-  DEPENDS+=@(aarch64||arm)
-endef
-
-define Package/libopencl-lima/description
-endef
-
-
-define Package/libopencl-panfrost
-$(call Package/libopencl/Default)
-  TITLE+= (ARM Mali 450+)
-  VARIANT:=panfrost
-  DEPENDS+=@(aarch64||arm)
-endef
-
-define Package/libopencl-panfrost/description
-endef
-
-
-define Package/libopencl-virgl
-$(call Package/libopencl/Default)
-  TITLE+= (VirtIO GL)
-  VARIANT:=virgl
-endef
-
-define Package/libopencl-virgl/description
-endef
-
-
-define Package/libopencl-zink
-$(call Package/libopencl/Default)
-  TITLE+= (Zink GL via Vulkan)
-  VARIANT:=vulkan
-endef
-
-define Package/libopencl-zink/description
-endef
-
-
-define Package/libopencl-softpipe
-$(call Package/libopencl/Default)
-  TITLE+= (Softpipe)
-  VARIANT:=softpipe
-  DEFAULT_VARIANT:=1
-endef
-
-define Package/libopencl-softpipe/description
-endef
-
-define Package/libopencl-llvmpipe
-$(call Package/libopencl/Default)
-  TITLE+= (LLVMpipe)
-  DEPENDS+=@$(LLVM_SUPPORTED)
-  VARIANT:=llvmpipe
-endef
-
-define Package/libopencl-llvmpipe/description
 endef
 
 define Package/libosmesa/Default
@@ -784,18 +668,8 @@ Package/libmesa-zink/install = $(Package/libmesa/install)
 Package/libmesa-softpipe/install = $(Package/libmesa/install)
 Package/libmesa-llvmpipe/install = $(Package/libmesa/install)
 
-Package/libopencl-intel/install = $(Package/libopencl/install)
 Package/libopencl-amd/install = $(Package/libopencl/install)
-Package/libopencl-tegra/install = $(Package/libopencl/install)
-Package/libopencl-etnaviv/install = $(Package/libopencl/install)
-Package/libopencl-broadcom/install = $(Package/libopencl/install)
-Package/libopencl-lima/install = $(Package/libopencl/install)
-Package/libopencl-panfrost/install = $(Package/libopencl/install)
 Package/libopencl-nouveau/install = $(Package/libopencl/install)
-Package/libopencl-virgl/install = $(Package/libopencl/install)
-Package/libopencl-zink/install = $(Package/libopencl/install)
-Package/libopencl-softpipe/install = $(Package/libopencl/install)
-Package/libopencl-llvmpipe/install = $(Package/libopencl/install)
 
 Package/libosmesa-softpipe/install = $(Package/libosmesa/install)
 Package/libosmesa-llvmpipe/install = $(Package/libosmesa/install)
@@ -814,17 +688,7 @@ $(eval $(call BuildPackage,libmesa-zink))
 $(eval $(call BuildPackage,libmesa-softpipe))
 $(eval $(call BuildPackage,libmesa-llvmpipe))
 $(eval $(call BuildPackage,libopencl-amd))
-$(eval $(call BuildPackage,libopencl-intel))
-$(eval $(call BuildPackage,libopencl-tegra))
-$(eval $(call BuildPackage,libopencl-etnaviv))
-$(eval $(call BuildPackage,libopencl-broadcom))
 $(eval $(call BuildPackage,libopencl-nouveau))
-$(eval $(call BuildPackage,libopencl-lima))
-$(eval $(call BuildPackage,libopencl-panfrost))
-$(eval $(call BuildPackage,libopencl-virgl))
-$(eval $(call BuildPackage,libopencl-zink))
-$(eval $(call BuildPackage,libopencl-softpipe))
-$(eval $(call BuildPackage,libopencl-llvmpipe))
 $(eval $(call BuildPackage,libosmesa-softpipe))
 $(eval $(call BuildPackage,libosmesa-llvmpipe))
 $(eval $(call BuildPackage,libvulkan-broadcom))
