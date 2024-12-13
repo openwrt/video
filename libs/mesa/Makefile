@@ -93,6 +93,7 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libglapi/description
+Free implementation of the GL API.
 endef
 
 define Package/libglapi/config
@@ -110,6 +111,21 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-amd/description
+A collection of drivers for AMD Radeon dedicated GPUs.
+
+AMD R300
+
+The R300 driver supports AMD's Radeon R300 GPU series.
+
+AMD R600
+
+The R600 driver supports AMD's Radeon HD 2000 GPU series. It's
+officially supported by AMD.
+
+AMD RadeonSI
+
+The RadeonSI OpenGL driver supports AMD's Southern Island GPUs and
+later. It's officially supported by AMD.
 endef
 
 define Package/libmesa-intel
@@ -120,17 +136,37 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-intel/description
+A collection of drivers for GPUs embedded in Intel's CPUs.
+
+Intel Iris
+
+The Iris driver supports Intel's Gen 8 hardware and later. It's
+officially supported by Intel and is their next-generation Linux OpenGL
+driver.
+
+Intel Crocus
+
+The Crocus driver supports Intel's Gen 7 hardware and earlier. It's
+based on Iris and the former i965 driver, but is not officially
+supported or endorsed by Intel.
+
+Intel i915
+
+The i915 driver supports older Intel i915 and i945 chipsets.
 endef
 
 
 define Package/libmesa-tegra
 $(call Package/libmesa/Default)
   DEPENDS+=+libdrm-tegra @(aarch64||arm)
-  TITLE+= (nVidia Tegra)
+  TITLE+= (NVIDIA Tegra)
   VARIANT:=tegra
 endef
 
 define Package/libmesa-tegra/description
+The Nouveau driver built for GPUs embedded in the Tegra SoC family. It's
+a reverse-engineered, community-developed driver, and is not endorsed by
+NVIDIA.
 endef
 
 
@@ -142,17 +178,24 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-etnaviv/description
+The Etnaviv driver supports the Vivante GCxxx series of embedded GPUs.
+It's a reverse-engineered, community-developed driver, and is not
+endorsed by Vivante.
 endef
 
 
 define Package/libmesa-nouveau
 $(call Package/libmesa/Default)
   DEPENDS+=+libdrm-nouveau @$(LLVM_SUPPORTED)
-  TITLE+= (nVidia)
+  TITLE+= (NVIDIA)
   VARIANT:=nouveau
 endef
 
 define Package/libmesa-nouveau/description
+The Nouveau drivers supports a large set of NVIDIA chips, ranging from
+NV04 found in the Riva TNT card to NVF0 found in the GeForce GTX 780.
+It's a reverse-engineered, community-developed driver, and is not
+endorsed by NVIDIA.
 endef
 
 
@@ -164,28 +207,65 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-broadcom/description
+Mesa’s VC4 graphics driver supports multiple implementations of
+Broadcom's VideoCore IV GPU. It is notably used in the Raspberry Pi 0
+through Raspberry Pi 3 hardware.
+Along with GLES 2.0, the Mesa driver also exposes OpenGL 2.1, which is
+mostly correct but with a few caveats.
+
+Mesa’s V3D graphics driver stack includes a conformant GLES3.1 driver
+called V3D, notably used on the Raspberry Pi 4 and Raspberry Pi 5.
+
+This package contains both, VC4 and V3D drivers and covers all
+RaspberryPi boards.
 endef
 
 
 define Package/libmesa-lima
 $(call Package/libmesa/Default)
-  TITLE+= (ARM Mali 400)
+  TITLE+= (ARM Mali Utgard)
   VARIANT:=lima
   DEPENDS+=@(aarch64||arm)
 endef
 
 define Package/libmesa-lima/description
+Lima is an open source graphics driver which supports Mali Utgard
+(Mali-4xx) embedded GPUs from ARM. It's a reverse-engineered,
+community-developed driver, and is not endorsed by ARM. Lima was
+upstreamed in Mesa 19.1 and Linux kernel 5.2.
+
+Product         Architecture    Status
+Mali-400        Utgard          Supported
+Mali-450        Utgard          Supported
+Mali-470        Utgard          Unsupported
+
+Newer Mali chips based on the Midgard/Bifrost architectures (Mali T or G
+series) are handled by the Panfrost driver, not Lima.
 endef
 
 
 define Package/libmesa-panfrost
 $(call Package/libmesa/Default)
-  TITLE+= (ARM Mali 450+)
+  TITLE+= (ARM Mali Midgard and later)
   VARIANT:=panfrost
   DEPENDS+=@(aarch64||arm)
 endef
 
 define Package/libmesa-panfrost/description
+The Panfrost driver stack includes an OpenGL ES implementation for Arm
+Mali GPUs based on the Midgard, Bifrost and Valhall microarchitectures.
+It is conformant on Mali-G52, Mali-G57 and Mali-G610, but non-conformant
+on other GPUs. The following hardware is currently supported:
+
+Models                          Architecture    OpenGL ES       OpenGL
+T600, T620, T720                Midgard (v4)    2.0             2.1
+T760, T820, T830 T860, T880     Midgard (v5)    3.1             3.1
+G72                             Bifrost (v6)    3.1             3.1
+G31, G51, G52, G76              Bifrost (v7)    3.1             3.1
+G57                             Valhall (v9)    3.1             3.1
+G310, G610                      Valhall (v10)   3.1             3.1
+
+Other Midgard and Bifrost chips (e.g. G71) are not yet supported.
 endef
 
 
@@ -196,6 +276,10 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-virgl/description
+VirGL is a virtual 3D GPU for use inside QEMU virtual machines, that
+allows the guest operating system to use the capabilities of the host
+GPU to accelerate 3D rendering. The plan is to have a guest GPU that is
+fully independent of the host GPU.
 endef
 
 
@@ -207,6 +291,9 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-zink/description
+The Zink driver is a Gallium driver that emits Vulkan API calls instead
+of targeting a specific GPU architecture. This can be used to get full
+desktop OpenGL support on devices that only support Vulkan.
 endef
 
 
@@ -218,6 +305,9 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-softpipe/description
+The Softpipe driver is a reference software rasterizer; it's slow but
+accurate. It's mostly useful for testing, and on systems that lack
+support for LLVM.
 endef
 
 define Package/libmesa-llvmpipe
@@ -228,6 +318,12 @@ $(call Package/libmesa/Default)
 endef
 
 define Package/libmesa-llvmpipe/description
+The Gallium LLVMpipe driver is a software rasterizer that uses LLVM to
+do runtime code generation. Shaders, point/line/triangle rasterization
+and vertex processing are implemented with LLVM IR which is translated
+to native CPU machine code. Also, the driver is multithreaded to take
+advantage of multiple CPU cores (up to 32 at this time). It's the
+fastest software rasterizer for Mesa.
 endef
 
 
@@ -246,6 +342,7 @@ $(call Package/libopencl/Default)
 endef
 
 define Package/libopencl-amd/description
+Mesa Clover OpenCL 1.1 library for AMD GPUs.
 endef
 
 
@@ -256,12 +353,20 @@ $(call Package/libopencl/Default)
 endef
 
 define Package/libopencl-nouveau/description
+Mesa Clover OpenCL 1.1 library for nVidia GPUs.
 endef
 
 define Package/libosmesa/Default
 $(call Package/mesa/Default)
   DEPENDS:=+libdrm +libglapi +libstdcpp +zlib +libwayland +libzstd +wayland-protocols
   TITLE+= off-screen rendering library
+endef
+
+define Package/libosmesa/description/Default
+Mesa's off-screen interface is used for rendering into user-allocated
+memory without any sort of window system or operating system
+dependencies. That is, the GL_FRONT colorbuffer is actually a buffer in
+main memory, rather than a window on your display.
 endef
 
 define Package/libosmesa-softpipe
@@ -272,6 +377,9 @@ $(call Package/libosmesa/Default)
 endef
 
 define Package/libosmesa-softpipe/description
+$(call Package/libosmesa/description/Default)
+
+Softpipe - this is the reference Gallium software driver.
 endef
 
 define Package/libosmesa-llvmpipe
@@ -282,6 +390,9 @@ $(call Package/libosmesa/Default)
 endef
 
 define Package/libosmesa-llvmpipe/description
+$(call Package/libosmesa/description/Default)
+
+LLVMpipe - this is the high-performance Gallium LLVM driver.
 endef
 
 
@@ -294,6 +405,8 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-broadcom/description
+V3DV Vulkan graphics driver, notably used on the Raspberry Pi 4 and
+Raspberry Pi 5.
 endef
 
 define Package/libvulkan-imagination
@@ -305,6 +418,19 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-imagination/description
+PowerVR is a Vulkan driver for Imagination Technologies PowerVR GPUs,
+starting with those based on the Rogue architecture.
+
+The driver is not yet fully conformant so it requires exporting
+PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1 to the environment before running
+any Vulkan content.
+
+The following hardware is currently in active development:
+
+Product         Series          B.V.N.C         Vulkan  Conformant
+GX6250          Series 6XT      4.40.2.51       1.0     No
+AXE-1-16M       A-Series        33.15.11.3      1.0     No
+BXS-4-64        B-Series        36.53.104.796   1.0     No
 endef
 
 define Package/libvulkan-intel
@@ -316,6 +442,8 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-intel/description
+Intel ANV for Skylake "Gen9" and newer graphics. It's officially
+supported by Intel and is their official Vulkan driver for Linux.
 endef
 
 define Package/libvulkan-intel-hasvk
@@ -327,6 +455,8 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-intel-hasvk/description
+The ANV vulkan driver supports Intel's Gen 7/8 hardware. It's officially
+supported by Intel and is their official Vulkan driver for Linux.
 endef
 
 define Package/libvulkan-lvp
@@ -337,6 +467,8 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-lvp/description
+The Vulkan LLVMpipe driver is a software rasterizer that uses LLVM to do
+runtime code generation.
 endef
 
 define Package/libvulkan-nouveau
@@ -348,17 +480,25 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-nouveau/description
+NVK is a Vulkan driver for NVIDIA GPUs.
+
+NVK currently supports Turing (RTX 20XX and GTX 16XX) and later GPUs.
+Eventually, we plan to support as far back as Kepler (GeForce 600 and
+700 series) GPUs but anything pre-Turing is currently disabled by
+default.
 endef
 
 define Package/libvulkan-panfrost
 $(call Package/mesa/Default)
   DEPENDS:=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(arm||aarch64)
-  TITLE+= ARM Mali 450+ Vulkan driver
+  TITLE+= ARM Mali Midgard/Bifrost/Valhall Vulkan driver
   VARIANT:=vulkan
 endef
 
 define Package/libvulkan-panfrost/description
+The PanVk driver is an Open Source Vulkan driver for ARM Mali Midgard
+and Bifrost GPUs.
 endef
 
 define Package/libvulkan-radeon
@@ -369,6 +509,7 @@ $(call Package/mesa/Default)
 endef
 
 define Package/libvulkan-radeon/description
+RADV is a Vulkan driver for AMD GCN/RDNA GPUs.
 endef
 
 ifneq ($(CONFIG_PACKAGE_libvulkan-broadcom),)
