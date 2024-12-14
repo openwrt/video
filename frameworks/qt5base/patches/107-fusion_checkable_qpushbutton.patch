@@ -1,0 +1,27 @@
+Description: QPushButton/fusion style: don't ignore QIcon::On icon
+ The fusion style did ignore the QIcon::On icon because it reset
+ State_On to avoid the visual shift of a pressed button.
+ But it's not needed to reset this flag - the shift does not happen
+ because the fusion style does return 0 as offset for
+ PM_ButtonShiftHorizontal/PM_ButtonShiftVertical so no shifting will
+ happen.
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=e9ccdf4d84157173
+Last-Update: 2021-08-10
+
+--- a/src/widgets/styles/qfusionstyle.cpp
++++ b/src/widgets/styles/qfusionstyle.cpp
+@@ -1771,14 +1771,6 @@ void QFusionStyle::drawControl(ControlEl
+             proxy()->drawControl(CE_PushButtonLabel, &subopt, painter, widget);
+         }
+         break;
+-    case CE_PushButtonLabel:
+-        if (const QStyleOptionButton *button = qstyleoption_cast<const QStyleOptionButton *>(option)) {
+-            QStyleOptionButton b(*button);
+-            // no PM_ButtonShiftHorizontal and PM_ButtonShiftVertical for fusion style
+-            b.state &= ~(State_On | State_Sunken);
+-            QCommonStyle::drawControl(element, &b, painter, widget);
+-        }
+-        break;
+     case CE_MenuBarEmptyArea:
+         painter->save();
+     {

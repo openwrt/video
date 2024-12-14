@@ -1,0 +1,26 @@
+Description: support ARMv4 architecture, needed for armel builds
+Author: Dmitry Shachnev <mitya57@debian.org>
+Forwarded: no
+Last-Update: 2016-07-01
+
+--- a/src/corelib/global/qprocessordetection.h
++++ b/src/corelib/global/qprocessordetection.h
+@@ -132,6 +132,8 @@
+ #  elif defined(__ARM_ARCH_5TEJ__) \
+         || defined(__ARM_ARCH_5TE__)
+ #    define Q_PROCESSOR_ARM 5
++#  elif defined(__ARM_ARCH_4T__)
++#    define Q_PROCESSOR_ARM 4
+ #  else
+ #    define Q_PROCESSOR_ARM 0
+ #  endif
+@@ -146,6 +148,9 @@
+ #  endif
+ #  if Q_PROCESSOR_ARM >= 5
+ #    define Q_PROCESSOR_ARM_V5
++#  endif
++#  if Q_PROCESSOR_ARM >= 4
++#    define Q_PROCESSOR_ARM_V4
+ #  else
+ #    error "ARM architecture too old"
+ #  endif

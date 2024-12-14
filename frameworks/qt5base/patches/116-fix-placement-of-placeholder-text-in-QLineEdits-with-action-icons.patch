@@ -1,0 +1,144 @@
+Description: fix placement of placeholder text in QLineEdits with action icons
+ After dc794f7622bc00f7ca50fab65d6965695d6d2972, side widgets only got
+ space if they were not fading out, but the logic was not correctly
+ accounting for side widgets that never fade, such as buttons added via
+ QLineEdit::addAction.
+ .
+ Fix this to give visible widgets space, unless they are fading out. That
+ was the intent of the original change. Rename the variable to make its
+ purpose clearer, and reset it at the end of the fade-out animation.
+ .
+ Add a much-needed test that relies on private APIs to verify that the
+ effective margins are calculated correctly.
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=0e6b31019f01c72e
+Last-Update: 2021-08-10
+
+--- a/src/widgets/widgets/qlineedit_p.cpp
++++ b/src/widgets/widgets/qlineedit_p.cpp
+@@ -407,8 +407,9 @@ void QLineEditIconButton::setHideWithTex
+ 
+ void QLineEditIconButton::onAnimationFinished()
+ {
+-    if (shouldHideWithText() && isVisible() && !m_wasHidden) {
++    if (shouldHideWithText() && isVisible() && m_fadingOut) {
+         hide();
++        m_fadingOut = false;
+ 
+         // Invalidate previous geometry to take into account new size of side widgets
+         if (auto le = lineEditPrivate())
+@@ -418,7 +419,7 @@ void QLineEditIconButton::onAnimationFin
+ 
+ void QLineEditIconButton::animateShow(bool visible)
+ {
+-    m_wasHidden = visible;
++    m_fadingOut = !visible;
+ 
+     if (shouldHideWithText() && !isVisible()) {
+         show();
+--- a/src/widgets/widgets/qlineedit_p.h
++++ b/src/widgets/widgets/qlineedit_p.h
+@@ -95,8 +95,11 @@ public:
+ 
+     bool shouldHideWithText() const;
+     void setHideWithText(bool hide);
+-    // m_wasHidden is true unless the button is fading out
+-    bool needsSpace() const { return m_wasHidden; }
++    bool needsSpace() const {
++        if (m_fadingOut)
++            return false;
++        return isVisibleTo(parentWidget());
++    }
+ #endif
+ 
+ protected:
+@@ -120,7 +123,7 @@ private:
+ 
+ #if QT_CONFIG(animation)
+     bool m_hideWithText = false;
+-    bool m_wasHidden = false;
++    bool m_fadingOut = false;
+ #endif
+ 
+ };
+--- a/tests/auto/widgets/widgets/qlineedit/tst_qlineedit.cpp
++++ b/tests/auto/widgets/widgets/qlineedit/tst_qlineedit.cpp
+@@ -292,6 +292,7 @@ private slots:
+     void clearButtonVisibleAfterSettingText_QTBUG_45518();
+     void sideWidgets();
+     void sideWidgetsActionEvents();
++    void sideWidgetsEffectiveMargins();
+ 
+     void shouldShowPlaceholderText_data();
+     void shouldShowPlaceholderText();
+@@ -4646,6 +4647,71 @@ void tst_QLineEdit::sideWidgetsActionEve
+     QCOMPARE(toolButton2->x(), toolButton1X);
+ }
+ 
++/*!
++    Verify that side widgets are positioned correctly and result in
++    correct effective text margins.
++*/
++void tst_QLineEdit::sideWidgetsEffectiveMargins()
++{
++#ifndef QT_BUILD_INTERNAL
++    QSKIP("This test requires a developer build.");
++#else
++    QLineEdit edit;
++    edit.setPlaceholderText("placeholder");
++    edit.setClearButtonEnabled(true);
++    edit.show();
++    QLineEditPrivate *priv = QLineEditPrivate::get(&edit);
++    const auto sideWidgetParameters = priv->sideWidgetParameters();
++    const int sideWidgetWidth = sideWidgetParameters.widgetWidth + sideWidgetParameters.margin;
++    QVERIFY(QTest::qWaitForWindowExposed(&edit));
++
++    QCOMPARE(priv->effectiveTextMargins().left(), 0);
++    QCOMPARE(priv->effectiveTextMargins().right(), 0);
++
++    edit.setText("Left to right"); // clear button fades in on the right
++    QCOMPARE(priv->effectiveTextMargins().left(), 0);
++    QCOMPARE(priv->effectiveTextMargins().right(), sideWidgetWidth);
++    edit.clear();
++    QCOMPARE(priv->effectiveTextMargins().left(), 0);
++    QCOMPARE(priv->effectiveTextMargins().right(), 0);
++
++    edit.setLayoutDirection(Qt::RightToLeft);
++    edit.setText("ئۇيغۇر تىلى"); // clear button fades in on the left
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), 0);
++    edit.clear();
++    QCOMPARE(priv->effectiveTextMargins().left(), 0);
++    QCOMPARE(priv->effectiveTextMargins().right(), 0);
++
++    edit.setLayoutDirection(Qt::LeftToRight);
++
++    const QIcon leftIcon = edit.style()->standardIcon(QStyle::SP_FileIcon);
++    const QIcon rightIcon = edit.style()->standardIcon(QStyle::SP_DirIcon);
++    edit.addAction(leftIcon, QLineEdit::ActionPosition::LeadingPosition);
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), 0);
++
++    edit.addAction(rightIcon, QLineEdit::ActionPosition::TrailingPosition);
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), sideWidgetWidth);
++
++    edit.setText("Left to right"); // clear button on the right
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), 2 * sideWidgetWidth);
++    edit.clear();
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), sideWidgetWidth);
++
++    edit.setLayoutDirection(Qt::RightToLeft);
++    edit.setText("ئۇيغۇر تىلى"); // clear button fades in on the left
++    QCOMPARE(priv->effectiveTextMargins().left(), 2 * sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), sideWidgetWidth);
++    edit.clear();
++    QCOMPARE(priv->effectiveTextMargins().left(), sideWidgetWidth);
++    QCOMPARE(priv->effectiveTextMargins().right(), sideWidgetWidth);
++#endif
++}
++
+ Q_DECLARE_METATYPE(Qt::AlignmentFlag)
+ void tst_QLineEdit::shouldShowPlaceholderText_data()
+ {

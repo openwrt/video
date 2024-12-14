@@ -1,0 +1,33 @@
+Description: guard UTIME_NOW/UTIME_OMIT usages
+Author: Dmitry Shachnev <mitya57@debian.org>
+Author: Pino Toscano <pino@debian.org>
+Forwarded: no
+Last-Update: 2018-02-22
+
+---
+ qmake/library/ioutils.cpp                 |    2 +-
+ src/corelib/io/qfilesystemengine_unix.cpp |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- a/qmake/library/ioutils.cpp
++++ b/qmake/library/ioutils.cpp
+@@ -228,7 +228,7 @@ bool IoUtils::touchFile(const QString &t
+         *errorString = fL1S("Cannot stat() reference file %1: %2.").arg(referenceFileName, fL1S(strerror(errno)));
+         return false;
+     }
+-#    if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L
++#    if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L && defined(UTIME_NOW)
+     const struct timespec times[2] = { { 0, UTIME_NOW }, st.st_mtim };
+     const bool utimeError = utimensat(AT_FDCWD, targetFileName.toLocal8Bit().constData(), times, 0) < 0;
+ #    else
+--- a/src/corelib/io/qfilesystemengine_unix.cpp
++++ b/src/corelib/io/qfilesystemengine_unix.cpp
+@@ -1595,7 +1595,7 @@ bool QFileSystemEngine::setFileTime(int
+         return false;
+     }
+ 
+-#if QT_CONFIG(futimens)
++#if QT_CONFIG(futimens) && defined(UTIME_OMIT)
+     struct timespec ts[2];
+ 
+     ts[0].tv_sec = ts[1].tv_sec = 0;
