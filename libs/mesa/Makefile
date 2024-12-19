@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=24.3.0
+PKG_VERSION:=24.3.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=97813fe65028ef21b4d4e54164563059e8408d8fee3489a2323468d198bf2efc
+PKG_HASH:=9c795900449ce5bc7c526ba0ab3532a22c3c951cab7e0dd9de5fcac41b0843af
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -725,6 +725,12 @@ define Package/libmesa/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*GL*.so* $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libgbm.so* $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libgallium*.so* $(1)/usr/lib
+	$(INSTALL_DIR) $(1)/usr/lib/gbm
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/gbm/*.so $(1)/usr/lib/gbm
+	if [ -e "$(PKG_INSTALL_DIR)/usr/lib/dri" ]; then \
+		$(INSTALL_DIR) $(1)/usr/lib/dri ; \
+		$(CP) $(PKG_INSTALL_DIR)/usr/lib/dri/*.so $(1)/usr/lib/dri ; \
+	fi
 	$(INSTALL_DIR) $(1)/usr/share/drirc.d
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/drirc.d/* $(1)/usr/share/drirc.d
 endef
