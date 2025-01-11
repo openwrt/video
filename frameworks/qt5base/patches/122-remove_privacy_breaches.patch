@@ -1,0 +1,26 @@
+Description: remove non-used privacy-breach code
+ This code makes Lintian unhappy. But we are really not using it, it only
+ gets inserted when building the online doc.
+ Anyways the best way to calm down Lintian is to simply remove it.
+Author: Lisandro Damián Nicanor Pérez Meyer <lisandro@debian.org>
+Forwarded: not-needed
+Last-Update: 2015-02-18
+
+---
+ doc/global/template/scripts/main.js |    5 -----
+ 1 file changed, 5 deletions(-)
+
+--- a/doc/global/template/scripts/main.js
++++ b/doc/global/template/scripts/main.js
+@@ -94,11 +94,6 @@ $(document).ready(function($) {
+ });
+ 
+ $( window ).load(function() {
+-    load_sdk('script', 'facebook-jssdk','//connect.facebook.net/en_US/sdk.js#xfbml=1&appId=207346529386114&version=v2.0');
+-    load_sdk('script', 'twitter-wjs', '//platform.twitter.com/widgets.js');
+-    $.getScript("//www.google.com/jsapi", function(){
+-        google.load("feeds", "1", {"callback": oneQt.liveFeeds});
+-    });
+ });
+ 
+ var oneQt = {

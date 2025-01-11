@@ -1,0 +1,56 @@
+Description: fix recursion crash when calling setStyleSheet with qproperty-styleSheet
+ When calling setStyleSheet with property qproperty-styleSheet,
+ QStyleSheetStyle::polish will call QStyleSheetStyle::setProperties,
+ and then QStyleSheetStyle::setProperties goes on to call setProperty.
+ Because there is property qproperty-styleSheet, it will update
+ stylesheet by calling QStyleSheetStyle::polish.
+ This causes the recursive call to crash.
+Origin: upstream, https://code.qt.io/cgit/qt/qtbase.git/commit/?id=e9cdcc7cb314586a
+Last-Update: 2021-11-13
+
+--- a/src/widgets/styles/qstylesheetstyle.cpp
++++ b/src/widgets/styles/qstylesheetstyle.cpp
+@@ -2626,6 +2626,9 @@ void QStyleSheetStyle::setProperties(QWi
+         default: v = decl.d->values.at(0).variant; break;
+         }
+ 
++        if (propertyL1 == QByteArray("styleSheet") && value == v)
++            continue;
++
+         w->setProperty(propertyL1, v);
+     }
+ }
+--- a/tests/auto/widgets/styles/qstylesheetstyle/tst_qstylesheetstyle.cpp
++++ b/tests/auto/widgets/styles/qstylesheetstyle/tst_qstylesheetstyle.cpp
+@@ -94,6 +94,7 @@ private slots:
+     void layoutSpacing();
+ #endif
+     void qproperty();
++    void qproperty_styleSheet();
+     void palettePropagation_data();
+     void palettePropagation();
+     void fontPropagation_data();
+@@ -677,6 +678,23 @@ void tst_QStyleSheetStyle::qproperty()
+     QCOMPARE(pb.isChecked(), false);
+ }
+ 
++void tst_QStyleSheetStyle::qproperty_styleSheet()
++{
++    QWidget w;
++    auto checkBox = new QCheckBox("check", &w);
++    QString sheet = R"(QCheckBox { qproperty-styleSheet: "QCheckBox { qproperty-text: foobar; }"; })";
++
++    QVERIFY(w.property("styleSheet").toString().isEmpty());
++
++    w.setStyleSheet(sheet);
++    QCOMPARE(checkBox->text(), "check");
++
++    //recursion crash
++    w.ensurePolished();
++    QCOMPARE(w.property("styleSheet").toString(), sheet);
++    QCOMPARE(checkBox->text(), "foobar");
++}
++
+ namespace ns {
+     class PushButton1 : public QPushButton {
+         Q_OBJECT

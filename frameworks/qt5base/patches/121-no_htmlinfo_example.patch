@@ -1,0 +1,15 @@
+Description: disable htmlinfo example which contains non-free files
+Author: Dmitry Shachnev <mitya57@debian.org>
+Forwarded: not-needed
+Last-Update: 2014-12-17
+
+--- a/examples/xml/xml.pro
++++ b/examples/xml/xml.pro
+@@ -1,6 +1,5 @@
+ TEMPLATE      = subdirs
+-SUBDIRS       = htmlinfo \
+-                xmlstreamlint
++SUBDIRS       = xmlstreamlint
+ 
+ qtHaveModule(widgets) {
+     SUBDIRS +=  dombookmarks \

@@ -1,0 +1,23 @@
+Description: pass default include directories to qdoc
+Author: Martin Smith <martin.smith@qt.io>
+Bug: https://bugs.debian.org/908328
+Forwarded: no
+Last-Update: 2020-01-28
+
+---
+ mkspecs/features/qt_docs.prf |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/mkspecs/features/qt_docs.prf
++++ b/mkspecs/features/qt_docs.prf
+@@ -98,6 +98,10 @@ doc_command = $$QDOC $$QMAKE_DOCS
+ prepare_docs {
+     prepare_docs.commands += $$doc_command -prepare $$PREP_DOC_INDEXES -no-link-errors $$QDOC_INCLUDE_PATHS
+     generate_docs.commands += $$doc_command -generate $$DOC_INDEXES $$QDOC_INCLUDE_PATHS
++    for (incdir, QMAKE_DEFAULT_INCDIRS) {
++        prepare_docs.commands += -I$$shell_quote($$incdir)
++        generate_docs.commands += -I$$shell_quote($$incdir)
++    }
+     prepare_docs.depends += qtattributionsscanner
+ } else {
+     html_docs.commands += $$doc_command $$DOC_INDEXES $(QDOC_INCLUDE_PATHS)
