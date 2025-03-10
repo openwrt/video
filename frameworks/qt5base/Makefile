@@ -291,7 +291,9 @@ define Build/Prepare
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
 
-# TARGET_CFLAGS += \
+# The permissive flag solves gnu-libiconv detection failure.
+TARGET_CFLAGS += \
+	  $(if $(CONFIG_BUILD_NLS),-fpermissive)
 # 	  -I$(STAGING_DIR)/usr/include/freetype2 \
 # 	  -I$(STAGING_DIR)/usr/include/libdrm
 
