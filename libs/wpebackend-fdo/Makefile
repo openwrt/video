@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpebackend-fdo
-PKG_VERSION:=1.14.3
+PKG_VERSION:=1.14.4
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=10121842595a850291db3e82f3db0b9984df079022d386ce42c2b8508159dc6c
+PKG_HASH:=d0edbd8f1850f5eb179bfa675db79d91b6f9ee8c8f94694a449e3cd975763410
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-2-clause
