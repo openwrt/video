@@ -1,6 +1,6 @@
 --- a/Source/WebCore/platform/graphics/gstreamer/mse/MediaSourcePrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/mse/MediaSourcePrivateGStreamer.cpp
-@@ -170,6 +170,7 @@ void MediaSourcePrivateGStreamer::startP
+@@ -184,6 +184,7 @@ void MediaSourcePrivateGStreamer::startP
      m_playerPrivate.startSource(tracks);
  }
  
@@ -8,7 +8,7 @@
  TrackID MediaSourcePrivateGStreamer::registerTrackId(TrackID preferredId)
  {
      ASSERT(isMainThread());
-@@ -203,6 +204,7 @@ bool MediaSourcePrivateGStreamer::unregi
+@@ -218,6 +219,7 @@ bool MediaSourcePrivateGStreamer::unregi
  
      return res;
  }
