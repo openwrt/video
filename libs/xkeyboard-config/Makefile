@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkeyboard-config
-PKG_VERSION:=2.43
+PKG_VERSION:=2.44
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://www.x.org/releases/individual/data/$(PKG_NAME)/
-PKG_HASH:=c810f362c82a834ee89da81e34cd1452c99789339f46f6037f4b9e227dd06c01
+PKG_HASH:=54d2c33eeebb031d48fa590c543e54c9bcbd0f00386ebc6489b2f47a0da4342a
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -15,7 +15,7 @@ PKG_LICENSE_FILES:=COPYING
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
 
-PKG_BUILD_DEPENDS:=libxslt/host intltool/host perl-xml-parser/host python3/host
+PKG_BUILD_DEPENDS:=libxslt/host perl-xml-parser/host python3/host
 
 PYTHON3_PKG_BUILD:=0
 MESON_USE_STAGING_PYTHON:=1
