@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=vulkan-loader
-PKG_VERSION:=1.3.302
+PKG_VERSION:=1.4.309
 
 PKG_SOURCE:=Vulkan-Loader-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/Vulkan-Loader/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=7f8d3e5c7428fe2d6220a4ea1c0270c7695bfef8e48c38b827e9e81880637710
+PKG_HASH:=3e4085a55f6e356fe9dbd47e6dc762be732790add3532943da824b3e8c062827
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/Vulkan-Loader-$(PKG_VERSION)
 
