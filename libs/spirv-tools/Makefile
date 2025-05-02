@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=spirv-tools
-PKG_VERSION:=1.3.296.0
+PKG_VERSION:=1.4.309.0
 
 PKG_SOURCE:=SPIRV-Tools-vulkan-sdk-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/SPIRV-Tools/tar.gz/vulkan-sdk-$(PKG_VERSION)?
-PKG_HASH:=75aafdf7e731b4b6bfb36a590ddfbb38ebc605d80487f38254da24fe0cb95837
+PKG_HASH:=6b8577054c575573ead3ad71cb6a2c0b3397b64c746cc3c99e48cc5e324c1b55
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/SPIRV-Tools-vulkan-sdk-$(PKG_VERSION)
 HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/SPIRV-Tools-vulkan-sdk-$(PKG_VERSION)
