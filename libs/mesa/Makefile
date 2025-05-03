@@ -1,22 +1,20 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=24.3.1
+PKG_VERSION:=25.0.5
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=9c795900449ce5bc7c526ba0ab3532a22c3c951cab7e0dd9de5fcac41b0843af
+PKG_HASH:=c0d245dea0aa4b49f74b3d474b16542e4a8799791cd33d676c69f650ad4378d0
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
 
 PKG_INSTALL:=1
 
-# arc, powerpc and powerpc64 LLVM builds are currently broken, but powerpc{,64} would support JIT in theory
-LLVM_SUPPORTED:=(aarch64||arm||i386||i686||loongarch64||mips||mipsel||mips64||mips64el||riscv64||x86_64)
+PKG_BUILD_DEPENDS:=glslang/host python3/host libva MESA_USE_LLVM:llvm MESA_USE_LLVM:mesa/host
 
-PKG_BUILD_DEPENDS:=glslang/host python3/host libva (x86_64||i386||i686):mesa/host $(LLVM_SUPPORTED):llvm
 HOST_BUILD_DEPENDS:=python3/host spirv-tools/host llvm
 
 PKG_CONFIG_DEPENDS:= \
@@ -51,12 +49,6 @@ PYTHON3_PKG_BUILD:=0
 MESON_USE_STAGING_PYTHON:=1
 HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
 
-ifneq ($(CONFIG_aarch64)$(CONFIG_arm)$(CONFIG_i386)$(CONFIG_i686)$(CONFIG_loongarch64)$(CONFIG_mips)$(CONFIG_mipsel)$(CONFIG_mips64)$(CONFIG_mips64el)$(CONFIG_riscv64)$(CONFIG_x86_64),)
-MESA_USE_LLVM:=1
-else
-MESA_USE_LLVM:=
-endif
-
 include $(TOPDIR)/feeds/packages/lang/rust/rust-values.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
@@ -72,41 +64,40 @@ define Package/mesa/Default
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Video
+  DEPENDS:=+powerpc:libatomic
   TITLE:=Mesa3D
   URL:=https://www.mesa3d.org
 endef
 
-define Package/libmesa/Default
+define Package/mesa3d
 $(call Package/mesa/Default)
-  DEPENDS:=+libglapi +libstdcpp +zlib +libdrm +libsensors +libwayland +libzstd \
-	   +wayland-protocols
-  TITLE+= OpenGL and friends
-  PROVIDES:=libmesa
+  HIDDEN:=1
 endef
 
-
-define Package/libglapi
-$(call Package/mesa/Default)
-  TITLE+= libglapi
-  DEPENDS:=+libpthread +libatomic
-  VARIANT:=softpipe
-endef
-
-define Package/libglapi/description
-Free implementation of the GL API.
-endef
-
-define Package/libglapi/config
+define Package/mesa3d/config
 config HAVE_MESA
 	bool
 	default y
+
+config MESA_USE_LLVM
+	bool "Use LLVM to build MESA"
+	depends on aarch64||arm||i386||i686||loongarch64||mips||mipsel||mips64||mips64el||riscv64||x86_64
+	default y
+endef
+
+define Package/libmesa/Default
+$(call Package/mesa/Default)
+  DEPENDS+=+libstdcpp +zlib +libdrm +libsensors +libwayland +libzstd \
+           +wayland-protocols
+  PROVIDES:=libmesa
+  TITLE+= OpenGL and friends
 endef
 
 
 define Package/libmesa-amd
 $(call Package/libmesa/Default)
   TITLE+= (AMD)
-  DEPENDS+=+libdrm-amdgpu +libdrm-radeon +libelf @$(LLVM_SUPPORTED)
+  DEPENDS+=+libdrm-amdgpu +libdrm-radeon +libelf @MESA_USE_LLVM
   VARIANT:=amd
 endef
 
@@ -130,7 +121,7 @@ endef
 
 define Package/libmesa-intel
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-intel @(i386||i686||x86_64)
+  DEPENDS+=+libdrm-intel @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= (Intel)
   VARIANT:=intel
 endef
@@ -186,7 +177,7 @@ endef
 
 define Package/libmesa-nouveau
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-nouveau @$(LLVM_SUPPORTED)
+  DEPENDS+=+libdrm-nouveau @MESA_USE_LLVM
   TITLE+= (NVIDIA)
   VARIANT:=nouveau
 endef
@@ -287,7 +278,7 @@ define Package/libmesa-zink
 $(call Package/libmesa/Default)
   TITLE+= (Zink GL via Vulkan)
   VARIANT:=vulkan
-  DEPENDS+=@$(LLVM_SUPPORTED)
+  DEPENDS+=@MESA_USE_LLVM
 endef
 
 define Package/libmesa-zink/description
@@ -313,7 +304,7 @@ endef
 define Package/libmesa-llvmpipe
 $(call Package/libmesa/Default)
   TITLE+= (LLVMpipe)
-  DEPENDS+=@$(LLVM_SUPPORTED)
+  DEPENDS+=@MESA_USE_LLVM
   VARIANT:=llvmpipe
 endef
 
@@ -331,7 +322,8 @@ define Package/libopencl/Default
 $(call Package/mesa/Default)
   TITLE+= OpenCL
   PROVIDES:=libopencl
-  DEPENDS:=+$(LLVM_SUPPORTED):libclang-cpp +libdrm +libelf +libexpat +libstdcpp +libzstd +zlib @$(LLVM_SUPPORTED)
+  DEPENDS+=+MESA_USE_LLVM:libclang-cpp +libdrm +libelf +libexpat +libstdcpp \
+	   +libzstd +zlib @MESA_USE_LLVM
 endef
 
 
@@ -358,7 +350,7 @@ endef
 
 define Package/libosmesa/Default
 $(call Package/mesa/Default)
-  DEPENDS:=+libdrm +libglapi +libstdcpp +zlib +libwayland +libzstd +wayland-protocols
+  DEPENDS+=+libdrm +libstdcpp +zlib +libwayland +libzstd +wayland-protocols
   TITLE+= off-screen rendering library
 endef
 
@@ -385,7 +377,7 @@ endef
 define Package/libosmesa-llvmpipe
 $(call Package/libosmesa/Default)
   TITLE+= (LLVMpipe)
-  DEPENDS+=@$(LLVM_SUPPORTED)
+  DEPENDS+=@MESA_USE_LLVM
   VARIANT:=llvmpipe
 endef
 
@@ -398,7 +390,7 @@ endef
 
 define Package/libvulkan-broadcom
 $(call Package/mesa/Default)
-  DEPENDS:=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(arm||aarch64) @HAS_FPU
   TITLE+= Broadcom Vulkan driver
   VARIANT:=vulkan
@@ -411,8 +403,8 @@ endef
 
 define Package/libvulkan-imagination
 $(call Package/mesa/Default)
-  DEPENDS:=+libatomic +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
-	   @(aarch64||arm||mips||mips64||mipsel||mips64el||riscv64)
+  DEPENDS+=+libatomic +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd \
+	   +zlib @(aarch64||arm||mips||mips64||mipsel||mips64el||riscv64)
   TITLE+= Imagination PowerVR driver (EXPERIMENTAL)
   VARIANT:=vulkan
 endef
@@ -435,8 +427,8 @@ endef
 
 define Package/libvulkan-intel
 $(call Package/mesa/Default)
-  DEPENDS:=+libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
-	   @(i386||i686||x86_64)
+  DEPENDS+=+libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+	   @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= Intel Gen9+ Vulkan driver
   VARIANT:=vulkan
 endef
@@ -448,8 +440,8 @@ endef
 
 define Package/libvulkan-intel-hasvk
 $(call Package/mesa/Default)
-  DEPENDS:=+libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
-	   @(i386||i686||x86_64)
+  DEPENDS+=+libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+	   @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= Intel Gen7/Gen8 Vulkan driver
   VARIANT:=vulkan
 endef
@@ -461,7 +453,7 @@ endef
 
 define Package/libvulkan-lvp
 $(call Package/mesa/Default)
-  DEPENDS:=+libatomic +libdrm +libstdcpp +libudev +libwayland +libzstd +zlib @$(LLVM_SUPPORTED)
+  DEPENDS+=+libatomic +libdrm +libstdcpp +libudev +libwayland +libzstd +zlib @MESA_USE_LLVM
   TITLE+= LLVM JIT CPU rendering Vulkan driver
   VARIANT:=vulkan
 endef
@@ -474,7 +466,7 @@ endef
 define Package/libvulkan-nouveau
 $(call Package/mesa/Default)
   TITLE+= nouveau Vulkan driver for nVidia GPUs
-  DEPENDS:=$(RUST_ARCH_DEPENDS) @BROKEN
+  DEPENDS+=$(RUST_ARCH_DEPENDS) @MESA_USE_LLVM @BROKEN
   VARIANT:=vulkan
 # needs rust-bindgen which currently can't be built
 endef
@@ -490,7 +482,7 @@ endef
 
 define Package/libvulkan-panfrost
 $(call Package/mesa/Default)
-  DEPENDS:=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(arm||aarch64)
   TITLE+= ARM Mali Midgard/Bifrost/Valhall Vulkan driver
   VARIANT:=vulkan
@@ -504,7 +496,8 @@ endef
 define Package/libvulkan-radeon
 $(call Package/mesa/Default)
   TITLE+= AMD Radeon Vulkan driver
-  DEPENDS:=+libatomic +libdrm-amdgpu +libelf +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib @$(LLVM_SUPPORTED)
+  DEPENDS+=+libdrm-amdgpu +libelf +libexpat +libstdcpp +libudev +libwayland \
+	   +libzstd +zlib @MESA_USE_LLVM
   VARIANT:=vulkan
 endef
 
@@ -562,12 +555,15 @@ MESON_HOST_ARGS += \
 	-Dgallium-xa=disabled \
 	-Dtools=nir \
 	-Dllvm=enabled \
+	-Dmesa-clc=enabled \
+	-Dprecomp-compiler=enabled \
 	-Dshared-llvm=disabled \
-	-Dshared-glapi=disabled \
 	-Ddraw-use-llvm=false \
 	-Dintel-clc=enabled \
 	-Dstatic-libclc=all \
-	-Dinstall-intel-clc=true
+	-Dinstall-intel-clc=true \
+	-Dinstall-mesa-clc=true \
+	-Dinstall-precomp-compiler=true
 
 MESON_ARGS += \
 	-Dplatforms=wayland \
@@ -582,11 +578,12 @@ MESON_ARGS += \
 	-Dlibunwind=disabled \
 	-Dvalgrind=disabled \
 	-Dtools= \
-	-Dllvm=$(if $(MESA_USE_LLVM),en,dis)abled \
-	-Dshared-glapi=enabled \
-	-Dgallium-opencl=$(if $(MESA_USE_LLVM),standalone,disabled) \
-	-Ddraw-use-llvm=$(if $(MESA_USE_LLVM),true,false) \
-	-Dintel-clc=system
+	-Dllvm=$(if $(CONFIG_MESA_USE_LLVM),en,dis)abled \
+	-Dgallium-opencl=$(if $(CONFIG_MESA_USE_LLVM),standalone,disabled) \
+	-Ddraw-use-llvm=$(if $(CONFIG_MESA_USE_LLVM),true,false) \
+	-Dintel-clc=system \
+	-Dmesa-clc=system \
+	-Dprecomp-compiler=system
 
 ifeq ($(BUILD_VARIANT),amd)
 MESON_ARGS += \
@@ -670,7 +667,7 @@ define Host/Configure
 	$(LN) $(STAGING_DIR_HOST)/llvm-mesa/include $(HOST_BUILD_DIR)/subprojects/llvm
 	$(LN) $(STAGING_DIR_HOST)/llvm-mesa/lib $(HOST_BUILD_DIR)/subprojects/llvm
 	$(CP) ./llvm-meson.build.in $(HOST_BUILD_DIR)/subprojects/llvm/meson.build
-	LLVM_BUILDDIR=$(wildcard $(BUILD_DIR_HOST)/llvm-mesa/llvm-project-*) ; LLVM_VER=$$$${LLVM_BUILDDIR##*llvm-project-} ; LLVM_VER=$$$${LLVM_VER%%.src} ;\
+	LLVM_BUILDDIR=$(lastword $(wildcard $(BUILD_DIR_HOST)/llvm-mesa/llvm-project-*)) ; LLVM_VER=$$$${LLVM_BUILDDIR##*llvm-project-} ; LLVM_VER=$$$${LLVM_VER%%.src} ;\
 	$(SED) "s%@LLVM_VERSION@%$$$${LLVM_VER}%" $(HOST_BUILD_DIR)/subprojects/llvm/meson.build
 	LLVM_LIBS=$$$$( next_comma='' ; for lib in $(STAGING_DIR_HOST)/llvm-mesa/lib/*.a; do \
 		lib=$$$${lib##*/lib} ; \
@@ -713,11 +710,6 @@ define Build/InstallDev
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/pkgconfig/*.pc $(1)/usr/lib/pkgconfig
-endef
-
-define Package/libglapi/install
-	$(INSTALL_DIR) $(1)/usr/lib
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libglapi.so* $(1)/usr/lib
 endef
 
 define Package/libmesa/install
@@ -821,7 +813,7 @@ Package/libopencl-nouveau/install = $(Package/libopencl/install)
 Package/libosmesa-softpipe/install = $(Package/libosmesa/install)
 Package/libosmesa-llvmpipe/install = $(Package/libosmesa/install)
 
-$(eval $(call BuildPackage,libglapi))
+$(eval $(call BuildPackage,mesa3d))
 $(eval $(call BuildPackage,libmesa-amd))
 $(eval $(call BuildPackage,libmesa-intel))
 $(eval $(call BuildPackage,libmesa-tegra))
