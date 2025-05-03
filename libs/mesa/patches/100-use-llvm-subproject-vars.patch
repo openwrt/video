@@ -1,6 +1,6 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -1748,21 +1748,26 @@ _llvm = get_option('llvm')
+@@ -1782,21 +1782,26 @@ _llvm = get_option('llvm')
  dep_llvm = null_dep
  with_llvm = false
  if _llvm.allowed()
@@ -42,7 +42,7 @@
  endif
  if with_llvm
    pre_args += '-DMESA_LLVM_VERSION_STRING="@0@"'.format(dep_llvm.version())
-@@ -1861,7 +1866,11 @@ endif
+@@ -1895,7 +1900,11 @@ endif
  
  dep_clang = null_dep
  if with_clc or with_gallium_clover
@@ -76,8 +76,8 @@
    )
 --- a/src/gallium/frontends/clover/meson.build
 +++ b/src/gallium/frontends/clover/meson.build
-@@ -31,6 +31,12 @@ if with_clover_spirv
-   clover_spirv_cpp_args += '-DHAVE_CLOVER_SPIRV'
+@@ -26,6 +26,12 @@ if with_opencl_icd
+   clover_cpp_args += '-DHAVE_CLOVER_ICD'
  endif
  
 +if dep_llvm.type_name() == 'internal'
@@ -89,9 +89,9 @@
  libclllvm = static_library(
    'clllvm',
    files(
-@@ -50,7 +56,7 @@ libclllvm = static_library(
+@@ -44,7 +50,7 @@ libclllvm = static_library(
+     clover_cpp_args,
      clover_opencl_cpp_args,
-     clover_spirv_cpp_args,
      '-DCLANG_RESOURCE_DIR="@0@"'.format(join_paths(
 -      dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir'), 'clang',
 +      llvm_libdir, 'clang',
