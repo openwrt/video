@@ -1,0 +1,22 @@
+config BUILD_qt6base-gui_DRM
+    bool "Include DRM support"
+    #depends on PACKAGE_qt6base-gui
+    default y
+
+config BUILD_qt6base-gui_ICU
+    bool "Compile with ICU internationalization support"
+    #depends on PACKAGE_qt6base-gui
+    default y
+
+choice
+    prompt "Which OpenGL variant to use"
+    default BUILD_qt6base-gui_OPENGL_NONE
+    #depends on PACKAGE_qt6base-gui
+
+config BUILD_qt6base-gui_OPENGL_OPENGLES2
+    bool "es2"
+
+config BUILD_qt6base-gui_OPENGL_NONE
+    bool "no"
+
+endchoice
