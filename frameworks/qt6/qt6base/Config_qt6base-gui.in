@@ -1,0 +1,70 @@
+config BUILD_qt6base-gui_DRM
+    bool "Include DRM support"
+    #depends on PACKAGE_qt6base-gui
+    default y
+
+config BUILD_qt6base-gui_UDEV
+    bool "Use libudev for input device discovery"
+    #depends on PACKAGE_qt6base-gui
+    default y
+    help
+        Input device discovery of the evdev, linuxfb, vnc and eglfs plugins
+        through libudev, including hotplug of input devices. Otherwise
+        devices are discovered by scanning /dev/input once at startup.
+
+        libudev is provided by libudev-zero. Its "udev" monitor, which Qt
+        uses, listens on netlink group mask 0x4 instead of the kernel's
+        uevent group (0x1). Hotplug events are only delivered if uevents
+        are forwarded to that group; enumeration at startup is not
+        affected.
+
+config BUILD_qt6base-gui_ICU
+    bool "Compile with ICU internationalization support"
+    #depends on PACKAGE_qt6base-gui
+    default y
+
+choice
+    prompt "Which OpenGL variant to use"
+    default BUILD_qt6base-gui_OPENGL_NONE
+    #depends on PACKAGE_qt6base-gui
+
+config BUILD_qt6base-gui_OPENGL_OPENGLES2
+    bool "es2"
+
+config BUILD_qt6base-gui_OPENGL_NONE
+    bool "no"
+
+endchoice
+
+choice
+    prompt "Default platform plugin"
+    default BUILD_qt6base-gui_QPA_DEFAULT_EGLFS if PACKAGE_qt6base-plugin-platforms-eglfs
+    default BUILD_qt6base-gui_QPA_DEFAULT_LINUXFB if PACKAGE_qt6base-plugin-platforms-linuxfb
+    default BUILD_qt6base-gui_QPA_DEFAULT_VNC if PACKAGE_qt6base-plugin-platforms-vnc
+    default BUILD_qt6base-gui_QPA_DEFAULT_OFFSCREEN if PACKAGE_qt6base-plugin-platforms-offscreen
+    default BUILD_qt6base-gui_QPA_DEFAULT_MINIMAL if PACKAGE_qt6base-plugin-platforms-minimal
+    help
+        Platform plugin compiled into Qt6Gui as the default, used when
+        neither QT_QPA_PLATFORM nor -platform select one at runtime.
+
+config BUILD_qt6base-gui_QPA_DEFAULT_EGLFS
+    bool "eglfs"
+    depends on PACKAGE_qt6base-plugin-platforms-eglfs
+
+config BUILD_qt6base-gui_QPA_DEFAULT_LINUXFB
+    bool "linuxfb"
+    depends on PACKAGE_qt6base-plugin-platforms-linuxfb
+
+config BUILD_qt6base-gui_QPA_DEFAULT_VNC
+    bool "vnc"
+    depends on PACKAGE_qt6base-plugin-platforms-vnc
+
+config BUILD_qt6base-gui_QPA_DEFAULT_OFFSCREEN
+    bool "offscreen"
+    depends on PACKAGE_qt6base-plugin-platforms-offscreen
+
+config BUILD_qt6base-gui_QPA_DEFAULT_MINIMAL
+    bool "minimal"
+    depends on PACKAGE_qt6base-plugin-platforms-minimal
+
+endchoice
