@@ -310,10 +310,8 @@ define Build/Configure
 		TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
 		PKG_CONFIG_SYSROOT_DIR="$(STAGING_DIR)" \
 		./configure \
+			--extprefix=$(STAGING_DIR)/$(CONFIGURE_PREFIX) \
 			--prefix=$(QT_INSTALL_PREFIX) \
-			--extprefix=$(QT_EXTPREFIX) \
-			--hostprefix=$(QT_HOST_PREFIX) \
-			--gcc-sysroot=no \
 			--bindir=$(QT_INSTALL_BINS) \
 			--headerdir=$(QT_INSTALL_HEADERS) \
 			--libdir=$(QT_INSTALL_LIBS) \
@@ -328,9 +326,10 @@ define Build/Configure
 			--sysconfdir=$(QT_INSTALL_CONFIGURATION) \
 			--examplesdir=$(QT_INSTALL_EXAMPLES) \
 			--testsdir=$(QT_INSTALL_TESTS) \
+			--hostprefix=$(QT_HOST_PREFIX) \
 			--hostbindir=$(QT_HOST_BINS) \
-			--hostlibdir=$(QT_HOST_LIBS) \
 			--hostdatadir=$(QT_HOST_DATA) \
+			--gcc-sysroot=no \
 			--verbose=yes \
 			--opensource \
 			--confirm-license \
@@ -418,11 +417,21 @@ define Host/Configure
 		TARGET_CXXFLAGS="$(HOST_CFLAGS) $(HOST_CXXFLAGS)" \
 		TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
 		./configure \
-			--prefix=$(STAGING_DIR_HOST) \
-			--hostprefix=$(STAGING_DIR_HOST) \
-			--hostdatadir=$(STAGING_DIR_HOST)/share \
-			--datadir=$(STAGING_DIR_HOST)/share \
-			--archdatadir=$(STAGING_DIR_HOST)/lib \
+			--prefix=$(QT_HOSTPKG_PREFIX) \
+			--bindir=$(QT_HOSTPKG_BINS) \
+			--headerdir=$(QT_HOSTPKG_HEADERS) \
+			--libdir=$(QT_HOSTPKG_LIBS) \
+			--archdatadir=$(QT_HOSTPKG_ARCHDATA) \
+			--plugindir=$(QT_HOSTPKG_PLUGINS) \
+			--libexecdir=$(QT_HOSTPKG_LIBEXECS) \
+			--importdir=$(QT_HOSTPKG_IMPORTS) \
+			--qmldir=$(QT_HOSTPKG_QML) \
+			--datadir=$(QT_HOSTPKG_DATA) \
+			--docdir=$(QT_HOSTPKG_DOCS) \
+			--translationdir=$(QT_HOSTPKG_TRANSLATIONS) \
+			--sysconfdir=$(QT_HOSTPKG_CONFIGURATION) \
+			--examplesdir=$(QT_HOSTPKG_EXAMPLES) \
+			--testsdir=$(QT_HOSTPKG_TESTS) \
 			--gcc-sysroot=no \
 			--verbose=yes \
 			--opensource \
@@ -506,7 +515,7 @@ define Build/InstallDev
 
 	$(CP) \
 		./files/qmake.mk \
-		$(STAGING_DIR)/host/mk/
+		$(STAGING_DIR)/host/mk/qmake5.mk
 
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
@@ -516,31 +525,9 @@ endef
 define Host/Install
 	$(call Host/Install/Default)
 
-	$(INSTALL_DIR) \
-	  $(STAGING_DIR_HOST)/bin \
-	  $(STAGING_DIR_HOST)/lib \
-	  $(STAGING_DIR_HOST)/include \
-	  $(STAGING_DIR_HOST)/share
-
 	$(CP) \
-	  $(HOST_INSTALL_DIR)/lib/* \
-	  $(STAGING_DIR_HOST)/lib/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/include/* \
-	  $(STAGING_DIR_HOST)/include/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/share/* \
-	  $(STAGING_DIR_HOST)/share/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/bin/* \
-	  $(STAGING_DIR_HOST)/bin/
-endef
-
-define Package/qt5base-concurrent/install
-	$(call Build/Install/Libs,$(1),libQt5Concurrent)
+	  $(HOST_INSTALL_DIR)/* \
+	  $(STAGING_DIR_HOST)/
 endef
 
 define Package/qt5base-core/install
