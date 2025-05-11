@@ -482,7 +482,7 @@ define Host/Configure
 			--mtdev=no \
 			--tslib=no \
 			--bundled-xcb-xinput=no \
-			--xkbcommon=yes \
+			--xkbcommon=no \
 			--gif=no \
 			--ico=no \
 			--libjpeg=no \
