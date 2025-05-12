@@ -522,6 +522,7 @@ define Build/InstallDev
 	$(call Build/Install/Headers,$(1))
 	$(call Build/Install/Cmakes,$(1))
 	$(call Build/Install/Libs,$(1),*)
+	$(call Build/Install/Plugins,$(1),*,*)
 endef
 
 define Host/Install
