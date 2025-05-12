@@ -40,7 +40,7 @@ HOST_BUILD_DEPENDS:=qt5base
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
-include ./files/qmake.mk
+include ../qmake.mk
 
 # hard disable udev support for now
 CONFIG_PACKAGE_qt5base-input-autodiscovery:=
@@ -517,13 +517,6 @@ define Host/Configure
 endef
 
 define Build/InstallDev
-	$(INSTALL_DIR) \
-		$(STAGING_DIR)/host/mk
-
-	$(CP) \
-		./files/qmake.mk \
-		$(STAGING_DIR)/host/mk/qmake5.mk
-
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
 	$(call Build/Install/Cmakes,$(1))
