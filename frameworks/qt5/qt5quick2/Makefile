@@ -195,6 +195,8 @@ endef
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
+	$(call Build/Install/Cmakes,$(1))
+	$(call Build/Install/Pkgconfigs,$(1))
 	$(call Build/Install/Libs,$(1),*)
 
 	ln -sf /bin/true $(STAGING_DIR)/host/bin/qmlplugindump
