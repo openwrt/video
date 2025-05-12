@@ -27,7 +27,7 @@ HOST_BUILD_DEPENDS:=qt5base/host
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake.mk
+-include $(STAGING_DIR)/host/mk/qmake5.mk
 
 define Package/qt5tools
   SECTION:=video-frameworks
@@ -45,20 +45,20 @@ define Host/Install
 
 	$(INSTALL_DIR) \
 	  $(STAGING_DIR_HOST)/lib \
-	  $(STAGING_DIR_HOST)/bin
+	  $(STAGING_DIR_HOST)/bin/qt5
 
 	$(CP) \
 	  $(HOST_INSTALL_DIR)/lib/* \
 	  $(STAGING_DIR_HOST)/lib/
 
 	$(CP) \
-	  $(HOST_INSTALL_DIR)/bin/* \
-	  $(STAGING_DIR_HOST)/bin/
+	  $(HOST_INSTALL_DIR)/bin/qt5/* \
+	  $(STAGING_DIR_HOST)/bin/qt5/
 
-	ln -sf $(STAGING_DIR_HOST)/bin/lrelease \
-	  $(STAGING_DIR)/host/bin/
-	ln -sf $(STAGING_DIR_HOST)/bin/lupdate \
-	  $(STAGING_DIR)/host/bin/
+	ln -sf $(STAGING_DIR_HOST)/bin/qt5/lrelease \
+	  $(STAGING_DIR)/host/bin/qt5/
+	ln -sf $(STAGING_DIR_HOST)/bin/qt5/lupdate \
+	  $(STAGING_DIR)/host/bin/qt5/
 
 endef
 

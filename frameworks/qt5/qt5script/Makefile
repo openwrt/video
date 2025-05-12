@@ -23,7 +23,7 @@ PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake.mk
+-include $(STAGING_DIR)/host/mk/qmake5.mk
 
 define Package/qt5script/Default
   SECTION:=video-frameworks
