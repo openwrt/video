@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5graphicaleffects
-PKG_VERSION:=5.15.0
+PKG_VERSION:=5.15.16
 PKG_RELEASE:=1
-PKG_HASH:=0d2ea4bc73b9df13a4b739dcbc1e3c7b298c7e682f7f9252b232e3bde7b63eda
+PKG_HASH:=d185813737f38352d81b3a405a9243aca1af7bfebe37aba22a4099a7031f640a
 
 PKG_SYS_NAME:=qtgraphicaleffects-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
+PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
 PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)

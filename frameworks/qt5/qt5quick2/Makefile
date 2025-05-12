@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION:=5.15.0
+PKG_VERSION:=5.15.16
 PKG_RELEASE:=1
-PKG_HASH:=9c3c93fb7d340b2f7d738d12408c047318c78973cb45bfc5ff6b3a57e1fef699
+PKG_HASH:=4e05de0747176a8a86a8c098ad215c2cdf1825a572b62a70b2e91cd81357408d
 
 PKG_SYS_NAME:=qtdeclarative-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
+PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
 PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
 
 PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
