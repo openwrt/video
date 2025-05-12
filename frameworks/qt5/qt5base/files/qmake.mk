@@ -201,12 +201,19 @@ define Build/Install/Translations
 endef
 
 define Build/Install/Plugins
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_PLUGINS)/$(2)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_PLUGINS)/$(2)/$(3).so* \
-		$(1)/$(QT_INSTALL_PLUGINS)/$(2)/
+	if [ "$(2)" = '*' ]; then \
+		$(INSTALL_DIR) \
+			$(1)/$(QT_INSTALL_PLUGINS) ; \
+		$(CP) \
+			$(PKG_INSTALL_DIR)/$(QT_INSTALL_PLUGINS)/$(2) \
+			$(1)/$(QT_INSTALL_PLUGINS)/ ; \
+	else \
+		$(INSTALL_DIR) \
+			$(1)/$(QT_INSTALL_PLUGINS)/$(2) ; \
+		$(CP) \
+			$(PKG_INSTALL_DIR)/$(QT_INSTALL_PLUGINS)/$(2)/$(3).so* \
+			$(1)/$(QT_INSTALL_PLUGINS)/$(2)/ ; \
+	fi
 endef
 
 define Build/Install/Examples
