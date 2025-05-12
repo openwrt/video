@@ -23,7 +23,7 @@ PKG_BUILD_DEPENDS:=qt5tools/host
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake5.mk
+include ../qmake.mk
 
 define Package/qt5translations
   SECTION:=video-frameworks

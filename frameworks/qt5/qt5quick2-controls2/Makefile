@@ -22,7 +22,7 @@ PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake5.mk
+include ../qmake.mk
 
 define Package/qt5quick2-controls2
   SECTION:=video-frameworks
