@@ -6,9 +6,10 @@
 #
 
 include $(TOPDIR)/rules.mk
+include ../common.mk
 
 PKG_NAME:=qt5graphicaleffects
-PKG_VERSION:=5.15.16
+PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=d185813737f38352d81b3a405a9243aca1af7bfebe37aba22a4099a7031f640a
 
@@ -23,7 +24,6 @@ PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../common.mk
 include ../qmake.mk
 
 define Package/qt5graphicaleffects

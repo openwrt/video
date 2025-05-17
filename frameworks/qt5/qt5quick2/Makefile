@@ -6,9 +6,10 @@
 #
 
 include $(TOPDIR)/rules.mk
+include ../common.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION:=5.15.16
+PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=4e05de0747176a8a86a8c098ad215c2cdf1825a572b62a70b2e91cd81357408d
 
@@ -23,7 +24,6 @@ PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../common.mk
 include ../qmake.mk
 
 define Package/qt5quick2/Default

@@ -6,9 +6,10 @@
 #
 
 include $(TOPDIR)/rules.mk
+include ../common.mk
 
 PKG_NAME:=qt5translations
-PKG_VERSION:=5.15.16
+PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=415dbbb82a75dfc9a7be969e743bee54c0e6867be37bce4cf8f03da39f20112a
 
@@ -23,7 +24,6 @@ PKG_BUILD_DEPENDS:=qt5tools/host
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../common.mk
 include ../qmake.mk
 
 define Package/qt5translations
