@@ -6,25 +6,17 @@
 #
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5translations
-PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=415dbbb82a75dfc9a7be969e743bee54c0e6867be37bce4cf8f03da39f20112a
 
-PKG_SYS_NAME:=qttranslations-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_INSTALL:=1
-PKG_BUILD_DEPENDS:=qt5tools/host
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk
+
+PKG_BUILD_DEPENDS:=qt5tools/host
 
 define Package/qt5translations
   SECTION:=video-frameworks

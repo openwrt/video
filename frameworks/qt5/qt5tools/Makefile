@@ -6,29 +6,18 @@
 #
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5tools
-PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=1cab11887faca54af59f4995ee435c9ad98d194e9e6889c846692c8b6815fc1c
 
-PKG_SYS_NAME:=qttools-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_HOST_ONLY:=1
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-HOST_BUILD_PARALLEL:=1
-PKG_INSTALL:=1
-HOST_BUILD_DEPENDS:=qt5base/host
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk
+
+HOST_BUILD_DEPENDS:=qt5base/host
 
 define Package/qt5tools
   SECTION:=video-frameworks
