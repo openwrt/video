@@ -6,9 +6,10 @@
 #
 
 include $(TOPDIR)/rules.mk
+include ../common.mk
 
 PKG_NAME:=qt5tools
-PKG_VERSION:=5.15.16
+PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=1cab11887faca54af59f4995ee435c9ad98d194e9e6889c846692c8b6815fc1c
 
@@ -27,7 +28,6 @@ HOST_BUILD_DEPENDS:=qt5base/host
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../common.mk
 include ../qmake.mk
 
 define Package/qt5tools

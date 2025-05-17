@@ -10,9 +10,10 @@
 # - no X11/wayland/xcb/kms support so far - primary target is linuxfb
 
 include $(TOPDIR)/rules.mk
+include ../common.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.15.16
+PKG_VERSION:=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=b04815058c18058b6ba837206756a2c87d1391f07a0dcb0dd314f970fd041592
 
@@ -40,7 +41,6 @@ HOST_BUILD_DEPENDS:=qt5base
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/nls.mk
-include ../common.mk
 include ../qmake.mk
 
 # hard disable udev support for now

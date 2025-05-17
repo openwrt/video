@@ -5,6 +5,8 @@
 # See /LICENSE for more information.
 #
 
+QT_VERSION:=5.15.16
+
 # for target builds (STAGING_DIR)
 QT_INSTALL_PREFIX:=$(CONFIGURE_PREFIX)
 QT_INSTALL_CONFIGURATION:=/etc/qt5
