@@ -6,21 +6,12 @@
 #
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5quick2-controls2
-PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=6bdc134c7f86dcf0e416d89d96d0d1d1415ea465bceb1f360fb5badf2adcaa16
 
-PKG_SYS_NAME:=qtquickcontrols2-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk

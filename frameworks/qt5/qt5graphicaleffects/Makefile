@@ -6,22 +6,12 @@
 #
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5graphicaleffects
-PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=d185813737f38352d81b3a405a9243aca1af7bfebe37aba22a4099a7031f640a
 
-PKG_SYS_NAME:=qtgraphicaleffects-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk

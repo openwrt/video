@@ -10,23 +10,17 @@
 # - no X11/wayland/xcb/kms support so far - primary target is linuxfb
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=b04815058c18058b6ba837206756a2c87d1391f07a0dcb0dd314f970fd041592
 
-PKG_SYS_NAME:=qtbase-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+include ../common.mk
+include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/host-build.mk
+include $(INCLUDE_DIR)/nls.mk
+include ../qmake.mk
 
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-HOST_BUILD_PARALLEL:=1
-PKG_INSTALL:=1
-PKG_BUILD_FLAGS:=no-mips16
 # Yes, the host build depends on the target build. This is not a mistake!
 # The target build provides the (target specific) qmake.mk file which
 # is also used for host builds.
@@ -37,11 +31,6 @@ PKG_BUILD_FLAGS:=no-mips16
 # which actually depend on it. At the time of this writing, only qt5tools
 # makes use of the host build.
 HOST_BUILD_DEPENDS:=qt5base
-
-include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/host-build.mk
-include $(INCLUDE_DIR)/nls.mk
-include ../qmake.mk
 
 # hard disable udev support for now
 CONFIG_PACKAGE_qt5base-input-autodiscovery:=

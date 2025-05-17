@@ -5,10 +5,8 @@
 # See /LICENSE for more information.
 #
 
-QT_VERSION:=5.15.16
-
 # for target builds (STAGING_DIR)
-QT_INSTALL_PREFIX:=$(CONFIGURE_PREFIX)
+QT_INSTALL_PREFIX:=/usr
 QT_INSTALL_CONFIGURATION:=/etc/qt5
 QT_INSTALL_LIBS:=$(QT_INSTALL_PREFIX)/lib
 QT_INSTALL_DATA:=$(QT_INSTALL_PREFIX)/share/qt5
@@ -51,6 +49,25 @@ QT_HOSTPKG_QML:=$(QT_HOSTPKG_ARCHDATA)/qml
 QT_HOSTPKG_EXAMPLES:=$(QT_HOSTPKG_ARCHDATA)/examples
 QT_HOSTPKG_DEMOS:=$(QT_HOSTPKG_EXAMPLES)
 
+# PKG defaults
+
+PKG_VERSION?=5.15.16
+
+PKG_SOURCE_URL?=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+PKG_SYS_NAME?=$(subst $(firstword $(subst ., ,$(PKG_VERSION))),,$(PKG_NAME))
+PKG_SYS_NAME_FULL?=$(PKG_SYS_NAME)-everywhere-src-$(PKG_VERSION)
+PKG_SOURCE?=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME_FULL)).tar.xz
+
+PKG_LICENSE?=LGPL-3.0-or-commercial
+
+PKG_BUILD_DIR?=$(BUILD_DIR)/$(PKG_SYS_NAME_FULL)
+HOST_BUILD_DIR?=$(BUILD_DIR)/host/$(PKG_SYS_NAME_FULL)
+
+PKG_BUILD_PARALLEL?=1
+HOST_BUILD_PARALLEL?=1
+PKG_BUILD_FLAGS?=no-mips16
+
+PKG_INSTALL?=1
 
 define Build/Install/HostFiles
 	$(INSTALL_DIR) \

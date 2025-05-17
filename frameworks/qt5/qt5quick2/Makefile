@@ -6,22 +6,13 @@
 #
 
 include $(TOPDIR)/rules.mk
-include ../common.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION=$(QT_VERSION)
 PKG_RELEASE:=1
 PKG_HASH:=4e05de0747176a8a86a8c098ad215c2cdf1825a572b62a70b2e91cd81357408d
+PKG_SYS_NAME:=qtdeclarative
 
-PKG_SYS_NAME:=qtdeclarative-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME)).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk
