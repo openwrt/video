@@ -1,0 +1,17 @@
+--- ./src/platformsupport/platformsupport.pro	2020-05-11 08:15:08.000000000 +0000
++++ ./src/platformsupport/platformsupport.pro.mod	2020-06-11 21:15:01.922331522 +0000
+@@ -6,13 +6,13 @@
+     eventdispatchers \
+     devicediscovery \
+     fbconvenience \
+-    themes
++    themes \
++    input
+ 
+ qtConfig(freetype)|darwin|win32: \
+     SUBDIRS += fontdatabases
+ 
+ qtConfig(evdev)|qtConfig(tslib)|qtConfig(libinput)|qtConfig(integrityhid)|qtConfig(xkbcommon) {
+-    SUBDIRS += input
+     input.depends += devicediscovery
+ }

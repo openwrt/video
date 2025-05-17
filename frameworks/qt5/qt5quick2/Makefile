@@ -8,22 +8,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5quick2
-PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=9c3c93fb7d340b2f7d738d12408c047318c78973cb45bfc5ff6b3a57e1fef699
+PKG_HASH:=4e05de0747176a8a86a8c098ad215c2cdf1825a572b62a70b2e91cd81357408d
+PKG_SYS_NAME:=qtdeclarative
 
-PKG_SYS_NAME:=qtdeclarative-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake.mk
+include ../qmake.mk
 
 define Package/qt5quick2/Default
   SECTION:=video-frameworks
@@ -195,7 +187,11 @@ endef
 define Build/InstallDev
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
+	$(call Build/Install/Cmakes,$(1))
+	$(call Build/Install/Pkgconfigs,$(1))
 	$(call Build/Install/Libs,$(1),*)
+
+	ln -sf /bin/true $(STAGING_DIR)/host/bin/qmlplugindump
 endef
 
 define Build/Install/QMLplugin

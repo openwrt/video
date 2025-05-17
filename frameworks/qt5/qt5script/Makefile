@@ -8,22 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5script
-PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=02dc21b309621876a89671be27cea86a58e74a96aa28da65fe1b37a3aad29373
+PKG_HASH:=0b98baa6eece7d0e7860590dd67faf452499096f62f33d16556fd38ac236eec2
 
-PKG_SYS_NAME:=qtscript-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake.mk
+include ../qmake.mk
 
 define Package/qt5script/Default
   SECTION:=video-frameworks
