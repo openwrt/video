@@ -18,6 +18,8 @@
 # host and target specific paths, however it fails hard and is totally undocumented.
 # The extprefix variable tries to cover the situation, however actually just prepends
 # its path to the QT_INSTALL_* variables - basically cosmetics.
+# Unfortunately QT_INSTALL_* variables are also used for target specific host builds,
+# e.g. used to build include and linker paths.
 # 
 # The QT_HOST_* variables are used for host tools, libraries, mkspecs and its data.
 # 
@@ -37,23 +39,15 @@
 #    objects on the target platform. Tihs behaviour wasn't observed so far, however 
 #    one might use the QT_INSTALL_* variables for some weird reason during runtime.
 
+include $(TOPDIR)/rules.mk
+
 QMAKE_SPEC:=linux-openwrt-host-g++
 QMAKE_XSPEC:=linux-openwrt-g++
 
-# for target builds
-PKG_INSTALL_DIR_ROOT:=$(PKG_INSTALL_DIR)
-PKG_INSTALL_DIR:=$(PKG_INSTALL_DIR_ROOT)/$(STAGING_DIR)
-
-# for target independant host builds (STAGING_DIR_HOST)
-HOST_INSTALL_DIR_ROOT:=$(HOST_INSTALL_DIR)
-HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR_HOST)
-#HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR)
-
 # qmake host tool for target builds
-QMAKE_TARGET=$(STAGING_DIR)/host/bin/qt5/qmake
+QMAKE_TARGET:=$(STAGING_DIR)/host/bin/qt5/qmake
 # qmake host tool for host builds
-QMAKE_HOST=$(STAGING_DIR_HOST)/bin/qt5/qmake
-
+QMAKE_HOST:=$(STAGING_DIR_HOST)/bin/qt5/qmake
 
 define Build/Configure/Default
 	TARGET_CROSS="$(TARGET_CROSS)" \
@@ -98,20 +92,26 @@ define Build/Compile/Default
 endef
 
 define Host/Compile/Default
-		$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
-			$(1)
+	$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
+		$(1)
 endef
 
 define Build/Install/Default
-	INSTALL_ROOT="$(PKG_INSTALL_DIR_ROOT)" \
+	INSTALL_ROOT="$(PKG_INSTALL_DIR)/.owrttmp" \
 		$(MAKE) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
+	mv "$(PKG_INSTALL_DIR)/.owrttmp/$(STAGING_DIR)/"* \
+		$(PKG_INSTALL_DIR)/ && \
+		rm -r $(PKG_INSTALL_DIR)/.owrttmp
 endef
 
 define Host/Install/Default
-	INSTALL_ROOT="$(HOST_INSTALL_DIR_ROOT)" \
+	INSTALL_ROOT="$(HOST_INSTALL_DIR)/.owrttmp" \
 		$(MAKE) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
+	mv "$(HOST_INSTALL_DIR)/.owrttmp/$(STAGING_DIR_HOST)/"* \
+		$(HOST_INSTALL_DIR)/ && \
+		rm -r "$(HOST_INSTALL_DIR)/.owrttmp"
 endef
 
 # target specific host builds triggered by target qmake runs
