@@ -37,7 +37,7 @@
 #    objects on the target platform. Tihs behaviour wasn't observed so far, however 
 #    one might use the QT_INSTALL_* variables for some weird reason during runtime.
 
-QMAKE_SPEC:=linux-g++
+QMAKE_SPEC:=linux-openwrt-host-g++
 QMAKE_XSPEC:=linux-openwrt-g++
 
 # for target builds

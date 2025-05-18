@@ -286,7 +286,7 @@ endef
 define Build/Prepare
 	$(call Build/Prepare/Default)
 	$(CP) \
-		./files/mkspecs/linux-openwrt-g++ \
+		./files/mkspecs/* \
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
 
@@ -336,6 +336,7 @@ define Build/Configure
 			--strip=yes \
 			--shared=yes \
 			--framework=no \
+			--platform=linux-openwrt-host-g++ \
 			--xplatform=linux-openwrt-g++ \
 			--reduce-exports=no \
 			--reduce-relocations=no \
@@ -513,6 +514,12 @@ define Build/InstallDev
 	$(call Build/Install/Pkgconfigs,$(1))
 	$(call Build/Install/Libs,$(1),*)
 	$(call Build/Install/Plugins,$(1),*,*)
+
+	# sed -i \
+	#   -e "s|###TARGET_CFLAGS###||g" \
+	#   -e "s|###TARGET_CXXFLAGS###||g" \
+	#   -e "s|###TARGET_LDFLAGS###||g" \
+	#   $(STAGING_DIR)/host/share/qt5/mkspecs/linux-openwrt-host-g++/qmake.conf
 endef
 
 define Host/Install
