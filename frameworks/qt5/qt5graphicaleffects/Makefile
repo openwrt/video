@@ -23,7 +23,7 @@ define Package/qt5graphicaleffects
   TITLE:=qt5graphicaleffects
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
-  DEPENDS:=+qt5quick2-quick @BROKEN # depends on GL support, but currently we only support software rendering
+  DEPENDS:=+qt5quick-quick @BROKEN # depends on GL support, but currently we only support software rendering
 endef
 
 define Build/InstallDev

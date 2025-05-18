@@ -7,7 +7,7 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=qt5quick2-controls2
+PKG_NAME:=qt5quick-controls2
 PKG_RELEASE:=1
 PKG_HASH:=6bdc134c7f86dcf0e416d89d96d0d1d1415ea465bceb1f360fb5badf2adcaa16
 
@@ -16,14 +16,14 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 include ../qmake.mk
 
-define Package/qt5quick2-controls2
+define Package/qt5quick-controls2
   SECTION:=video-frameworks
   CATEGORY:=Video
   SUBMENU:=Frameworks and Toolkits
-  TITLE:=qt5quick2-controls2
+  TITLE:=qt5quick-controls2
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
-  DEPENDS:=+qt5quick2-quick
+  DEPENDS:=+qt5quick-quick
 endef
 
 define Build/InstallDev
@@ -32,7 +32,7 @@ define Build/InstallDev
 	$(call Build/Install/Libs,$(1),*)
 endef
 
-define Package/qt5quick2-controls2/install
+define Package/qt5quick-controls2/install
 	$(call Build/Install/Libs,$(1),libQt5QuickTemplates2)
 	$(call Build/Install/Libs,$(1),libQt5QuickControls2)
 
@@ -44,8 +44,8 @@ define Package/qt5quick2-controls2/install
 	  $(1)/usr/lib/qt5/qml/QtQuick/
 endef
 
-define Package/qt5quick2-templates2/install
+define Package/qt5quick-templates2/install
 	$(call Build/Install/Libs,$(1),libQt5QuickTemplates2)
 endef
 
-$(eval $(call BuildPackage,qt5quick2-controls2))
+$(eval $(call BuildPackage,qt5quick-controls2))
