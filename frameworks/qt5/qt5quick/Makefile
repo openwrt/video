@@ -7,10 +7,9 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=qt5quick
+PKG_NAME:=qt5declarative
 PKG_RELEASE:=1
 PKG_HASH:=4e05de0747176a8a86a8c098ad215c2cdf1825a572b62a70b2e91cd81357408d
-PKG_SYS_NAME:=qtdeclarative
 
 include ../common.mk
 include $(INCLUDE_DIR)/package.mk
