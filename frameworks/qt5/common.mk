@@ -69,15 +69,6 @@ PKG_BUILD_FLAGS?=no-mips16
 
 PKG_INSTALL?=1
 
-define Build/Install/HostFiles
-	$(INSTALL_DIR) \
-		$(1)/host
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/host/* \
-		$(1)/host/
-endef
-
 define Build/Install/Headers
 	$(INSTALL_DIR) \
 		$(1)/$(QT_INSTALL_HEADERS)

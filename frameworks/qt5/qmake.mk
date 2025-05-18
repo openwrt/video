@@ -113,3 +113,13 @@ define Host/Install/Default
 		$(MAKE) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
 endef
+
+# target specific host builds triggered by target qmake runs
+define Build/Install/HostFiles
+	$(INSTALL_DIR) \
+		$(STAGING_DIR)/host
+
+	$(CP) \
+		$(PKG_INSTALL_DIR)/host/* \
+		$(STAGING_DIR)/host/
+endef
