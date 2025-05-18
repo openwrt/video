@@ -49,7 +49,8 @@ QT_HOSTPKG_QML:=$(QT_HOSTPKG_ARCHDATA)/qml
 QT_HOSTPKG_EXAMPLES:=$(QT_HOSTPKG_ARCHDATA)/examples
 QT_HOSTPKG_DEMOS:=$(QT_HOSTPKG_EXAMPLES)
 
-# PKG defaults
+ifeq (qt, $(firstword $(subst 5, ,$(PKG_NAME))))
+# PKG defaults for official Qt modules
 
 PKG_VERSION?=5.15.16
 
@@ -68,6 +69,7 @@ HOST_BUILD_PARALLEL?=1
 PKG_BUILD_FLAGS?=no-mips16
 
 PKG_INSTALL?=1
+endif
 
 define Build/Install/Headers
 	$(INSTALL_DIR) \
