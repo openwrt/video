@@ -54,7 +54,7 @@ QT_HOSTPKG_DEMOS:=$(QT_HOSTPKG_EXAMPLES)
 PKG_VERSION?=5.15.16
 
 PKG_SOURCE_URL?=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-PKG_SYS_NAME?=$(subst $(firstword $(subst ., ,$(PKG_VERSION))),,$(PKG_NAME))
+PKG_SYS_NAME?=$(subst -,,$(subst $(firstword $(subst ., ,$(PKG_VERSION))),,$(PKG_NAME)))
 PKG_SYS_NAME_FULL?=$(PKG_SYS_NAME)-everywhere-src-$(PKG_VERSION)
 PKG_SOURCE?=$(subst -src-,-opensource-src-,$(PKG_SYS_NAME_FULL)).tar.xz
 
