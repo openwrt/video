@@ -582,7 +582,7 @@ MESON_ARGS += \
 	-Dgallium-opencl=$(if $(CONFIG_MESA_USE_LLVM),standalone,disabled) \
 	-Ddraw-use-llvm=$(if $(CONFIG_MESA_USE_LLVM),true,false) \
 	-Dintel-clc=system \
-	-Dmesa-clc=system \
+	-Dmesa-clc=$(if $(CONFIG_MESA_USE_LLVM),system,auto) \
 	-Dprecomp-compiler=system
 
 ifeq ($(BUILD_VARIANT),amd)
