@@ -8,22 +8,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5graphicaleffects
-PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=0d2ea4bc73b9df13a4b739dcbc1e3c7b298c7e682f7f9252b232e3bde7b63eda
+PKG_HASH:=d185813737f38352d81b3a405a9243aca1af7bfebe37aba22a4099a7031f640a
 
-PKG_SYS_NAME:=qtgraphicaleffects-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
-
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=qt5base
-PKG_INSTALL:=1
-
+include ../common.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
--include $(STAGING_DIR)/host/mk/qmake.mk
+include ../qmake.mk
 
 define Package/qt5graphicaleffects
   SECTION:=video-frameworks
@@ -32,7 +23,7 @@ define Package/qt5graphicaleffects
   TITLE:=qt5graphicaleffects
   URL:=http://qt.io
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
-  DEPENDS:=+qt5quick2-quick @BROKEN # depends on GL support, but currently we only support software rendering
+  DEPENDS:=+qt5quick-quick @BROKEN # depends on GL support, but currently we only support software rendering
 endef
 
 define Build/InstallDev

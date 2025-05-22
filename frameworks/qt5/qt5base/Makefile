@@ -12,20 +12,15 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_VERSION:=5.15.0
 PKG_RELEASE:=1
-PKG_HASH:=9e7af10aece15fa9500369efde69cb220eee8ec3a6818afe01ce1e7d484824c5
+PKG_HASH:=b04815058c18058b6ba837206756a2c87d1391f07a0dcb0dd314f970fd041592
 
-PKG_SYS_NAME:=qtbase-everywhere-src-$(PKG_VERSION)
-PKG_SOURCE:=$(PKG_SYS_NAME).tar.xz
-PKG_SOURCE_URL:=https://download.qt.io/official_releases/qt/$(basename $(PKG_VERSION))/$(PKG_VERSION)/submodules
+include ../common.mk
+include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/host-build.mk
+include $(INCLUDE_DIR)/nls.mk
+include ../qmake.mk
 
-PKG_BUILD_DIR=$(BUILD_DIR)/$(PKG_SYS_NAME)
-HOST_BUILD_DIR=$(BUILD_DIR)/host/$(PKG_SYS_NAME)
-PKG_BUILD_PARALLEL:=1
-HOST_BUILD_PARALLEL:=1
-PKG_INSTALL:=1
-PKG_BUILD_FLAGS:=no-mips16
 # Yes, the host build depends on the target build. This is not a mistake!
 # The target build provides the (target specific) qmake.mk file which
 # is also used for host builds.
@@ -37,23 +32,23 @@ PKG_BUILD_FLAGS:=no-mips16
 # makes use of the host build.
 HOST_BUILD_DEPENDS:=qt5base
 
-include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/host-build.mk
-include $(INCLUDE_DIR)/nls.mk
-include ./files/qmake.mk
+# hard disable udev support for now
+CONFIG_PACKAGE_qt5base-input-autodiscovery:=
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_qt5base-plugin-imageformats-jpeg \
 	CONFIG_PACKAGE_qt5base-network \
 	CONFIG_PACKAGE_qt5base-gui \
-	CONFIG_PACKAGE_qt5base-gl \
 	CONFIG_PACKAGE_qt5base-widgets \
 	CONFIG_PACKAGE_qt5base-examples \
+	CONFIG_PACKAGE_qt5base-input-autodiscovery \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-minimal \
 	CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb \
 	CONFIG_PACKAGE_qt5base-plugin-input-libinput \
+	CONFIG_BUILD_qt5base-core_INOTIFY \
+	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
+#	CONFIG_PACKAGE_qt5base-gl \
 #	CONFIG_PACKAGE_qt5base-plugin-imageformats-png \
-#	CONFIG_PACKAGE_qt5base-plugin-platforms-eglfs \
 #	CONFIG_PACKAGE_qt5base-plugin-platforms-minimalegl \
 
 # Do not use sstrip for QT5. When sstrip is used the QT5 plugin loading does
@@ -81,11 +76,15 @@ define Package/qt5base/Default
   MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
 endef
 
-# define Package/qt5base
-#   $(call Package/qt5base/Default)
-#   DEPENDS:=
-#   MENU:=1
-# endef
+define Package/qt5base-core
+  $(call Package/qt5base/Default)
+  TITLE+=core
+  DEPENDS+=+libpthread +zlib +libzstd +libstdcpp +librt +libpcre2-16 +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
+endef
+
+define Package/qt5base-core/config
+        source "$(SOURCE)/Config.in"
+endef
 
 define Package/qt5base-concurrent
   $(call Package/qt5base/Default)
@@ -93,28 +92,22 @@ define Package/qt5base-concurrent
   DEPENDS+=+qt5base-core
 endef
 
-define Package/qt5base-gl
-  $(call Package/qt5base/Default)
-  TITLE+=gl
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets @BROKEN
-endef
-
-define Package/qt5base-core
-  $(call Package/qt5base/Default)
-  TITLE+=core
-  DEPENDS+=+libpthread +zlib +libzstd +libpcre2-16 +libstdcpp +librt +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
-endef
+# define Package/qt5base-gl
+#   $(call Package/qt5base/Default)
+#   TITLE+=gl
+#   DEPENDS+=+qt5base-core +qt5base-gui +qt5base-widgets @BROKEN
+# endef
 
 define Package/qt5base-gui
   $(call Package/qt5base/Default)
   TITLE+=gui
-  DEPENDS+=+qt5base-core +libpng +fontconfig +libfreetype
+  DEPENDS+=+qt5base-core +libpng +libfreetype +BUILD_qt5base-gui_OPENGL_OPENGLES2:libmesa # +BUILD_qt5base-gui_OPENGL_OPENGLES2:qt5base-widgets # qt5base-widgets appears to be needed when compiled with gl support, otherwise unneeded
 endef
 
 define Package/qt5base-network
   $(call Package/qt5base/Default)
   TITLE+=network
-  DEPENDS+=+qt5base-core +libopenssl
+  DEPENDS+=+qt5base-core +BUILD_qt5base-network_SSL:libopenssl
 endef
 
 # seems to be only present as static lib
@@ -153,6 +146,12 @@ define Package/qt5base-xml
   DEPENDS+=+qt5base-core
 endef
 
+# define Package/qt5base-eglfs-device-integration
+#   $(call Package/qt5base/Default)
+#   TITLE+=xml
+#   DEPENDS+=+qt5base-core +qt5base-gui +libmesa
+# endef
+
 #### plugins
 
 ####### bearer
@@ -174,25 +173,25 @@ endef
 define Package/qt5base-plugin-input-evdevkeyboard
   $(call Package/qt5base/Default)
   TITLE+=evdev keyboard (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevmouse
   $(call Package/qt5base/Default)
   TITLE+=evdev mouse (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtablet
   $(call Package/qt5base/Default)
   TITLE+=evdev tablet (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-input-evdevtouch
   $(call Package/qt5base/Default)
   TITLE+=evdev touch (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 ####### imageformats
@@ -223,40 +222,40 @@ endef
 
 ####### platforms
 
-#define Package/qt5base-plugin-platforms-eglfs
-#  $(call Package/qt5base/Default)
-#  TITLE+=platform eglfs (plugin)
-#  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
-#endef
-
-#define Package/qt5base-plugin-platforms-minimalegl
-#  $(call Package/qt5base/Default)
-#  TITLE+=platform minimalegl (plugin)
-#  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
-#endef
-
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+endef
+
+define Package/qt5base-plugin-platforms-eglfs
+  $(call Package/qt5base/Default)
+  TITLE+=platform eglfs (plugin)
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libmesa # +qt5base-eglfs-device-integration
+endef
+
+define Package/qt5base-plugin-platforms-minimalegl
+  $(call Package/qt5base/Default)
+  TITLE+=platform minimalegl (plugin)
+  DEPENDS+=+qt5base-core +qt5base-gui # +libfreetype +fontconfig
 endef
 
 define Package/qt5base-plugin-platforms-minimal
   $(call Package/qt5base/Default)
   TITLE+=platform minimal (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui # +libfreetype +fontconfig
 endef
 
 define Package/qt5base-plugin-platforms-offscreen
   $(call Package/qt5base/Default)
   TITLE+=platform offscreen (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig
+  DEPENDS+=+qt5base-core +qt5base-gui # +libfreetype +fontconfig
 endef
 
 define Package/qt5base-plugin-platforms-vnc
   $(call Package/qt5base/Default)
   TITLE+=platform vnc (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +qt5base-network +libfreetype +fontconfig +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 
@@ -281,19 +280,16 @@ define Package/qt5base-examples
 		+qt5base-xml \
 		+qt5base-printSupport \
 		+qt5base-concurrent \
-		+qt5base-gl
+		+qt5base-test
 endef
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
 	$(CP) \
-		./files/mkspecs/linux-openwrt-g++ \
+		./files/mkspecs/* \
 		$(PKG_BUILD_DIR)/mkspecs/
 endef
 
-# TARGET_CFLAGS += \
-# 	  -I$(STAGING_DIR)/usr/include/freetype2 \
-# 	  -I$(STAGING_DIR)/usr/include/libdrm
 
 define Build/Configure
 	# CROSS/TARGET_* need to be passed to configure, in order to use cross-compiling tools to check for requirements.
@@ -308,12 +304,11 @@ define Build/Configure
 		TARGET_CFLAGS="$(TARGET_CFLAGS)" \
 		TARGET_CXXFLAGS="$(TARGET_CFLAGS) $(TARGET_CXXFLAGS)" \
 		TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
+		PKG_CONFIG="$(STAGING_DIR_HOST)/bin/pkg-config.real" \
 		PKG_CONFIG_SYSROOT_DIR="$(STAGING_DIR)" \
 		./configure \
+			--extprefix=$(STAGING_DIR)/$(CONFIGURE_PREFIX) \
 			--prefix=$(QT_INSTALL_PREFIX) \
-			--extprefix=$(QT_EXTPREFIX) \
-			--hostprefix=$(QT_HOST_PREFIX) \
-			--gcc-sysroot=no \
 			--bindir=$(QT_INSTALL_BINS) \
 			--headerdir=$(QT_INSTALL_HEADERS) \
 			--libdir=$(QT_INSTALL_LIBS) \
@@ -328,18 +323,20 @@ define Build/Configure
 			--sysconfdir=$(QT_INSTALL_CONFIGURATION) \
 			--examplesdir=$(QT_INSTALL_EXAMPLES) \
 			--testsdir=$(QT_INSTALL_TESTS) \
+			--hostprefix=$(QT_HOST_PREFIX) \
 			--hostbindir=$(QT_HOST_BINS) \
-			--hostlibdir=$(QT_HOST_LIBS) \
 			--hostdatadir=$(QT_HOST_DATA) \
+			--gcc-sysroot=no \
 			--verbose=yes \
 			--opensource \
 			--confirm-license \
 			--release=yes \
 			--optimized-tools=no \
 			--optimize-size=no \
-			--strip=no \
+			--strip=yes \
 			--shared=yes \
 			--framework=no \
+			--platform=linux-openwrt-host-g++ \
 			--xplatform=linux-openwrt-g++ \
 			--reduce-exports=no \
 			--reduce-relocations=no \
@@ -357,34 +354,35 @@ define Build/Configure
 			--doubleconversion=system \
 			--glib=no \
 			--eventfd=no \
-			--inotify=no \
+			--inotify=$(if $(CONFIG_BUILD_qt5base-core_INOTIFY),yes,no) \
 			--iconv=$(if $(CONFIG_BUILD_NLS),$(if $(CONFIG_LIBC_USE_GLIBC)$(CONFIG_LIBC_USE_MUSL),posix)$(if $(CONFIG_LIBC_USE_UCLIBC),gnu),no) \
 			--icu=$(if $(CONFIG_PACKAGE_icu),yes,no) \
 			--pcre=system \
 			--zlib=system \
 			--journald=no \
 			--syslog=no \
-			--ssl=$(if $(CONFIG_PACKAGE_qt5base-network),yes,no) \
-			--openssl-linked$(if $(CONFIG_PACKAGE_qt5base-network),,=no) \
+			--ssl=$(if $(CONFIG_BUILD_qt5base-network_SSL),yes,no) \
+			--openssl=$(if $(CONFIG_BUILD_qt5base-network_SSL),yes,no) \
+			$(if $(CONFIG_BUILD_qt5base-network_SSL),--openssl-linked,) \
 			--libproxy=no \
 			--system-proxies=yes \
 			--cups=no \
-			--fontconfig=yes \
+			--fontconfig=no \
 			--freetype=system \
 			--harfbuzz=no \
 			--gtk=no \
-			--opengl=no \
+			--opengl=$(if $(CONFIG_BUILD_qt5base-gui_OPENGL_OPENGLES2),es2,no) \
 			--opengles3=no \
-			--egl=no \
+			--egl=$(if $(CONFIG_BUILD_qt5base-gui_OPENGL_OPENGLES2),yes,no) \
 			--xcb-xlib=no \
 			--qpa=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),linuxfb,) \
 			--directfb=no \
-			--eglfs=no \
-			--gbm=no \
+			--eglfs=$(if $(CONFIG_BUILD_qt5base-gui_OPENGL_OPENGLES2),yes,no) \
+			--gbm=$(if $(CONFIG_BUILD_qt5base-gui_DRM),yes,no) \
+			--kms=$(if $(CONFIG_BUILD_qt5base-gui_DRM),yes,no) \
 			--linuxfb=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),yes,no) \
 			--xcb=no \
-			\
-			--libudev=yes \
+			--libudev=$(if $(CONFIG_PACKAGE_qt5base-input-autodiscovery),yes,no) \
 			--evdev=yes \
 			--libinput=$(if $(CONFIG_PACKAGE_qt5base-plugin-input-libinput),yes,no) \
 			--mtdev=no \
@@ -418,11 +416,21 @@ define Host/Configure
 		TARGET_CXXFLAGS="$(HOST_CFLAGS) $(HOST_CXXFLAGS)" \
 		TARGET_LDFLAGS="$(HOST_LDFLAGS)" \
 		./configure \
-			--prefix=$(STAGING_DIR_HOST) \
-			--hostprefix=$(STAGING_DIR_HOST) \
-			--hostdatadir=$(STAGING_DIR_HOST)/share \
-			--datadir=$(STAGING_DIR_HOST)/share \
-			--archdatadir=$(STAGING_DIR_HOST)/lib \
+			--prefix=$(QT_HOSTPKG_PREFIX) \
+			--bindir=$(QT_HOSTPKG_BINS) \
+			--headerdir=$(QT_HOSTPKG_HEADERS) \
+			--libdir=$(QT_HOSTPKG_LIBS) \
+			--archdatadir=$(QT_HOSTPKG_ARCHDATA) \
+			--plugindir=$(QT_HOSTPKG_PLUGINS) \
+			--libexecdir=$(QT_HOSTPKG_LIBEXECS) \
+			--importdir=$(QT_HOSTPKG_IMPORTS) \
+			--qmldir=$(QT_HOSTPKG_QML) \
+			--datadir=$(QT_HOSTPKG_DATA) \
+			--docdir=$(QT_HOSTPKG_DOCS) \
+			--translationdir=$(QT_HOSTPKG_TRANSLATIONS) \
+			--sysconfdir=$(QT_HOSTPKG_CONFIGURATION) \
+			--examplesdir=$(QT_HOSTPKG_EXAMPLES) \
+			--testsdir=$(QT_HOSTPKG_TESTS) \
 			--gcc-sysroot=no \
 			--verbose=yes \
 			--opensource \
@@ -475,14 +483,13 @@ define Host/Configure
 			--gbm=no \
 			--linuxfb=no \
 			--xcb=no \
-			\
 			--libudev=no \
 			--evdev=no \
 			--libinput=no \
 			--mtdev=no \
 			--tslib=no \
 			--bundled-xcb-xinput=no \
-			--xkbcommon=yes \
+			--xkbcommon=no \
 			--gif=no \
 			--ico=no \
 			--libjpeg=no \
@@ -501,58 +508,43 @@ define Host/Configure
 endef
 
 define Build/InstallDev
-	$(INSTALL_DIR) \
-		$(STAGING_DIR)/host/mk
-
-	$(CP) \
-		./files/qmake.mk \
-		$(STAGING_DIR)/host/mk/
-
 	$(call Build/Install/HostFiles,$(1))
 	$(call Build/Install/Headers,$(1))
+	$(call Build/Install/Cmakes,$(1))
+	$(call Build/Install/Pkgconfigs,$(1))
 	$(call Build/Install/Libs,$(1),*)
+	$(call Build/Install/Plugins,$(1),*,*)
+
+	# sed -i \
+	#   -e "s|###TARGET_CFLAGS###||g" \
+	#   -e "s|###TARGET_CXXFLAGS###||g" \
+	#   -e "s|###TARGET_LDFLAGS###||g" \
+	#   $(STAGING_DIR)/host/share/qt5/mkspecs/linux-openwrt-host-g++/qmake.conf
 endef
 
 define Host/Install
 	$(call Host/Install/Default)
 
-	$(INSTALL_DIR) \
-	  $(STAGING_DIR_HOST)/bin \
-	  $(STAGING_DIR_HOST)/lib \
-	  $(STAGING_DIR_HOST)/include \
-	  $(STAGING_DIR_HOST)/share
-
 	$(CP) \
-	  $(HOST_INSTALL_DIR)/lib/* \
-	  $(STAGING_DIR_HOST)/lib/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/include/* \
-	  $(STAGING_DIR_HOST)/include/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/share/* \
-	  $(STAGING_DIR_HOST)/share/
-
-	$(CP) \
-	  $(HOST_INSTALL_DIR)/bin/* \
-	  $(STAGING_DIR_HOST)/bin/
-endef
-
-define Package/qt5base-concurrent/install
-	$(call Build/Install/Libs,$(1),libQt5Concurrent)
+	  $(HOST_INSTALL_DIR)/* \
+	  $(STAGING_DIR_HOST)/
 endef
 
 define Package/qt5base-core/install
 	$(call Build/Install/Libs,$(1),libQt5Core)
 endef
 
-define Package/qt5base-gl/install
-	$(call Build/Install/Libs,$(1),libQt5OpenGL)
+define Package/qt5base-concurrent/install
+	$(call Build/Install/Libs,$(1),libQt5Concurrent)
 endef
+
+# define Package/qt5base-gl/install
+# 	$(call Build/Install/Libs,$(1),libQt5OpenGL)
+# endef
 
 define Package/qt5base-gui/install
 	$(call Build/Install/Libs,$(1),libQt5Gui)
+	$(if $(BUILD_qt5base-gui_OPENGL),$(call Build/Install/Libs,$(1),libQt5OpenGL),)
 endef
 
 define Package/qt5base-network/install
@@ -577,6 +569,11 @@ endef
 
 define Package/qt5base-xml/install
 	$(call Build/Install/Libs,$(1),libQt5Xml)
+endef
+
+define Package/qt5base-eglfs-device-integration/install
+	$(call Build/Install/Libs,$(1),libQt5EglFSDeviceIntegration)
+	$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-egldevice-integration)
 endef
 
 define Package/qt5base-plugin-bearer-generic/install
@@ -627,13 +624,17 @@ define Package/qt5base-plugin-platforms-vnc/install
 	$(call Build/Install/Plugins,$(1),platforms,libqvnc)
 endef
 
-#define Package/qt5base-plugin-platforms-eglfs/install
-#	$(call Build/Install/Plugins,$(1),platforms,libqeglfs)
-#endef
+define Package/qt5base-plugin-platforms-eglfs/install
+	$(call Build/Install/Libs,$(1),libQt5EglFsKmsSupport)
+	$(call Build/Install/Libs,$(1),libQt5EglFSDeviceIntegration)
+	$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-egldevice-integration)
+	$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-integration)
+	$(call Build/Install/Plugins,$(1),platforms,libqeglfs)
+endef
 
-#define Package/qt5base-plugin-platforms-minimalegl/install
-#	$(call Build/Install/Plugins,$(1),platforms,libqminimalegl)
-#endef
+define Package/qt5base-plugin-platforms-minimalegl/install
+	$(call Build/Install/Plugins,$(1),platforms,libqminimalegl)
+endef
 
 define Package/qt5base-plugin-platforms-minimal/install
 	$(call Build/Install/Plugins,$(1),platforms,libqminimal)
@@ -652,16 +653,17 @@ define Package/qt5base-examples/install
 endef
 
 # $(eval $(call BuildPackage,qt5base))
-$(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-core))
+$(eval $(call BuildPackage,qt5base-concurrent))
 $(eval $(call BuildPackage,qt5base-gui))
-$(eval $(call BuildPackage,qt5base-gl))
+# $(eval $(call BuildPackage,qt5base-gl))
 $(eval $(call BuildPackage,qt5base-network))
 $(eval $(call BuildPackage,qt5base-printSupport))
 $(eval $(call BuildPackage,qt5base-sql))
 $(eval $(call BuildPackage,qt5base-test))
 $(eval $(call BuildPackage,qt5base-widgets))
 $(eval $(call BuildPackage,qt5base-xml))
+#$(eval $(call BuildPackage,qt5base-eglfs-device-integration))
 $(eval $(call BuildPackage,qt5base-plugin-bearer-generic))
 $(eval $(call BuildPackage,qt5base-plugin-input-libinput))
 $(eval $(call BuildPackage,qt5base-plugin-input-evdevkeyboard))
@@ -673,8 +675,8 @@ $(eval $(call BuildPackage,qt5base-plugin-imageformats-ico))
 $(eval $(call BuildPackage,qt5base-plugin-imageformats-jpeg))
 #$(eval $(call BuildPackage,qt5base-plugin-imageformats-png))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-linuxfb))
-#$(eval $(call BuildPackage,qt5base-plugin-platforms-eglfs))
-#$(eval $(call BuildPackage,qt5base-plugin-platforms-minimalegl))
+$(eval $(call BuildPackage,qt5base-plugin-platforms-eglfs))
+$(eval $(call BuildPackage,qt5base-plugin-platforms-minimalegl))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-minimal))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-offscreen))
 $(eval $(call BuildPackage,qt5base-plugin-platforms-vnc))

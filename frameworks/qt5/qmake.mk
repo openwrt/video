@@ -18,6 +18,8 @@
 # host and target specific paths, however it fails hard and is totally undocumented.
 # The extprefix variable tries to cover the situation, however actually just prepends
 # its path to the QT_INSTALL_* variables - basically cosmetics.
+# Unfortunately QT_INSTALL_* variables are also used for target specific host builds,
+# e.g. used to build include and linker paths.
 # 
 # The QT_HOST_* variables are used for host tools, libraries, mkspecs and its data.
 # 
@@ -37,45 +39,15 @@
 #    objects on the target platform. Tihs behaviour wasn't observed so far, however 
 #    one might use the QT_INSTALL_* variables for some weird reason during runtime.
 
-# for target builds (STAGING_DIR)
-QT_EXTPREFIX:=$(STAGING_DIR)/$(CONFIGURE_PREFIX)
-QT_SYSROOT:=
-QT_INSTALL_CONFIGURATION:=/etc/qt5
-QT_INSTALL_PREFIX:=$(CONFIGURE_PREFIX)
-QT_INSTALL_LIBS:=$(QT_INSTALL_PREFIX)/lib
-QT_INSTALL_DATA:=$(QT_INSTALL_PREFIX)/share/qt5
-QT_INSTALL_HEADERS:=$(QT_INSTALL_PREFIX)/include
-QT_INSTALL_BINS:=$(QT_INSTALL_PREFIX)/bin
-QT_INSTALL_DOCS:=$(QT_INSTALL_DATA)/doc
-QT_INSTALL_TRANSLATIONS:=$(QT_INSTALL_DATA)/translations
-QT_INSTALL_ARCHDATA:=$(QT_INSTALL_LIBS)/qt5
-QT_INSTALL_LIBEXECS:=$(QT_INSTALL_ARCHDATA)
-QT_INSTALL_TESTS:=$(QT_INSTALL_ARCHDATA)/tests
-QT_INSTALL_PLUGINS:=$(QT_INSTALL_ARCHDATA)/plugins
-QT_INSTALL_IMPORTS:=$(QT_INSTALL_ARCHDATA)/imports
-QT_INSTALL_QML:=$(QT_INSTALL_ARCHDATA)/qml
-QT_INSTALL_EXAMPLES:=$(QT_INSTALL_ARCHDATA)/examples
-QT_INSTALL_DEMOS:=$(QT_INSTALL_EXAMPLES)
-# for host builds defined in target project files (STAGING_DIR)/host
-QT_HOST_EXTPREFIX:=$(STAGING_DIR)/host
-QT_HOST_PREFIX:=$(QT_HOST_EXTPREFIX)
-QT_HOST_DATA:=$(QT_HOST_PREFIX)/share
-QT_HOST_BINS:=$(QT_HOST_PREFIX)/bin
-QT_HOST_LIBS:=$(QT_HOST_PREFIX)/lib
+include $(TOPDIR)/rules.mk
 
-QMAKE_SPEC:=linux-g++
+QMAKE_SPEC:=linux-openwrt-host-g++
 QMAKE_XSPEC:=linux-openwrt-g++
 
-PKG_INSTALL_DIR_ROOT:=$(PKG_INSTALL_DIR)
-PKG_INSTALL_DIR:=$(PKG_INSTALL_DIR_ROOT)/$(STAGING_DIR)
-
-# for target independant host builds (STAGING_DIR_HOST)
-HOST_INSTALL_DIR_ROOT:=$(HOST_INSTALL_DIR)
-HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR_HOST)
-#HOST_INSTALL_DIR:=$(HOST_INSTALL_DIR_ROOT)/$(STAGING_DIR)
-
-QMAKE_TARGET=$(STAGING_DIR)/host/bin/qmake
-QMAKE_HOST=$(STAGING_DIR_HOST)/bin/qmake
+# qmake host tool for target builds
+QMAKE_TARGET:=$(STAGING_DIR)/host/bin/qt5/qmake
+# qmake host tool for host builds
+QMAKE_HOST:=$(STAGING_DIR_HOST)/bin/qt5/qmake
 
 define Build/Configure/Default
 	TARGET_CROSS="$(TARGET_CROSS)" \
@@ -120,76 +92,34 @@ define Build/Compile/Default
 endef
 
 define Host/Compile/Default
-		$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
-			$(1)
+	$(MAKE) $(PKG_JOBS) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
+		$(1)
 endef
 
 define Build/Install/Default
-	INSTALL_ROOT="$(PKG_INSTALL_DIR_ROOT)" \
+	INSTALL_ROOT="$(PKG_INSTALL_DIR)/.owrttmp" \
 		$(MAKE) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
+	mv "$(PKG_INSTALL_DIR)/.owrttmp/$(STAGING_DIR)/"* \
+		$(PKG_INSTALL_DIR)/ && \
+		rm -r $(PKG_INSTALL_DIR)/.owrttmp
 endef
 
 define Host/Install/Default
-	INSTALL_ROOT="$(HOST_INSTALL_DIR_ROOT)" \
+	INSTALL_ROOT="$(HOST_INSTALL_DIR)/.owrttmp" \
 		$(MAKE) -C $(HOST_BUILD_DIR)/$(MAKE_PATH) \
 			$(1) install
+	mv "$(HOST_INSTALL_DIR)/.owrttmp/$(STAGING_DIR_HOST)/"* \
+		$(HOST_INSTALL_DIR)/ && \
+		rm -r "$(HOST_INSTALL_DIR)/.owrttmp"
 endef
 
+# target specific host builds triggered by target qmake runs
 define Build/Install/HostFiles
 	$(INSTALL_DIR) \
-		$(1)/host
+		$(STAGING_DIR)/host
 
 	$(CP) \
 		$(PKG_INSTALL_DIR)/host/* \
-		$(1)/host/
-endef
-
-define Build/Install/Headers
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_HEADERS)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_HEADERS)/* \
-		$(1)/$(QT_INSTALL_HEADERS)/
-endef
-
-define Build/Install/Libs
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_LIBS)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_LIBS)/$(2).so* \
-		$(1)/$(QT_INSTALL_LIBS)/
-endef
-
-define Build/Install/Translations
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_TRANSLATIONS)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_TRANSLATIONS)/$(2).qm \
-		$(1)/$(QT_INSTALL_TRANSLATIONS)/
-endef
-
-define Build/Install/Plugins
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_PLUGINS)/$(2)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_PLUGINS)/$(2)/$(3).so* \
-		$(1)/$(QT_INSTALL_PLUGINS)/$(2)/
-endef
-
-define Build/Install/Examples
-	$(INSTALL_DIR) \
-		$(1)/$(QT_INSTALL_EXAMPLES)
-
-	$(CP) \
-		$(PKG_INSTALL_DIR)/$(QT_INSTALL_EXAMPLES)/* \
-		$(1)/$(QT_INSTALL_EXAMPLES)/
-
-	$(FIND) $(1)/$(QT_INSTALL_EXAMPLES) \
-		-type f \( -name '*.cpp' -o -name '*.h' -o -name '*.pro' -o -name '*.pri' \) | \
-		$(XARGS) $(RM) -vf
+		$(STAGING_DIR)/host/
 endef
