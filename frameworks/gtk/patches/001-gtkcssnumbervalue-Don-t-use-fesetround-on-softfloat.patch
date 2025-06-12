@@ -8,7 +8,7 @@ Implement nearbyint() the hard way when targeting an affected platform.
 
 Bug-Debian: https://bugs.debian.org/1079545
 Signed-off-by: Simon McVittie <smcv@debian.org>
-[daniel@makrotopia.org: also handle MIPS soft-float]
+[daniel@makrotopia.org: also handle MIPS and PowerPC soft-float]
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
  gtk/gtkcssnumbervalue.c | 34 ++++++++++++++++++++++++++++++++++
@@ -20,7 +20,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
    return value->dimension.value == 0;
  }
  
-+#if (defined(__arm__) && !defined(__ARM_PCS_VFP)) || defined(__mips_soft_float)
++#if (defined(__arm__) && !defined(__ARM_PCS_VFP)) || defined(__mips_soft_float) || defined(_SOFT_FLOAT)
 +/* Floating-point emulated in software. Setting the rounding mode to
 + * anything other than FE_TONEAREST doesn't work */
 +#undef HAVE_WORKING_FESETROUND
