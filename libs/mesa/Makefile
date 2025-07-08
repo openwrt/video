@@ -64,7 +64,7 @@ define Package/mesa/Default
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Video
-  DEPENDS:=+powerpc:libatomic
+  DEPENDS:=+(powerpc||mips||mipsel):libatomic
   TITLE:=Mesa3D
   URL:=https://www.mesa3d.org
 endef
