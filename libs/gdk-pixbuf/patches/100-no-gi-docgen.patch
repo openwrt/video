@@ -1,6 +1,6 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -378,7 +378,7 @@ endif
+@@ -399,7 +399,7 @@ endif
  
  # Documentation
  build_docs = get_option('gtk_doc') or get_option('docs')
