@@ -1,12 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libxkbcommon
-PKG_VERSION:=1.7.0
+PKG_VERSION:=1.10.0
 PKG_RELEASE:=1
 
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://xkbcommon.org/download/
-PKG_HASH:=65782f0a10a4b455af9c6baab7040e2f537520caa2ec2092805cdfd36863b247
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE_VERSION:=xkbcommon-$(PKG_VERSION)
+PKG_SOURCE_URL:=https://github.com/xkbcommon/$(PKG_NAME).git
+PKG_MIRROR_HASH:=f0a0582a82c1aadef3c92342c65d233aca9aa37444d31a1d9c64c0150e86c82e
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
