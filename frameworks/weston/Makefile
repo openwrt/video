@@ -3,11 +3,11 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=weston
 PKG_RELEASE:=1
 
-PKG_VERSION:=14.0.1
+PKG_VERSION:=14.0.2
 PKG_MAJOR_VERSION:=$(firstword $(subst .,$(space),$(PKG_VERSION)))
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/$(PKG_NAME)/-/releases/$(PKG_VERSION)/downloads/
-PKG_HASH:=a8150505b126a59df781fe8c30c8e6f87da7013e179039eb844a5bbbcc7c79b3
+PKG_HASH:=b47216b3530da76d02a3a1acbf1846a9cd41d24caa86448f9c46f78f20b6e0ac
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
