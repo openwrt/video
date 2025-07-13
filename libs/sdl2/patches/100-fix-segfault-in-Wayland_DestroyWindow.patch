@@ -1,6 +1,6 @@
 --- a/src/video/wayland/SDL_waylandwindow.c
 +++ b/src/video/wayland/SDL_waylandwindow.c
-@@ -2208,7 +2208,7 @@ void Wayland_DestroyWindow(_THIS, SDL_Wi
+@@ -2292,7 +2292,7 @@ void Wayland_DestroyWindow(_THIS, SDL_Wi
      SDL_VideoData *data = _this->driverdata;
      SDL_WindowData *wind = window->driverdata;
  
@@ -9,7 +9,7 @@
  #ifdef SDL_VIDEO_OPENGL_EGL
          if (wind->egl_surface) {
              SDL_EGL_DestroySurface(_this, wind->egl_surface);
-@@ -2256,6 +2256,8 @@ void Wayland_DestroyWindow(_THIS, SDL_Wi
+@@ -2346,6 +2346,8 @@ void Wayland_DestroyWindow(_THIS, SDL_Wi
          wl_surface_destroy(wind->surface);
  
          SDL_free(wind);
