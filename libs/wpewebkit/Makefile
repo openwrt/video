@@ -1,18 +1,19 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpewebkit
-PKG_VERSION:=2.46.7
+PKG_VERSION:=2.48.3
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=cf3e47638595d86de96abdb94db69a836c8aa509fc063be714f52c5a24bb5cd5
+PKG_HASH:=807571f07e87823b8fb79564692c9b1ef81ee62edbf51345a15bd0e7e1f2e07b
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later BSD-2-Clause
 PKG_LICENSE_FILES:=Source/WebCore/LICENSE-Apple Source/Webcore/LICENSE-LGPL-2.1
 
 PKG_BUILD_DEPENDS:=unifdef/host ruby/host
+PKG_CONFIG_DEPENDS:=CONFIG_PACKAGE_wpewebkit-minibrowser
 CMAKE_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
@@ -136,15 +137,16 @@ define Package/libwpewebkit/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/wpe-webkit-2.0/injected-bundle/*.so \
 		$(1)/usr/lib/wpe-webkit-2.0/injected-bundle
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/wpe-webkit-2.0/*.so \
-		       $(1)/usr/lib/wpe-webkit-2.0
 	$(INSTALL_DIR) $(1)/usr/libexec/wpe-webkit-2.0
-#	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/libexec/wpe-webkit-2.0/WPEGPUProcess \
-#		$(1)/usr/libexec/wpe-webkit-2.0
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/libexec/wpe-webkit-2.0/WPEGPUProcess \
+		$(1)/usr/libexec/wpe-webkit-2.0
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/libexec/wpe-webkit-2.0/WPENetworkProcess \
 		$(1)/usr/libexec/wpe-webkit-2.0
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/libexec/wpe-webkit-2.0/WPEWebProcess \
 		$(1)/usr/libexec/wpe-webkit-2.0
+	$(INSTALL_DIR) $(1)/usr/share/wpe-webkit-2.0
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/wpe-webkit-2.0/inspector.gresource \
+		$(1)/usr/share/wpe-webkit-2.0
 endef
 
 define Package/wpewebkit-driver/install
