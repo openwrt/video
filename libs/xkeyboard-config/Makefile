@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkeyboard-config
-PKG_VERSION:=2.44
+PKG_VERSION:=2.45
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://www.x.org/releases/individual/data/$(PKG_NAME)/
-PKG_HASH:=54d2c33eeebb031d48fa590c543e54c9bcbd0f00386ebc6489b2f47a0da4342a
+PKG_HASH:=169e075a92d957a57787c199e84e359df2931b7196c1c5b4a3d576ee6235a87c
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -43,8 +43,10 @@ define Package/xkeyboard-config/description
 endef
 
 define Package/xkeyboard-config/install
-	$(INSTALL_DIR) $(1)/usr/share/X11/xkb
-	$(CP) $(PKG_INSTALL_DIR)/usr/share/X11/xkb/* $(1)/usr/share/X11/xkb/
+	$(INSTALL_DIR) $(1)/usr/share/xkeyboard-config-2
+	$(CP) $(PKG_INSTALL_DIR)/usr/share/xkeyboard-config-2/* $(1)/usr/share/xkeyboard-config-2
+	$(INSTALL_DIR) $(1)/usr/share/X11
+	$(LN) ../../xkeyboard-config-2 $(1)/usr/share/X11/xkb
 endef
 
 $(eval $(call BuildPackage,xkeyboard-config))
