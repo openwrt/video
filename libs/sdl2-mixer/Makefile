@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sdl2-mixer
-PKG_VERSION:=2.8.0
+PKG_VERSION:=2.8.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=SDL2_mixer-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/libsdl-org/SDL_mixer/tar.gz/release-$(PKG_VERSION)?
-PKG_HASH:=1146f00815c8ad22c3d48fbe31ae23dc5997936ebf30b4b3aeab6eab7ea1db3e
+PKG_HASH:=63804b4b2ba503865c0853f102231aeff489b1dfc6dea4750a69e2a8ef54b2bb
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/SDL_mixer-release-$(PKG_VERSION)
 
