@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gtk
-PKG_VERSION:=4.16.5
+PKG_VERSION:=4.18.6
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=@GNOME/$(PKG_NAME)/$(basename $(PKG_VERSION))
-PKG_HASH:=302d6813fbed95c419fb3ab67c5da5e214882b6a645c3eab9028dfb91ab418a4
+PKG_HASH:=e1817c650ddc3261f9a8345b3b22a26a5d80af154630dedc03cc7becefffd0fa
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later
