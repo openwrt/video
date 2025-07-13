@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=assimp
-PKG_VERSION:=5.4.3
+PKG_VERSION:=6.0.2
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/$(PKG_NAME)/$(PKG_NAME)/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb
+PKG_HASH:=d1822d9a19c9205d6e8bc533bf897174ddb360ce504680f294170cc1d6319751
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
