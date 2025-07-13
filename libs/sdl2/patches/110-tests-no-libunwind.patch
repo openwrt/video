@@ -1,6 +1,6 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1622,7 +1622,6 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS
+@@ -1632,7 +1632,6 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS
        endif()
  
      endif()
