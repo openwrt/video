@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cog
-PKG_VERSION:=0.18.4
+PKG_VERSION:=0.18.5
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=31d7079db2eeed790899d2f1f824dd6a54bf30d072d196d737be572f105d99b1
+PKG_HASH:=0ede9d09ab635ac519beec0543378e3fc51b56561a5fb7aa9c0cbca54c31b97c
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-2-clause
