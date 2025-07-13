@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=25.0.5
+PKG_VERSION:=25.1.5
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=c0d245dea0aa4b49f74b3d474b16542e4a8799791cd33d676c69f650ad4378d0
+PKG_HASH:=3c4f6b10ff6ee950d0ec6ea733cc6e6d34c569454e3d39a9b276de9115a3b363
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
@@ -149,7 +149,7 @@ endef
 
 define Package/libmesa-tegra
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-tegra @(aarch64||arm)
+  DEPENDS+=+libdrm-tegra @(aarch64||arm) @MESA_USE_LLVM
   TITLE+= (NVIDIA Tegra)
   VARIANT:=tegra
 endef
@@ -239,7 +239,7 @@ define Package/libmesa-panfrost
 $(call Package/libmesa/Default)
   TITLE+= (ARM Mali Midgard and later)
   VARIANT:=panfrost
-  DEPENDS+=@(aarch64||arm)
+  DEPENDS+=@(aarch64||arm) @MESA_USE_LLVM
 endef
 
 define Package/libmesa-panfrost/description
@@ -348,46 +348,6 @@ define Package/libopencl-nouveau/description
 Mesa Clover OpenCL 1.1 library for nVidia GPUs.
 endef
 
-define Package/libosmesa/Default
-$(call Package/mesa/Default)
-  DEPENDS+=+libdrm +libstdcpp +zlib +libwayland +libzstd +wayland-protocols
-  TITLE+= off-screen rendering library
-endef
-
-define Package/libosmesa/description/Default
-Mesa's off-screen interface is used for rendering into user-allocated
-memory without any sort of window system or operating system
-dependencies. That is, the GL_FRONT colorbuffer is actually a buffer in
-main memory, rather than a window on your display.
-endef
-
-define Package/libosmesa-softpipe
-$(call Package/libosmesa/Default)
-  TITLE+= (Softpipe)
-  VARIANT:=softpipe
-  DEFAULT_VARIANT:=1
-endef
-
-define Package/libosmesa-softpipe/description
-$(call Package/libosmesa/description/Default)
-
-Softpipe - this is the reference Gallium software driver.
-endef
-
-define Package/libosmesa-llvmpipe
-$(call Package/libosmesa/Default)
-  TITLE+= (LLVMpipe)
-  DEPENDS+=@MESA_USE_LLVM
-  VARIANT:=llvmpipe
-endef
-
-define Package/libosmesa-llvmpipe/description
-$(call Package/libosmesa/description/Default)
-
-LLVMpipe - this is the high-performance Gallium LLVM driver.
-endef
-
-
 define Package/libvulkan-broadcom
 $(call Package/mesa/Default)
   DEPENDS+=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
@@ -483,7 +443,7 @@ endef
 define Package/libvulkan-panfrost
 $(call Package/mesa/Default)
   DEPENDS+=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
-	   @(arm||aarch64)
+	   @(arm||aarch64) @MESA_USE_LLVM
   TITLE+= ARM Mali Midgard/Bifrost/Valhall Vulkan driver
   VARIANT:=vulkan
 endef
@@ -551,8 +511,6 @@ MESON_HOST_ARGS += \
 	-Dvalgrind=disabled \
 	-Dgallium-drivers= \
 	-Dvulkan-drivers= \
-	-Dosmesa=false \
-	-Dgallium-xa=disabled \
 	-Dtools=nir \
 	-Dllvm=enabled \
 	-Dmesa-clc=enabled \
@@ -560,6 +518,7 @@ MESON_HOST_ARGS += \
 	-Dshared-llvm=disabled \
 	-Ddraw-use-llvm=false \
 	-Dintel-clc=enabled \
+	-Dintel-elk=true \
 	-Dstatic-libclc=all \
 	-Dinstall-intel-clc=true \
 	-Dinstall-mesa-clc=true \
@@ -732,11 +691,6 @@ define Package/libopencl/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libOpenCL.so* $(1)/usr/lib
 endef
 
-define Package/libosmesa/install
-	$(INSTALL_DIR) $(1)/usr/lib
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libOSMesa.so* $(1)/usr/lib
-endef
-
 define Package/libvulkan-radeon/install
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libvulkan_radeon.so $(1)/usr/lib
@@ -810,9 +764,6 @@ Package/libmesa-llvmpipe/install = $(Package/libmesa/install)
 Package/libopencl-amd/install = $(Package/libopencl/install)
 Package/libopencl-nouveau/install = $(Package/libopencl/install)
 
-Package/libosmesa-softpipe/install = $(Package/libosmesa/install)
-Package/libosmesa-llvmpipe/install = $(Package/libosmesa/install)
-
 $(eval $(call BuildPackage,mesa3d))
 $(eval $(call BuildPackage,libmesa-amd))
 $(eval $(call BuildPackage,libmesa-intel))
@@ -828,8 +779,6 @@ $(eval $(call BuildPackage,libmesa-softpipe))
 $(eval $(call BuildPackage,libmesa-llvmpipe))
 $(eval $(call BuildPackage,libopencl-amd))
 $(eval $(call BuildPackage,libopencl-nouveau))
-$(eval $(call BuildPackage,libosmesa-softpipe))
-$(eval $(call BuildPackage,libosmesa-llvmpipe))
 $(eval $(call BuildPackage,libvulkan-broadcom))
 $(eval $(call BuildPackage,libvulkan-imagination))
 $(eval $(call BuildPackage,libvulkan-intel))
