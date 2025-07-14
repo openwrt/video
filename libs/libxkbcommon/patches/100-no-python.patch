@@ -1,0 +1,11 @@
+--- a/meson.build
++++ b/meson.build
+@@ -783,7 +783,7 @@ test(
+ pymod = import('python')
+ python = pymod.find_installation('python3', modules: ['jinja2'], required: false)
+ has_merge_modes_tests = python.found() and python.language_version().version_compare('>=3.11')
+-if has_merge_modes_tests
++if false
+     script = find_program('scripts/update-merge-modes-tests.py')
+     merge_modes_tests = [meson.project_name()]
+     # NOTE: The following tests deal with third-party XKB compilers and are
