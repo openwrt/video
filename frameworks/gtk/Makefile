@@ -144,7 +144,6 @@ define Package/libgtk-utils/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-image-tool $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-encode-symbolic-svg $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-path-tool $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-icon-browser $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-query-settings $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-launch $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/gtk4-builder-tool $(1)/usr/bin
@@ -158,10 +157,8 @@ define Package/libgtk-utils/install
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/applications/org.gtk.WidgetFactory4.desktop $(1)/usr/share/applications
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/applications/org.gtk.gtk4.NodeEditor.desktop $(1)/usr/share/applications
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/applications/org.gtk.PrintEditor4.desktop $(1)/usr/share/applications
-	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/applications/org.gtk.IconBrowser4.desktop $(1)/usr/share/applications
 
 	$(INSTALL_DIR) $(1)/usr/share/metainfo
-	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/metainfo/org.gtk.IconBrowser4.appdata.xml $(1)/usr/share/metainfo
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/metainfo/org.gtk.PrintEditor4.appdata.xml $(1)/usr/share/metainfo
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/metainfo/org.gtk.gtk4.NodeEditor.appdata.xml $(1)/usr/share/metainfo
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/metainfo/org.gtk.WidgetFactory4.appdata.xml $(1)/usr/share/metainfo
