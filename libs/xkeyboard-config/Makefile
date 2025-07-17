@@ -46,7 +46,7 @@ define Package/xkeyboard-config/install
 	$(INSTALL_DIR) $(1)/usr/share/xkeyboard-config-2
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/xkeyboard-config-2/* $(1)/usr/share/xkeyboard-config-2
 	$(INSTALL_DIR) $(1)/usr/share/X11
-	$(LN) ../../xkeyboard-config-2 $(1)/usr/share/X11/xkb
+	$(LN) ../xkeyboard-config-2 $(1)/usr/share/X11/xkb
 endef
 
 $(eval $(call BuildPackage,xkeyboard-config))
