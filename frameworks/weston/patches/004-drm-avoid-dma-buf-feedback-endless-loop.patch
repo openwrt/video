@@ -1,0 +1,172 @@
+From 1a9149cc062ac744ab190c8b2dc34102ca8a0adc Mon Sep 17 00:00:00 2001
+From: Leandro Ribeiro <leandro.ribeiro@collabora.com>
+Date: Tue, 24 Sep 2024 11:23:50 -0300
+Subject: [PATCH 4/4] drm: avoid dma-buf feedback endless loop
+
+Currently we have the following situation: we add a scanout tranche
+because if the client re-allocates with another format/modifier, the
+chances of being placed in a DRM/KMS plane is higher.
+
+But then we run out of overlay planes. So we remove the scanout tranche,
+because the format/modifier available in the renderer tranche are
+optimal for rendering.
+
+Now Weston detects again that the format/modifier is what may be
+avoiding the view being place in a plane, re-adding the scanout tranche.
+And we have an endless loop.
+
+To avoid this, let's accumulate the reasons why placing the view in a
+place failed. So if we detect that we don't have planes available, no
+matter the format/modifier, we won't add the scanout tranche.
+
+Signed-off-by: Leandro Ribeiro <leandro.ribeiro@collabora.com>
+(cherry picked from commit d3ead778dea9bde77d318292b8870e746cad5c3d)
+---
+ libweston/backend-drm/state-propose.c | 55 +++++++++++----------------
+ 1 file changed, 23 insertions(+), 32 deletions(-)
+
+--- a/libweston/backend-drm/state-propose.c
++++ b/libweston/backend-drm/state-propose.c
+@@ -413,9 +413,15 @@ drm_output_find_plane_for_view(struct dr
+ 
+ 	bool view_matches_entire_output, scanout_has_view_assigned;
+ 	uint32_t possible_plane_mask = 0;
++	bool any_candidate_picked = false;
+ 
+ 	pnode->try_view_on_plane_failure_reasons = FAILURE_REASONS_NONE;
+ 
++	/* filter out non-cursor views in renderer-only mode */
++	if (mode == DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY &&
++	    ev->layer_link.layer != &b->compositor->cursor_layer)
++			return NULL;
++
+ 	/* check view for valid buffer, doesn't make sense to even try */
+ 	if (!weston_view_has_valid_buffer(ev)) {
+ 		pnode->try_view_on_plane_failure_reasons |=
+@@ -423,32 +429,23 @@ drm_output_find_plane_for_view(struct dr
+ 		return NULL;
+ 	}
+ 
+-	/* filter out non-cursor views in renderer-only mode */
+-	if (mode == DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY &&
+-	    ev->layer_link.layer != &b->compositor->cursor_layer)
+-			return NULL;
+-
+ 	buffer = ev->surface->buffer_ref.buffer;
+ 	if (buffer->type == WESTON_BUFFER_SOLID) {
+ 		pnode->try_view_on_plane_failure_reasons |=
+ 			FAILURE_REASONS_BUFFER_TYPE;
+-		return NULL;
+ 	} else if (buffer->type == WESTON_BUFFER_SHM) {
+-		if (!output->cursor_plane || device->cursors_are_broken) {
++		if (!output->cursor_plane || device->cursors_are_broken)
+ 			pnode->try_view_on_plane_failure_reasons |=
+ 				FAILURE_REASONS_BUFFER_TYPE;
+-			return NULL;
+-		}
+ 
+-		/* Even though this is a SHM buffer, pixel_format stores the
+-		 * format code as DRM FourCC */
++		/* Even though this is a SHM buffer, pixel_format stores
++		 * the format code as DRM FourCC */
+ 		if (buffer->pixel_format->format != DRM_FORMAT_ARGB8888) {
+ 			drm_debug(b, "\t\t\t\t[view] not placing view %p on "
+-			             "plane; SHM buffers must be ARGB8888 for "
++				     "plane; SHM buffers must be ARGB8888 for "
+ 				     "cursor view\n", ev);
+ 			pnode->try_view_on_plane_failure_reasons |=
+ 				FAILURE_REASONS_FB_FORMAT_INCOMPATIBLE;
+-			return NULL;
+ 		}
+ 
+ 		if (buffer->width > device->cursor_width ||
+@@ -458,10 +455,10 @@ drm_output_find_plane_for_view(struct dr
+ 				     ev, buffer->width, buffer->height);
+ 			pnode->try_view_on_plane_failure_reasons |=
+ 				FAILURE_REASONS_BUFFER_TOO_BIG;
+-			return NULL;
+ 		}
+ 
+-		possible_plane_mask = (1 << output->cursor_plane->plane_idx);
++		if (pnode->try_view_on_plane_failure_reasons == FAILURE_REASONS_NONE)
++			possible_plane_mask = (1 << output->cursor_plane->plane_idx);
+ 	} else {
+ 		if (mode == DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY) {
+ 			drm_debug(b, "\t\t\t\t[view] not assigning view %p "
+@@ -477,20 +474,16 @@ drm_output_find_plane_for_view(struct dr
+ 				possible_plane_mask |= 1 << plane->plane_idx;
+ 		}
+ 
+-		if (!possible_plane_mask) {
++		if (!possible_plane_mask)
+ 			pnode->try_view_on_plane_failure_reasons |=
+ 				FAILURE_REASONS_INCOMPATIBLE_TRANSFORM;
+-			return NULL;
+-		}
+ 
+ 		fb = drm_fb_get_from_paint_node(state, pnode);
+-		if (!fb) {
++		if (fb)
++			possible_plane_mask &= fb->plane_mask;
++		else
+ 			drm_debug(b, "\t\t\t[view] couldn't get FB for view: 0x%lx\n",
+-				  (unsigned long) pnode->try_view_on_plane_failure_reasons);
+-			return NULL;
+-		}
+-
+-		possible_plane_mask &= fb->plane_mask;
++				     (unsigned long) pnode->try_view_on_plane_failure_reasons);
+ 	}
+ 
+ 	view_matches_entire_output =
+@@ -521,7 +514,6 @@ drm_output_find_plane_for_view(struct dr
+ 			assert(plane == output->cursor_plane);
+ 			break;
+ 		case WDRM_PLANE_TYPE_PRIMARY:
+-			assert(fb);
+ 			if (plane != output->scanout_plane)
+ 				continue;
+ 			if (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY)
+@@ -530,7 +522,6 @@ drm_output_find_plane_for_view(struct dr
+ 				continue;
+ 			break;
+ 		case WDRM_PLANE_TYPE_OVERLAY:
+-			assert(fb);
+ 			assert(mode != DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY);
+ 			/* if the view covers the whole output, put it in the
+ 			 * scanout plane, not overlay */
+@@ -613,6 +604,7 @@ drm_output_find_plane_for_view(struct dr
+ 		else
+ 			zpos = MIN(current_lowest_zpos - 1, plane->zpos_max);
+ 
++		any_candidate_picked = true;
+ 		drm_debug(b, "\t\t\t\t[plane] plane %d picked "
+ 			     "from candidate list, type: %s\n",
+ 			     plane->plane_id, p_name);
+@@ -620,9 +612,10 @@ drm_output_find_plane_for_view(struct dr
+ 		if (plane->type == WDRM_PLANE_TYPE_CURSOR) {
+ 			ps = drm_output_prepare_cursor_paint_node(state, pnode, zpos);
+ 		} else {
+-			ps = drm_output_try_paint_node_on_plane(plane, state,
+-								pnode, mode,
+-								fb, zpos);
++			if (fb)
++				ps = drm_output_try_paint_node_on_plane(plane, state,
++									pnode, mode,
++									fb, zpos);
+ 		}
+ 
+ 		if (ps) {
+@@ -641,11 +634,9 @@ drm_output_find_plane_for_view(struct dr
+ 			FAILURE_REASONS_PLANES_REJECTED;
+ 	}
+ 
+-	if (!ps &&
+-	    pnode->try_view_on_plane_failure_reasons == FAILURE_REASONS_NONE) {
++	if (!any_candidate_picked)
+ 		pnode->try_view_on_plane_failure_reasons |=
+ 			FAILURE_REASONS_NO_PLANES_AVAILABLE;
+-	}
+ 
+ 	/* if we have a plane state, it has its own ref to the fb; if not then
+ 	 * we drop ours here */

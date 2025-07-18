@@ -1,0 +1,72 @@
+From 6445af1eade0fcdcc522cd9c1d45d840b87190bb Mon Sep 17 00:00:00 2001
+From: Leandro Ribeiro <leandro.ribeiro@collabora.com>
+Date: Tue, 24 Sep 2024 10:08:05 -0300
+Subject: [PATCH 2/4] drm: fix a few dma-buf feedback failure reasons
+
+There are a few points in the code where we are wrongly using
+FAILURE_REASONS_ADD_FB_FAILED, probably because we didn't have so many
+"failure reasons" previously. This update such cases to use enum's that
+make sense.
+
+Signed-off-by: Leandro Ribeiro <leandro.ribeiro@collabora.com>
+(cherry picked from commit 3210cec531702177d24c42bb56486124eda00f19)
+---
+ libweston/backend-drm/drm-internal.h  | 11 ++++++-----
+ libweston/backend-drm/state-propose.c |  8 ++++----
+ 2 files changed, 10 insertions(+), 9 deletions(-)
+
+--- a/libweston/backend-drm/drm-internal.h
++++ b/libweston/backend-drm/drm-internal.h
+@@ -163,11 +163,12 @@ enum try_view_on_plane_failure_reasons {
+ 	FAILURE_REASONS_INADEQUATE_CONTENT_PROTECTION = 1 << 6,
+ 	FAILURE_REASONS_INCOMPATIBLE_TRANSFORM = 1 << 7,
+ 	FAILURE_REASONS_NO_BUFFER = 1 << 8,
+-	FAILURE_REASONS_BUFFER_TYPE = 1 << 9,
+-	FAILURE_REASONS_GLOBAL_ALPHA = 1 << 10,
+-	FAILURE_REASONS_NO_GBM = 1 << 11,
+-	FAILURE_REASONS_GBM_BO_IMPORT_FAILED = 1 << 12,
+-	FAILURE_REASONS_GBM_BO_GET_HANDLE_FAILED = 1 << 13,
++	FAILURE_REASONS_BUFFER_TOO_BIG = 1 << 9,
++	FAILURE_REASONS_BUFFER_TYPE = 1 << 10,
++	FAILURE_REASONS_GLOBAL_ALPHA = 1 << 11,
++	FAILURE_REASONS_NO_GBM = 1 << 12,
++	FAILURE_REASONS_GBM_BO_IMPORT_FAILED = 1 << 13,
++	FAILURE_REASONS_GBM_BO_GET_HANDLE_FAILED = 1 << 14,
+ };
+ 
+ /**
+--- a/libweston/backend-drm/state-propose.c
++++ b/libweston/backend-drm/state-propose.c
+@@ -419,7 +419,7 @@ drm_output_find_plane_for_view(struct dr
+ 	/* check view for valid buffer, doesn't make sense to even try */
+ 	if (!weston_view_has_valid_buffer(ev)) {
+ 		pnode->try_view_on_plane_failure_reasons |=
+-			FAILURE_REASONS_FB_FORMAT_INCOMPATIBLE;
++			FAILURE_REASONS_NO_BUFFER;
+ 		return NULL;
+ 	}
+ 
+@@ -431,12 +431,12 @@ drm_output_find_plane_for_view(struct dr
+ 	buffer = ev->surface->buffer_ref.buffer;
+ 	if (buffer->type == WESTON_BUFFER_SOLID) {
+ 		pnode->try_view_on_plane_failure_reasons |=
+-			FAILURE_REASONS_FB_FORMAT_INCOMPATIBLE;
++			FAILURE_REASONS_BUFFER_TYPE;
+ 		return NULL;
+ 	} else if (buffer->type == WESTON_BUFFER_SHM) {
+ 		if (!output->cursor_plane || device->cursors_are_broken) {
+ 			pnode->try_view_on_plane_failure_reasons |=
+-				FAILURE_REASONS_FB_FORMAT_INCOMPATIBLE;
++				FAILURE_REASONS_BUFFER_TYPE;
+ 			return NULL;
+ 		}
+ 
+@@ -457,7 +457,7 @@ drm_output_find_plane_for_view(struct dr
+ 				     "(buffer (%dx%d) too large for cursor plane)\n",
+ 				     ev, buffer->width, buffer->height);
+ 			pnode->try_view_on_plane_failure_reasons |=
+-				FAILURE_REASONS_FB_FORMAT_INCOMPATIBLE;
++				FAILURE_REASONS_BUFFER_TOO_BIG;
+ 			return NULL;
+ 		}
+ 
