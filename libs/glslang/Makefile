@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=glslang
-PKG_VERSION:=15.3.0
+PKG_VERSION:=15.4.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/$(PKG_NAME)/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=c6c21fe1873c37e639a6a9ac72d857ab63a5be6893a589f34e09a6c757174201
+PKG_HASH:=b16c78e7604b9be9f546ee35ad8b6db6f39bbbbfb19e8d038b6fe2ea5bba4ff4
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause BSD-2-Clause MIT Apache GPL-3.0-or-later
