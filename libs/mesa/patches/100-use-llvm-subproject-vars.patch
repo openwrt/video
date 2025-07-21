@@ -1,6 +1,6 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -1771,21 +1771,26 @@ _llvm = get_option('llvm')
+@@ -1785,21 +1785,26 @@ _llvm = get_option('llvm')
  dep_llvm = null_dep
  with_llvm = false
  if _llvm.allowed()
@@ -42,7 +42,7 @@
  endif
  if with_llvm
    pre_args += '-DMESA_LLVM_VERSION_STRING="@0@"'.format(dep_llvm.version())
-@@ -1884,7 +1889,11 @@ endif
+@@ -1898,7 +1903,11 @@ endif
  
  dep_clang = null_dep
  if with_clc or with_gallium_clover

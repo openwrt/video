@@ -1,6 +1,6 @@
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -87,7 +87,7 @@ endif
+@@ -91,7 +91,7 @@ endif
  if with_imagination_vk
    subdir('imagination')
  endif
