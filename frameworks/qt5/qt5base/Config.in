@@ -18,6 +18,7 @@ config BUILD_qt5base-gui_DRM
 choice
     prompt "Which OpenGL variant to use"
     default BUILD_qt5base-gui_OPENGL_NONE
+    depends on PACKAGE_qt5base-gui
 
 config BUILD_qt5base-gui_OPENGL_OPENGLES2
     bool "es2"
