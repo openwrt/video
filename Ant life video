@@ -1,0 +1,42 @@
+!pip install imageio matplotlib
+
+import matplotlib.pyplot as plt
+import imageio
+import os
+
+frames_dir = "frames"
+if not os.path.exists(frames_dir):
+    os.makedirs(frames_dir)
+
+stages = [
+    "Яйце",
+    "Личинка",
+    "Лялечка",
+    "Молода мураха",
+    "Доросла мураха"
+]
+
+filenames = []
+for i, stage in enumerate(stages):
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.text(5, 5, stage, ha='center', va='center', fontsize=24, weight='bold')
+    ax.set_title(f"Стадія {i+1} / {len(stages)}")
+    ax.axis('off')
+
+    fname = os.path.join(frames_dir, f"frame_{i}.png")
+    plt.savefig(fname)
+    filenames.append(fname)
+    plt.close(fig)
+
+output_path = "ant_development.mp4"
+with imageio.get_writer(output_path, fps=1) as writer:
+    for fname in filenames:
+        image = imageio.imread(fname)
+        writer.append_data(image)
+
+print("Відео створено:", output_path)
+
+from google.colab import files
+files.download(output_path)
