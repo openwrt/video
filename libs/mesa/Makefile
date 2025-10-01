@@ -5,7 +5,7 @@ PKG_VERSION:=21.3.0
 PKG_RELEASE:=$(AUTORELEASE)
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=https://archive.mesa3d.org/
+PKG_SOURCE_URL:=https://archive.mesa3d.org/older-versions/21.x/
 PKG_HASH:=a2753c09deef0ba14d35ae8a2ceff3fe5cd13698928c7bb62c2ec8736eb09ce1
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
