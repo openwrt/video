@@ -1,0 +1,85 @@
+From 6334f0f57472410f9363f5b5d6bc6c68601f14d7 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 13 Oct 2025 01:19:44 +0100
+Subject: [PATCH 1/2] meson: allow using LLVM as embedded project
+
+---
+ meson.build                  | 33 +++++++++++++++++++++------------
+ src/compiler/clc/meson.build |  4 ++--
+ 2 files changed, 23 insertions(+), 14 deletions(-)
+
+--- a/meson.build
++++ b/meson.build
+@@ -1748,17 +1748,29 @@ _shared_llvm = get_option('shared-llvm')
+   .disable_auto_if(host_machine.system() == 'windows') \
+   .allowed()
+ 
+-dep_llvm = dependency(
+-  'llvm',
+-  method : host_machine.system() == 'windows' ? 'auto' : 'config-tool',
+-  version : _llvm_version,
+-  modules : llvm_modules,
+-  optional_modules : llvm_optional_modules,
+-  required : with_llvm,
+-  static : not _shared_llvm,
+-  fallback : ['llvm', 'dep_llvm'],
+-  include_type : 'system',
+-)
++_llvm_subproject_dir = meson.project_source_root() / 'subprojects' / 'llvm'
++_has_llvm_subproject = import('fs').is_dir(_llvm_subproject_dir)
++if _has_llvm_subproject
++  llvm_proj = subproject('llvm', required : false)
++else
++  llvm_proj = disabler()
++endif
++
++if _has_llvm_subproject and llvm_proj.found()
++  dep_llvm = llvm_proj.get_variable('dep_llvm')
++else
++  dep_llvm = dependency(
++    'llvm',
++    method : host_machine.system() == 'windows' ? 'auto' : 'config-tool',
++    version : _llvm_version,
++    modules : llvm_modules,
++    optional_modules : llvm_optional_modules,
++    required : with_llvm,
++    static : not _shared_llvm,
++    fallback : ['llvm', 'dep_llvm'],
++    include_type : 'system',
++  )
++endif
+ if dep_llvm.found()
+   pre_args += '-DMESA_LLVM_VERSION_STRING="@0@"'.format(dep_llvm.version())
+   pre_args += '-DLLVM_IS_SHARED=@0@'.format(_shared_llvm.to_int())
+@@ -1842,7 +1854,11 @@ endif
+ 
+ dep_clang = null_dep
+ if with_clc
+-  llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++  if dep_llvm.type_name() == 'internal'
++    llvm_libdir = subproject('llvm').get_variable('libdir')
++  else
++    llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
++  endif
+ 
+   dep_clang = cpp.find_library('clang-cpp', dirs : llvm_libdir, required : false)
+ 
+--- a/src/compiler/clc/meson.build
++++ b/src/compiler/clc/meson.build
+@@ -25,14 +25,14 @@ if not _shared_llvm or \
+ 
+   opencl_c_base_h = custom_target(
+     'opencl-c-base.h',
+-    input : [files_xxd, join_paths(clang_resource_dir, 'opencl-c-base.h')],
++    input : [files_xxd, 'opencl-c-base.h'],
+     output : 'opencl-c-base.h.h',
+     command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_base_source'],
+   )
+ 
+   opencl_c_h = custom_target(
+     'opencl-c.h',
+-    input : [files_xxd, join_paths(clang_resource_dir, 'opencl-c.h')],
++    input : [files_xxd, 'opencl-c.h'],
+     output : 'opencl-c.h.h',
+     command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_source'],
+   )
