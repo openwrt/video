@@ -1,0 +1,21 @@
+--- a/Source/bmalloc/libpas/src/libpas/pas_probabilistic_guard_malloc_allocator.c
++++ b/Source/bmalloc/libpas/src/libpas/pas_probabilistic_guard_malloc_allocator.c
+@@ -48,7 +48,7 @@
+ #endif
+ 
+ /* PlayStation does not currently support the backtrace API. Android API versions < 33 don't, either. Windows does not either. */
+-#if !PAS_PLATFORM(PLAYSTATION) && (!PAS_OS(ANDROID) || __ANDROID_API__ >= 33) && !PAS_OS(WINDOWS)
++#if !PAS_PLATFORM(PLAYSTATION) && (!PAS_OS(ANDROID) || __ANDROID_API__ >= 33) && !PAS_OS(WINDOWS) && defined(HAVE_EXECINFO_H) && HAVE_EXECINFO_H
+ #include <execinfo.h>
+ #else
+ size_t backtrace(void** buffer, size_t size)
+--- a/Source/cmake/OptionsCommon.cmake
++++ b/Source/cmake/OptionsCommon.cmake
+@@ -309,6 +309,7 @@ WEBKIT_CHECK_HAVE_INCLUDE(HAVE_SYS_PARAM
+ WEBKIT_CHECK_HAVE_INCLUDE(HAVE_SYS_TIME_H sys/time.h)
+ WEBKIT_CHECK_HAVE_INCLUDE(HAVE_SYS_TIMEB_H sys/timeb.h)
+ WEBKIT_CHECK_HAVE_INCLUDE(HAVE_LINUX_MEMFD_H linux/memfd.h)
++WEBKIT_CHECK_HAVE_INCLUDE(HAVE_EXECINFO_H execinfo.h)
+ 
+ # Check for functions
+ # _GNU_SOURCE=1 is required to expose statx
