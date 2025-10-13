@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpewebkit
-PKG_VERSION:=2.48.3
+PKG_VERSION:=2.50.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=807571f07e87823b8fb79564692c9b1ef81ee62edbf51345a15bd0e7e1f2e07b
+PKG_HASH:=305437a4ba869e4106c1d4a8cb2a7be3f43b75d9d026e9b97c6f6debc04a673b
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later BSD-2-Clause
@@ -63,9 +63,9 @@ define Package/libwpewebkit
   DEPENDS:=+bubblewrap +glib2 +gst1-mod-opengl +harfbuzz +icu-full-data \
 	   +libepoxy +libgcrypt +libgst1allocators +libgst1app +libgst1audio \
 	   +libgst1fft +libgst1gl +libgst1pbutils +libgst1tag \
-	   +libgst1transcoder +libgst1video +libinput +libjpeg +libpng \
-	   +libseccomp +libsoup3 +libsqlite3 +libtasn1 +libudev +libwayland \
-	   +libwebp +libwpe +libxml2 +libxslt +zlib \
+	   +libgst1transcoder +libgst1video +libinput +libmanette +libjpeg \
+	   +libpng +libseccomp +libsoup3 +libsqlite3 +libtasn1 +libudev \
+	   +libwayland +libwebp +libwpe +libxml2 +libxslt +zlib \
 	   @(arm_v7||i386||i686||ARCH_64BIT)
 endef
 
