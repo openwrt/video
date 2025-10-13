@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=spirv-tools
-PKG_VERSION:=1.4.313.0
+PKG_VERSION:=1.4.328.0
 
 PKG_SOURCE:=SPIRV-Tools-vulkan-sdk-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/SPIRV-Tools/tar.gz/vulkan-sdk-$(PKG_VERSION)?
-PKG_HASH:=6b60f723345ceed5291cceebbcfacf7fea9361a69332261fa08ae57e2a562005
+PKG_HASH:=bdd1692ad5cba1bdf8ace0850bcacc32abc2abfaef373328689fa2809ab7027f
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
