@@ -1,19 +1,20 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=25.1.6
+PKG_VERSION:=25.2.4
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=9f2b69eb39d2d8717d30a9868fdda3e0c0d3708ba32778bbac8ddb044538ce84
+PKG_HASH:=a370b4c549cbfbe646b319e34d73edb50ed883978f5e95133f282f0eae39ab52
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
 
 PKG_INSTALL:=1
 
-PKG_BUILD_DEPENDS:=glslang/host python3/host libva MESA_USE_LLVM:llvm MESA_USE_LLVM:mesa/host
+PKG_BUILD_DEPENDS:=glslang/host python3/host libva vulkan-headers \
+		   MESA_USE_LLVM:llvm MESA_USE_LLVM:mesa/host
 
 HOST_BUILD_DEPENDS:=python3/host spirv-tools/host llvm
 
@@ -30,10 +31,6 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_libmesa-zink \
 	CONFIG_PACKAGE_libmesa-softpipe \
 	CONFIG_PACKAGE_libmesa-llvmpipe \
-	CONFIG_PACKAGE_libopencl-amd \
-	CONFIG_PACKAGE_libopencl-nouveau \
-	CONFIG_PACKAGE_libosmesa-softpipe \
-	CONFIG_PACKAGE_libosmesa-llvmpipe \
 	CONFIG_PACKAGE_libvulkan-broadcom \
 	CONFIG_PACKAGE_libvulkan-imagination \
 	CONFIG_PACKAGE_libvulkan-intel \
@@ -318,36 +315,6 @@ fastest software rasterizer for Mesa.
 endef
 
 
-define Package/libopencl/Default
-$(call Package/mesa/Default)
-  TITLE+= OpenCL
-  PROVIDES:=libopencl
-  DEPENDS+=+MESA_USE_LLVM:libclang-cpp +libdrm +libelf +libexpat +libstdcpp \
-	   +libzstd +zlib @MESA_USE_LLVM
-endef
-
-
-define Package/libopencl-amd
-$(call Package/libopencl/Default)
-  TITLE+= (AMD)
-  VARIANT:=amd
-endef
-
-define Package/libopencl-amd/description
-Mesa Clover OpenCL 1.1 library for AMD GPUs.
-endef
-
-
-define Package/libopencl-nouveau
-$(call Package/libopencl/Default)
-  TITLE+= (nVidia)
-  VARIANT:=nouveau
-endef
-
-define Package/libopencl-nouveau/description
-Mesa Clover OpenCL 1.1 library for nVidia GPUs.
-endef
-
 define Package/libvulkan-broadcom
 $(call Package/mesa/Default)
   DEPENDS+=+libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
@@ -517,10 +484,8 @@ MESON_HOST_ARGS += \
 	-Dprecomp-compiler=enabled \
 	-Dshared-llvm=disabled \
 	-Ddraw-use-llvm=false \
-	-Dintel-clc=enabled \
 	-Dintel-elk=true \
 	-Dstatic-libclc=all \
-	-Dinstall-intel-clc=true \
 	-Dinstall-mesa-clc=true \
 	-Dinstall-precomp-compiler=true
 
@@ -538,11 +503,10 @@ MESON_ARGS += \
 	-Dvalgrind=disabled \
 	-Dtools= \
 	-Dllvm=$(if $(CONFIG_MESA_USE_LLVM),en,dis)abled \
-	-Dgallium-opencl=$(if $(CONFIG_MESA_USE_LLVM),standalone,disabled) \
 	-Ddraw-use-llvm=$(if $(CONFIG_MESA_USE_LLVM),true,false) \
-	-Dintel-clc=system \
 	-Dmesa-clc=$(if $(CONFIG_MESA_USE_LLVM),system,auto) \
-	-Dprecomp-compiler=system
+	-Dprecomp-compiler=system \
+	-Dlegacy-wayland=bind-wayland-display
 
 ifeq ($(BUILD_VARIANT),amd)
 MESON_ARGS += \
@@ -592,14 +556,12 @@ endif
 
 ifeq ($(BUILD_VARIANT),llvmpipe)
 MESON_ARGS += \
-	-Dgallium-drivers=llvmpipe \
-	-Dosmesa=$(if $(CONFIG_PACKAGE_libosmesa-llvmpipe),true,false)
+	-Dgallium-drivers=llvmpipe
 endif
 
 ifeq ($(BUILD_VARIANT),softpipe)
 MESON_ARGS += \
-	-Dgallium-drivers=softpipe \
-	-Dosmesa=$(if $(CONFIG_PACKAGE_libosmesa-softpipe),true,false)
+	-Dgallium-drivers=softpipe
 endif
 
 ifeq ($(BUILD_VARIANT),vulkan)
@@ -642,8 +604,9 @@ define Host/Configure
 	$(call Host/Configure/Meson)
 endef
 
-define Build/Configure
-	$(call Py3Build/InstallBuildDepends)
+
+ifneq ($(CONFIG_MESA_USE_LLVM),)
+define Build/Configure/LLVMMesa
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)/subprojects/llvm
 	$(LN) $(STAGING_DIR)/usr/bin $(PKG_BUILD_DIR)/subprojects/llvm
 	$(LN) $(STAGING_DIR)/usr/include $(PKG_BUILD_DIR)/subprojects/llvm
@@ -659,6 +622,16 @@ define Build/Configure
 		echo -n "$$$${next_comma}'$$$${lib}'" ; \
 		next_comma=', ' ; \
 	done ) ; $(SED) "s%@LLVM_LIBS@%$$$${LLVM_LIBS}%" $(PKG_BUILD_DIR)/subprojects/llvm/meson.build
+endef
+else
+define Build/Configure/LLVMMesa
+endef
+endif
+
+
+define Build/Configure
+	$(call Build/Configure/LLVMMesa)
+	$(call Py3Build/InstallBuildDepends)
 	$(call Build/Configure/Meson)
 endef
 
@@ -684,11 +657,6 @@ define Package/libmesa/install
 	fi
 	$(INSTALL_DIR) $(1)/usr/share/drirc.d
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/drirc.d/* $(1)/usr/share/drirc.d
-endef
-
-define Package/libopencl/install
-	$(INSTALL_DIR) $(1)/usr/lib
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libOpenCL.so* $(1)/usr/lib
 endef
 
 define Package/libvulkan-radeon/install
@@ -761,9 +729,6 @@ Package/libmesa-zink/install = $(Package/libmesa/install)
 Package/libmesa-softpipe/install = $(Package/libmesa/install)
 Package/libmesa-llvmpipe/install = $(Package/libmesa/install)
 
-Package/libopencl-amd/install = $(Package/libopencl/install)
-Package/libopencl-nouveau/install = $(Package/libopencl/install)
-
 $(eval $(call BuildPackage,mesa3d))
 $(eval $(call BuildPackage,libmesa-amd))
 $(eval $(call BuildPackage,libmesa-intel))
@@ -777,8 +742,6 @@ $(eval $(call BuildPackage,libmesa-virgl))
 $(eval $(call BuildPackage,libmesa-zink))
 $(eval $(call BuildPackage,libmesa-softpipe))
 $(eval $(call BuildPackage,libmesa-llvmpipe))
-$(eval $(call BuildPackage,libopencl-amd))
-$(eval $(call BuildPackage,libopencl-nouveau))
 $(eval $(call BuildPackage,libvulkan-broadcom))
 $(eval $(call BuildPackage,libvulkan-imagination))
 $(eval $(call BuildPackage,libvulkan-intel))

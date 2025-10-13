@@ -1,0 +1,205 @@
+From ed8b98238061e6260ffaf507597e114a5a80ca4f Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 13 Oct 2025 01:32:22 +0100
+Subject: [PATCH 2/2] panfrost: Enable cross-compilation of precompilers on
+ non-Linux hosts
+
+This patch enables building Mesa's Panfrost precompilers on non-Linux
+hosts (macOS, Windows, etc.) by introducing a stub kernel mode driver
+interface when building without full driver support.
+
+The main issue was that pan_texture.c now requires pan_desc.h, which
+includes kmod/pan_kmod.h that depends on Linux-specific DRM headers
+(drm.h, xf86drm.h). These headers are not available on non-Linux hosts,
+preventing cross-compilation of the Panfrost shader precompilers.
+
+Changes:
+
+1. Created kmod/pan_kmod_stub.h with minimal type definitions needed
+   by pan_desc.h inline functions (pan_kmod_dev_props)
+
+2. Modified pan_desc.h to conditionally include either the full kmod
+   header or the stub version based on PAN_KMOD_STUB define
+
+3. Updated build system to:
+   - Skip building kmod/ subdirectory when not needed
+   - Exclude pan_desc.c, pan_mod.c, pan_props.c from builds without
+     driver support
+   - Add -DPAN_KMOD_STUB define for precompiler-only builds
+   - Conditionally link kmod library only when building full driver
+
+4. Extended panfrost build to support with_drivers_clc for CLC
+   precompiler requirements
+
+This allows building Panfrost precompilers for cross-compilation
+scenarios without requiring a Linux host or DRM development headers,
+while maintaining full backward compatibility for regular driver builds.
+---
+ src/meson.build                       |  2 +-
+ src/panfrost/lib/kmod/pan_kmod_stub.h | 27 ++++++++++++++
+ src/panfrost/lib/meson.build          | 51 ++++++++++++++++++++-------
+ src/panfrost/lib/pan_desc.h           |  4 +++
+ src/panfrost/meson.build              |  2 +-
+ 5 files changed, 71 insertions(+), 15 deletions(-)
+ create mode 100644 src/panfrost/lib/kmod/pan_kmod_stub.h
+
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -93,7 +93,7 @@ endif
+ if with_imagination_vk
+   subdir('imagination')
+ endif
+-if with_gallium_panfrost or with_gallium_lima or with_panfrost_vk or with_tools.contains('panfrost')
++if with_drivers_clc or with_gallium_panfrost or with_gallium_lima or with_panfrost_vk or with_tools.contains('panfrost')
+   subdir('panfrost')
+ endif
+ if with_microsoft_clc or with_gallium_d3d12 or with_spirv_to_dxil or with_microsoft_vk
+--- /dev/null
++++ b/src/panfrost/lib/kmod/pan_kmod_stub.h
+@@ -0,0 +1,27 @@
++/*
++ * Copyright © 2025 Collabora, Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ *
++ * Stub definitions for pan_kmod types when building without full DRM support.
++ * This allows building the panfrost precompilers on non-Linux hosts.
++ */
++
++#pragma once
++
++#include <stdint.h>
++
++#if defined(__cplusplus)
++extern "C" {
++#endif
++
++/* Minimal stub for pan_kmod_dev_props used by pan_desc.h inline functions */
++struct pan_kmod_dev_props {
++   uint32_t max_threads_per_core;
++   uint32_t max_tasks_per_core;
++   uint32_t max_threads_per_wg;
++};
++
++#if defined(__cplusplus)
++} /* extern C */
++#endif
+--- a/src/panfrost/lib/meson.build
++++ b/src/panfrost/lib/meson.build
+@@ -2,7 +2,9 @@
+ # Copyright © 2019 Collabora
+ # SPDX-License-Identifier: MIT
+ 
+-subdir('kmod')
++if with_gallium_panfrost or with_panfrost_vk
++  subdir('kmod')
++endif
+ 
+ pixel_format_versions = ['5', '6', '7', '9', '10', '12', '13']
+ libpanfrost_pixel_format = []
+@@ -21,18 +23,23 @@ foreach ver : pixel_format_versions
+ endforeach
+ 
+ libpanfrost_per_arch = []
++libpanfrost_per_arch_files = [ 'pan_blend.c', 'pan_texture.c' ]
++libpanfrost_per_arch_c_args = []
++
++if with_gallium_panfrost or with_panfrost_vk
++  libpanfrost_per_arch_files += 'pan_desc.c'
++  libpanfrost_per_arch_files += 'pan_mod.c'
++else
++  # Building without full driver support (e.g., for precompilers only)
++  # Use stub kmod definitions to avoid requiring DRM headers
++  libpanfrost_per_arch_c_args += '-DPAN_KMOD_STUB'
++endif
+ 
+ foreach ver : ['4', '5', '6', '7', '9', '10', '12', '13']
+   libpanfrost_per_arch += static_library(
+-    'pan-arch-v' + ver,
+-    [
+-      'pan_blend.c',
+-      'pan_desc.c',
+-      'pan_mod.c',
+-      'pan_texture.c',
+-    ],
++    'pan-arch-v' + ver, libpanfrost_per_arch_files,
+     include_directories : [inc_include, inc_src, inc_panfrost],
+-    c_args : ['-DPAN_ARCH=' + ver],
++    c_args : ['-DPAN_ARCH=' + ver] + libpanfrost_per_arch_c_args,
+     gnu_symbol_visibility : 'hidden',
+     dependencies : [deps_for_libpanfrost, idep_nir],
+   )
+@@ -49,26 +56,44 @@ libpanfrost_lib_files = files(
+   'pan_tiler.c',
+   'pan_layout.c',
+   'pan_scratch.c',
+-  'pan_props.c',
+   'pan_util.c',
+   'pan_afbc.c',
+ )
+ 
++if with_gallium_panfrost or with_panfrost_vk
++  libpanfrost_lib_files += files('pan_props.c')
++endif
++
++libpanfrost_link_with = [libpanfrost_pixel_format, libpanfrost_per_arch]
++if with_gallium_panfrost or with_panfrost_vk
++  libpanfrost_link_with += libpankmod_lib
++endif
++
++libpanfrost_lib_c_args = [no_override_init_args]
++if not (with_gallium_panfrost or with_panfrost_vk)
++  libpanfrost_lib_c_args += '-DPAN_KMOD_STUB'
++endif
++
+ libpanfrost_lib = static_library(
+   'panfrost_lib',
+   [libpanfrost_lib_files, pan_packers],
+   include_directories : [inc_include, inc_src, inc_panfrost],
+-  c_args : [no_override_init_args],
++  c_args : libpanfrost_lib_c_args,
+   gnu_symbol_visibility : 'hidden',
+   dependencies: [dep_libdrm, idep_nir, idep_mesautil],
+   build_by_default : false,
+-  link_with: [libpanfrost_pixel_format, libpanfrost_per_arch, libpankmod_lib],
++  link_with: libpanfrost_link_with,
+ )
+ 
++libpanfrost_dependencies = [deps_for_libpanfrost, idep_nir]
++if with_gallium_panfrost or with_panfrost_vk
++  libpanfrost_dependencies = libpankmod_dep
++endif
++
+ libpanfrost_dep = declare_dependency(
+   link_with: [libpanfrost_lib, libpanfrost_decode, libpanfrost_midgard, libpanfrost_bifrost, libpanfrost_pixel_format, libpanfrost_per_arch],
+   include_directories: [inc_include, inc_src, inc_panfrost],
+-  dependencies: [deps_for_libpanfrost, libpankmod_dep, idep_nir],
++  dependencies: libpanfrost_dependencies,
+ )
+ 
+ if with_tests
+--- a/src/panfrost/lib/pan_desc.h
++++ b/src/panfrost/lib/pan_desc.h
+@@ -30,7 +30,11 @@
+ 
+ #include "genxml/gen_macros.h"
+ 
++#if defined(PAN_KMOD_STUB)
++#include "kmod/pan_kmod_stub.h"
++#else
+ #include "kmod/pan_kmod.h"
++#endif
+ #include "pan_image.h"
+ #include "pan_pool.h"
+ 
+--- a/src/panfrost/meson.build
++++ b/src/panfrost/meson.build
+@@ -15,7 +15,7 @@ subdir('util')
+ subdir('midgard')
+ subdir('compiler')
+ 
+-if with_gallium_panfrost or with_panfrost_vk or with_tools.contains('panfrost')
++if with_drivers_clc or with_gallium_panfrost or with_panfrost_vk or with_tools.contains('panfrost')
+    subdir('genxml')
+    subdir('lib')
+    subdir('clc')
