@@ -46,11 +46,9 @@ May it work.
  src/corelib/configure.json         | 2 +-
  2 files changed, 1 insertion(+), 6 deletions(-)
 
-diff --git a/src/corelib/codecs/qiconvcodec.cpp b/src/corelib/codecs/qiconvcodec.cpp
-index 9c397279..8d43e6c8 100644
 --- a/src/corelib/codecs/qiconvcodec.cpp
 +++ b/src/corelib/codecs/qiconvcodec.cpp
-@@ -180,12 +180,7 @@ QString QIconvCodec::convertToUnicode(const char* chars, int len, ConverterState
+@@ -180,12 +180,7 @@ QString QIconvCodec::convertToUnicode(co
      IconvState *state = *pstate;
      size_t inBytesLeft = len;
      // best case assumption, each byte is converted into one UTF-16 character, plus 2 bytes for the BOM
@@ -63,8 +61,6 @@ index 9c397279..8d43e6c8 100644
  
      QByteArray in;
      if (remainingCount) {
-diff --git a/src/corelib/configure.json b/src/corelib/configure.json
-index c5e04232..32237bc4 100644
 --- a/src/corelib/configure.json
 +++ b/src/corelib/configure.json
 @@ -72,7 +72,7 @@
@@ -76,6 +72,3 @@ index c5e04232..32237bc4 100644
                      "char *outp;",
                      "size_t inbytes, outbytes;",
                      "iconv(x, &inp, &inbytes, &outp, &outbytes);",
--- 
-2.20.1
-
