@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sdl2
-PKG_VERSION:=2.32.8
+PKG_VERSION:=2.32.10
 PKG_RELEASE:=1
 
 PKG_SOURCE:=SDL2-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://www.libsdl.org/release/
-PKG_HASH:=0ca83e9c9b31e18288c7ec811108e58bac1f1bb5ec6577ad386830eac51c787e
+PKG_HASH:=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/SDL2-$(PKG_VERSION)
 
@@ -149,6 +149,8 @@ endef
 define Package/libsdl2-tests/install
 	$(INSTALL_DIR) $(1)/usr/libexec/installed-tests
 	$(CP) $(PKG_INSTALL_DIR)/usr/libexec/installed-tests/* $(1)/usr/libexec/installed-tests
+	$(INSTALL_DIR) $(1)/usr/share/installed-tests
+	$(CP) $(PKG_INSTALL_DIR)/usr/share/installed-tests/* $(1)/usr/share/installed-tests
 endef
 
 $(eval $(call BuildPackage,libsdl2))
