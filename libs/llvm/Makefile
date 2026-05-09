@@ -1,17 +1,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=llvm-project
-PKG_VERSION:=21.1.3
+PKG_VERSION:=22.1.5
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).src.tar.xz
 PKG_SOURCE_URL:=https://github.com/llvm/llvm-project/releases/download/llvmorg-$(PKG_VERSION)
-PKG_HASH:=9c9db50d8046f668156d83f6b594631b4ca79a0d96e4f19bed9dc019b022e58f
+PKG_HASH:=7972b87b705a003ce70ab55f9f0fb495d156887cba0eb296d284731139118e2c
 PKG_CPE_ID:=cpe:/a:llvm:llvm
 
-SPIRV_LLVM_TRANSLATOR_VERSION:=21.1.1
+SPIRV_LLVM_TRANSLATOR_VERSION:=22.1.2
 SPIRV_LLVM_TRANSLATOR_FILE:=SPIRV-LLVM-Translator-$(SPIRV_LLVM_TRANSLATOR_VERSION).tar.gz
 SPIRV_LLVM_TRANSLATOR_URL:=https://codeload.github.com/KhronosGroup/SPIRV-LLVM-Translator/tar.gz/v$(SPIRV_LLVM_TRANSLATOR_VERSION)?
-SPIRV_LLVM_TRANSLATOR_HASH:=dda46febdb060a1d5cc2ceeb9682ccaf33e55ae294fd0793274531b54f07c46b
+SPIRV_LLVM_TRANSLATOR_HASH:=b37196b1a1a60282a24cf937ab7d6807d7d54dc718f2a37a78e211be26df57ac
 
 HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/llvm-mesa/$(PKG_NAME)-$(PKG_VERSION).src
 PKG_BUILD_DIR:=$(BUILD_DIR)/llvm-mesa/$(PKG_NAME)-$(PKG_VERSION).src
@@ -141,7 +141,7 @@ CMAKE_OPTIONS += \
 	-DCOMPILER_RT_BUILD_PROFILE=OFF \
 	-DCOMPILER_RT_BUILD_MEMPROF=OFF \
 	-DLIBCLC_CUSTOM_LLVM_TOOLS_BINARY_DIR="$(STAGING_DIR_HOST)/llvm-mesa/bin" \
-	-DLIBCLC_TARGETS_TO_BUILD="amdgcn--;amdgcn--amdhsa;clspv--;clspv64--;r600--;nvptx--;nvptx64--;nvptx--nvidiacl;nvptx64--nvidiacl;amdgcn-mesa-mesa3d;spirv-mesa3d-;spirv64-mesa3d-" \
+	-DLIBCLC_TARGETS_TO_BUILD="amdgcn--;amdgcn-amd-amdhsa;clspv--;clspv64--;r600--;nvptx64--;nvptx64--nvidiacl;amdgcn-mesa-mesa3d;spirv-mesa3d-;spirv64-mesa3d-" \
 	-DLLVM_TARGET_ARCH=$(LLVM_TARGET_ARCH) \
 	-DLLVM_TARGETS_TO_BUILD="$(subst $(space),;,$(LLVM_TARGETS_TO_BUILD))" \
 	-DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="$(subst $(space),;,$(LLVM_EXPERIMENTAL_TARGETS_TO_BUILD))" \
@@ -255,8 +255,10 @@ endef
 define Build/Install
 	$(call Build/Install/Default)
 # hack: install SPIRV OpenCL libs also to host build to avoid having to build LLVM three times
+# (LLVM >= 22 installs libclc bytecode under usr/lib/clang/<major>/lib/libclc/
+#  rather than the previous usr/share/clc/)
 	$(INSTALL_DIR) $(CMAKE_HOST_INSTALL_PREFIX)/share/clc
-	$(CP) $(PKG_INSTALL_DIR)/usr/share/clc/spirv{,64}-mesa3d-.spv $(CMAKE_HOST_INSTALL_PREFIX)/share/clc
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/clang/*/lib/libclc/spirv{,64}-mesa3d-.spv $(CMAKE_HOST_INSTALL_PREFIX)/share/clc
 endef
 
 define Package/libclang/install
