@@ -1,17 +1,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=vulkan-loader
-PKG_VERSION:=1.4.328
+PKG_VERSION:=1.4.341.0
 
-PKG_SOURCE:=Vulkan-Loader-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/Vulkan-Loader/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=07b5bae70dabdd2ee5a0fdaea95f72dac9561ddd768b0739d4af6cb8771e9ac8
+PKG_SOURCE:=Vulkan-Loader-vulkan-sdk-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/Vulkan-Loader/tar.gz/vulkan-sdk-$(PKG_VERSION)?
+PKG_HASH:=fe982697c780a950641bfcf94707135c26c501352242d285fa95d087d691292e
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE.txt
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/Vulkan-Loader-$(PKG_VERSION)
+PKG_BUILD_DIR:=$(BUILD_DIR)/Vulkan-Loader-vulkan-sdk-$(PKG_VERSION)
 
 PKG_BUILD_DEPENDS:=vulkan-headers
 CMAKE_BINARY_SUBDIR:=build
