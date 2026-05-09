@@ -4,10 +4,10 @@ PKG_NAME:=graphene
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2025-01-23
-PKG_SOURCE_VERSION:=47b503d6086900057ceefab785546ad524caa735
+PKG_SOURCE_DATE:=2025-12-19
+PKG_SOURCE_VERSION:=98173e59a3d80d3dd5ad6e4eaab919b4649ac7e5
 PKG_SOURCE_URL:=https://github.com/ebassi/graphene
-PKG_MIRROR_HASH:=8c150016ca717c6a829c46c8617f7a5a9136a9b9a918b078d97ee0cb7ee6991c
+PKG_MIRROR_HASH:=841b66ddff456352f19e617ca0bedf70950834cbe230f3632038aa007e2dbb57
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -52,7 +52,7 @@ endef
 
 define Package/libgraphene/install
 	$(INSTALL_DIR) $(1)/usr/lib
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/*.so* $(1)/usr/lib
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/*.so* $(1)/usr/lib
 endef
 
 $(eval $(call BuildPackage,libgraphene))
