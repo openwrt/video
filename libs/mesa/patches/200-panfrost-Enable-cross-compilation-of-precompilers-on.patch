@@ -45,8 +45,8 @@ while maintaining full backward compatibility for regular driver builds.
 
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -93,7 +93,7 @@ endif
- if with_imagination_vk
+@@ -92,7 +92,7 @@ endif
+ if with_imagination_vk or with_tools.contains('imagination')
    subdir('imagination')
  endif
 -if with_gallium_panfrost or with_gallium_lima or with_panfrost_vk or with_tools.contains('panfrost')
@@ -56,7 +56,7 @@ while maintaining full backward compatibility for regular driver builds.
  if with_microsoft_clc or with_gallium_d3d12 or with_spirv_to_dxil or with_microsoft_vk
 --- /dev/null
 +++ b/src/panfrost/lib/kmod/pan_kmod_stub.h
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +/*
 + * Copyright © 2025 Collabora, Ltd.
 + *
@@ -74,8 +74,10 @@ while maintaining full backward compatibility for regular driver builds.
 +extern "C" {
 +#endif
 +
-+/* Minimal stub for pan_kmod_dev_props used by pan_desc.h inline functions */
++/* Minimal stub for pan_kmod_dev_props used by pan_desc.h and pan_image.h
++ * inline functions */
 +struct pan_kmod_dev_props {
++   uint32_t gpu_id;
 +   uint32_t max_threads_per_core;
 +   uint32_t max_tasks_per_core;
 +   uint32_t max_threads_per_wg;
@@ -129,7 +131,7 @@ while maintaining full backward compatibility for regular driver builds.
      gnu_symbol_visibility : 'hidden',
      dependencies : [deps_for_libpanfrost, idep_nir],
    )
-@@ -49,26 +56,44 @@ libpanfrost_lib_files = files(
+@@ -48,26 +55,44 @@ libpanfrost_lib_files = files(
    'pan_tiler.c',
    'pan_layout.c',
    'pan_scratch.c',
@@ -159,7 +161,7 @@ while maintaining full backward compatibility for regular driver builds.
 -  c_args : [no_override_init_args],
 +  c_args : libpanfrost_lib_c_args,
    gnu_symbol_visibility : 'hidden',
-   dependencies: [dep_libdrm, idep_nir, idep_mesautil],
+   dependencies: [dep_libdrm, idep_nir, idep_mesautil, libpanfrost_model_dep],
    build_by_default : false,
 -  link_with: [libpanfrost_pixel_format, libpanfrost_per_arch, libpankmod_lib],
 +  link_with: libpanfrost_link_with,
@@ -171,7 +173,7 @@ while maintaining full backward compatibility for regular driver builds.
 +endif
 +
  libpanfrost_dep = declare_dependency(
-   link_with: [libpanfrost_lib, libpanfrost_decode, libpanfrost_midgard, libpanfrost_bifrost, libpanfrost_pixel_format, libpanfrost_per_arch],
+   link_with: [libpanfrost_lib, libpanfrost_decode, libpanfrost_compiler, libpanfrost_pixel_format, libpanfrost_per_arch],
    include_directories: [inc_include, inc_src, inc_panfrost],
 -  dependencies: [deps_for_libpanfrost, libpankmod_dep, idep_nir],
 +  dependencies: libpanfrost_dependencies,
@@ -180,7 +182,7 @@ while maintaining full backward compatibility for regular driver builds.
  if with_tests
 --- a/src/panfrost/lib/pan_desc.h
 +++ b/src/panfrost/lib/pan_desc.h
-@@ -30,7 +30,11 @@
+@@ -8,7 +8,11 @@
  
  #include "genxml/gen_macros.h"
  
@@ -194,8 +196,8 @@ while maintaining full backward compatibility for regular driver builds.
  
 --- a/src/panfrost/meson.build
 +++ b/src/panfrost/meson.build
-@@ -15,7 +15,7 @@ subdir('util')
- subdir('midgard')
+@@ -14,7 +14,7 @@ subdir('shared')
+ subdir('model')
  subdir('compiler')
  
 -if with_gallium_panfrost or with_panfrost_vk or with_tools.contains('panfrost')
@@ -203,3 +205,17 @@ while maintaining full backward compatibility for regular driver builds.
     subdir('genxml')
     subdir('lib')
     subdir('clc')
+--- a/src/panfrost/lib/pan_image.h
++++ b/src/panfrost/lib/pan_image.h
+@@ -18,7 +18,11 @@
+ #include "pan_mod.h"
+ #include "pan_props.h"
+ 
++#if defined(PAN_KMOD_STUB)
++#include "kmod/pan_kmod_stub.h"
++#else
+ #include "kmod/pan_kmod.h"
++#endif
+ 
+ #include "util/log.h"
+ 
