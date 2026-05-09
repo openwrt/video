@@ -1,10 +1,11 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -399,7 +399,7 @@ endif
+@@ -447,7 +447,8 @@ else
+ endif
  
  # Documentation
- build_docs = get_option('gtk_doc') or get_option('docs')
 -subdir('docs')
++build_docs = false
 +# subdir('docs')
  
  if not meson.is_cross_build()
