@@ -3,11 +3,11 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=weston
 PKG_RELEASE:=2
 
-PKG_VERSION:=14.0.2
+PKG_VERSION:=15.0.1
 PKG_MAJOR_VERSION:=$(firstword $(subst .,$(space),$(PKG_VERSION)))
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/$(PKG_NAME)/-/releases/$(PKG_VERSION)/downloads/
-PKG_HASH:=b47216b3530da76d02a3a1acbf1846a9cd41d24caa86448f9c46f78f20b6e0ac
+PKG_HASH:=551d039bfb0c837ba5a4d027cdb8ee16bded0eedb789821f8025d8a64b791f6d
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -28,7 +28,7 @@ define Package/weston
   DEPENDS:=+gstreamer1-plugins-base +libcairo +libevdev +libdisplay-info \
 	+libgst1allocators +libgst1app +libgst1video +libgstreamer1 +libinput \
 	+libmesa +libpango +libseat +libwayland +libwebp +libxkbcommon +pixman \
-	+seatd +wayland-protocols +xkeyboard-config
+	+seatd +vulkan-loader +wayland-protocols +xkeyboard-config
 endef
 
 define Package/weston/description
@@ -36,14 +36,12 @@ endef
 
 MESON_ARGS += \
 	-Dbackend-drm=true \
-	-Dbackend-drm-screencast-vaapi=false \
 	-Dbackend-headless=false \
 	-Dbackend-pipewire=false \
 	-Dbackend-rdp=false \
 	-Dbackend-vnc=false \
 	-Dbackend-x11=false \
 	-Dbackend-wayland=true \
-	-Dscreenshare=false \
 	-Dxwayland=false \
 	-Dcolor-management-lcms=false \
 	-Dsystemd=false \
@@ -52,14 +50,10 @@ MESON_ARGS += \
 	-Ddemo-clients=true \
 	-Drenderer-gl=true \
 	-Dshell-desktop=true \
-	-Dshell-fullscreen=true \
 	-Dshell-ivi=true \
 	-Dshell-kiosk=true \
+	-Dshell-lua=false \
 	-Dremoting=false \
-	-Dshell-desktop=true \
-	-Dshell-fullscreen=true \
-	-Dshell-ivi=true \
-	-Dshell-kiosk=true \
 	-Dimage-jpeg=true \
 	-Dimage-webp=true \
 	-Dtools=calibrator,debug,info,terminal,touch-calibrator \
