@@ -11,7 +11,7 @@ pointer on Linux running on PowerPC and PowerPC64 archtecture.
 
 --- a/Source/WTF/wtf/StackPointer.cpp
 +++ b/Source/WTF/wtf/StackPointer.cpp
-@@ -160,6 +160,17 @@ asm (
+@@ -157,6 +157,17 @@ __asm__(
       ".previous" "\n"
  );
  

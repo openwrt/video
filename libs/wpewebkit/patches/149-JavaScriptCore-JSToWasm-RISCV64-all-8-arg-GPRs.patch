@@ -1,0 +1,56 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: JSToWasm: load/store all 8 wasm GPR args on RISCV64
+
+The JS-to-wasm trampoline in JSToWasm.cpp handles register-arg shuffling
+across three architectures. ARM64 (8 GPR args) and X86_64 (6 GPR args)
+have dedicated branches. RISCV64 also has 8 GPR args (regWA0..regWA7,
+a0..a7) but was falling through to the generic USE(JSVALUE64) branch
+which only handles 6, leaving regWA6 and regWA7 with stale stack
+contents on call entry and dropping them on call return.
+
+Symptom: any wasm function whose calling convention places i32/i64
+params in a6 or a7 sees garbage for those args. Reproducer is the
+JSC wasm-spec "large-sig" function (17 mixed-type params -- locals
+14 and 15 land in a6/a7); also propagates to wasm-to-wasm via JS
+import (e.g. spec-tests/func.wast.js #124, memory_trap.wast.js #295).
+
+Add explicit CPU(RISCV64) branches mirroring the X86_64 form but
+covering all 8 GPRs. FPRs already had a combined X86_64||RISCV64
+branch covering all 8 FPRs, so no change needed there.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+--- a/Source/JavaScriptCore/wasm/js/JSToWasm.cpp
++++ b/Source/JavaScriptCore/wasm/js/JSToWasm.cpp
+@@ -320,6 +320,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
+         jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8), GPRInfo::regWA0, GPRInfo::regWA1);
+         jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8), GPRInfo::regWA2, GPRInfo::regWA3);
+         jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8), GPRInfo::regWA4, GPRInfo::regWA5);
++#elif CPU(RISCV64)
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8), GPRInfo::regWA0);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 1 * 8), GPRInfo::regWA1);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8), GPRInfo::regWA2);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 3 * 8), GPRInfo::regWA3);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8), GPRInfo::regWA4);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 5 * 8), GPRInfo::regWA5);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 6 * 8), GPRInfo::regWA6);
++        jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 7 * 8), GPRInfo::regWA7);
+ #elif USE(JSVALUE64)
+         jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8), GPRInfo::regWA0);
+         jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 1 * 8), GPRInfo::regWA1);
+@@ -415,6 +424,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
+         jit.storePair64(GPRInfo::regWA0, GPRInfo::regWA1, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8));
+         jit.storePair64(GPRInfo::regWA2, GPRInfo::regWA3, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8));
+         jit.storePair64(GPRInfo::regWA4, GPRInfo::regWA5, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8));
++#elif CPU(RISCV64)
++        jit.store64(GPRInfo::regWA0, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8));
++        jit.store64(GPRInfo::regWA1, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 1 * 8));
++        jit.store64(GPRInfo::regWA2, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8));
++        jit.store64(GPRInfo::regWA3, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 3 * 8));
++        jit.store64(GPRInfo::regWA4, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8));
++        jit.store64(GPRInfo::regWA5, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 5 * 8));
++        jit.store64(GPRInfo::regWA6, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 6 * 8));
++        jit.store64(GPRInfo::regWA7, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 7 * 8));
+ #elif USE(JSVALUE64)
+         jit.store64(GPRInfo::regWA0, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8));
+         jit.store64(GPRInfo::regWA1, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 1 * 8));

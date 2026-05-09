@@ -1,0 +1,56 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] WTF: enable WebAssembly and BBQJIT on RISCV64
+
+RISCV64 previously had ENABLE_WEBASSEMBLY=1 but ENABLE_WEBASSEMBLY_BBQJIT=0
+and ENABLE_WEBASSEMBLY_OMGJIT=0. The LLInt-based wasm interpreter that used
+to back this combination was replaced by the IPInt in-place interpreter,
+which is not ported to RISCV64, so this configuration left no wasm execution
+tier available and JSC aborted at startup with:
+
+  INCOHERENT OPTIONS: at least one of useWasmIPInt, or useBBQJIT must be true
+
+Turn ENABLE_WEBASSEMBLY_BBQJIT on for RISCV64 so BBQJIT becomes the wasm
+execution tier on this architecture. IPInt and OMGJIT remain off.
+
+The companion changes that make this safe at build- and run-time:
+ * MacroAssemblerRISCV64.h gains noop SIMD stubs and hard-fault stubs for
+   the wasm atomic MacroAssembler primitives that BBQJIT uses.
+ * Options.cpp no longer forces useBBQJIT() = false on RISCV64.
+ * Options.cpp already forces useWasmSIMD() = false on non-X86_64/ARM64
+   architectures (and useSharedArrayBuffer defaults to false), so wasm
+   SIMD codegen and wasm atomic codegen are never reached on RISCV64
+   and their stubs are unreachable.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/WTF/wtf/PlatformEnable.h
++++ b/Source/WTF/wtf/PlatformEnable.h
+@@ -738,12 +738,28 @@
+ #endif
+ 
+ #if CPU(RISCV64)
++// RISCV64 wasm execution tiers:
++//   - IPInt (LLInt in-place interpreter): not ported; left disabled.
++//     LowLevelInterpreter.asm's IPInt call-trampoline labels are stubbed
++//     to crash() so the link still succeeds.
++//   - BBQJIT: enabled. The arch-conditional sites in WasmBBQJIT64.cpp
++//     that have no #else fall through to portable MacroAssembler
++//     primitives; the remaining gaps (wasm SIMD codegen, wasm atomics
++//     codegen) are addressed by gating both off at runtime:
++//       Options::useWasmSIMD = false (already set in Options.cpp for
++//       !X86_64 && !ARM64),
++//       Options::useSharedArrayBuffer = false (the default), which in
++//       turn keeps wasm atomic opcodes off the JIT codepath.
++//     MacroAssemblerRISCV64.h carries hard-fault stubs for the wasm
++//     atomic / SIMD MacroAssembler entry points so they trap loudly if
++//     the runtime gating is ever bypassed.
++//   - OMGJIT: not ported.
+ #undef ENABLE_WEBASSEMBLY
+ #define ENABLE_WEBASSEMBLY 1
+ #undef ENABLE_WEBASSEMBLY_OMGJIT
+ #define ENABLE_WEBASSEMBLY_OMGJIT 0
+ #undef ENABLE_WEBASSEMBLY_BBQJIT
+-#define ENABLE_WEBASSEMBLY_BBQJIT 0
++#define ENABLE_WEBASSEMBLY_BBQJIT 1
+ #endif
+ 
+ #if !defined(ENABLE_C_LOOP)

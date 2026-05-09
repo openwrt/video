@@ -1,0 +1,42 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: forward MacroAssemblerRISCV64.h and friends to PrivateHeaders
+
+JSC's CMakeLists copies a curated list of assembler headers into
+PrivateHeaders/JavaScriptCore/ so that external consumers (WebCore,
+WebKit, JSC's own GLib bindings, ...) can resolve them via
+'#include <JavaScriptCore/MacroAssembler.h>'. That header in turn
+does '#include "MacroAssemblerRISCV64.h"' on RISCV64, which in turn
+does '#include "RISCV64Assembler.h"', which in turn pulls in
+RISCV64Registers.h. None of the three is in the forwarding list.
+
+MacroAssemblerARM64.h / MacroAssemblerARMv7.h / MacroAssemblerX86_64.h
+are listed alongside their respective ARM64Assembler.h / ARM64Registers.h
+/ X86Assembler.h / X86_64Registers.h; the RISCV64 trio simply hadn't
+been added.  As a result, on RISCV64 every WebCore translation unit
+that pulls in JSC's MacroAssembler chain fails with:
+
+  MacroAssembler.h:54:10: fatal error: MacroAssemblerRISCV64.h:
+                                       No such file or directory
+
+or
+
+  MacroAssemblerRISCV64.h:33:10: fatal error: RISCV64Assembler.h:
+                                              No such file or directory
+
+Add the three RISCV64 headers to the forwarding-headers list, matching
+what is already done for the other architectures.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/CMakeLists.txt
++++ b/Source/JavaScriptCore/CMakeLists.txt
+@@ -609,7 +609,10 @@ set(JavaScriptCore_PRIVATE_FRAMEWORK_HEA
+     assembler/MacroAssemblerARMv7.h
+     assembler/MacroAssemblerCodeRef.h
+     assembler/MacroAssemblerHelpers.h
++    assembler/MacroAssemblerRISCV64.h
+     assembler/MacroAssemblerX86_64.h
++    assembler/RISCV64Assembler.h
++    assembler/RISCV64Registers.h
+     assembler/MaxFrameExtentForSlowPathCall.h
+     assembler/OSCheck.h
+     assembler/Printer.h

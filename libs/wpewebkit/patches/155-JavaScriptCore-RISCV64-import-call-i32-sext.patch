@@ -1,0 +1,61 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: RISCV64: sign-extend i32 args at wasm import call sites
+
+The RISCV64 lp64d psABI requires that integer arguments narrower than
+XLEN be sign-extended into the full 64-bit argument register by the
+caller, and the callee is permitted to rely on this. GCC compiles the
+wasm builtin and JS-import host glue (e.g.
+`jsstring__substring(JSGlobalObject*, JSValue, int32_t start, int32_t end)`)
+under this assumption: tests like `if (start < 0)` lower to 64-bit
+`bgez` against the full argument register, not a 32-bit comparison of
+its low half.
+
+BBQ's wasm-internal calling convention leaves wasm i32 values
+zero-extended in 64-bit GPRs (the WebKit MacroAssembler contract for
+`load32` is zero-extend, matching x86_64 and ARM64 hardware). When BBQ
+emits a wasm-to-import call (going through `importFunctionStub`), the
+zero-extended value is forwarded directly to the host entry point, so
+a negative i32 such as -2 enters the C function as 0x00000000FFFFFFFE.
+The 64-bit `bgez` then sees a positive number, the negative-clamp
+branch is skipped, and the builtin operates on an unclamped value.
+
+Symptom (`stress/wasm-js-string-builtins.js`):
+
+  let m = await WebAssembly.instantiate(/* (import "wasm:js-string" "substring") +
+                                          a relay wasm function */,
+                                        {}, { builtins: ["js-string"] });
+  m.instance.exports.relay("Hello, world", -2, 2);  // expected "He"
+                                                    // actual on RV64: ""
+
+The relay's `local.get $start` loads -2 with `lwu` (per the MacroAsm
+contract), `addCall` for the import forwards a2 unchanged, and GCC's
+`bgez s3, .Lclamp_skipped` misreads it. `start` stays at -2, gets
+unsigned-cast to 4294967294, then clamped down to length(12), and
+substring returns "" because (clamped start) > end.
+
+Directly invoking the builtin as `instance.exports.exported(s, -2, 2)`
+works because the JS-to-Wasm trampoline sign-extends the JS Number
+when materialising the i32 wasm arg; only the wasm-to-import path is
+broken.
+
+The existing `BBQJIT::emitSignExtendI32ArgsForCCall` is already
+RV64-guarded and does this fix-up for runtime helpers invoked through
+`emitCCall`. Apply it before the import-stub call in `addCall` so the
+same sign-extension applies to every wasm-to-host transition.
+
+Wasm-to-wasm direct calls (the other branch of the same `if`) do not
+need this: a wasm callee never observes the upper 32 bits of an i32
+argument and the BBQ "w-form" i32 ops mask to 32 bits.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
+@@ -4484,6 +4484,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
+     if (m_info.isImportedFunctionFromFunctionIndexSpace(functionIndexSpace)) {
+         static_assert(sizeof(WasmOrJSImportableFunctionCallLinkInfo) * maxImports < std::numeric_limits<int32_t>::max());
+         RELEASE_ASSERT(JSWebAssemblyInstance::offsetOfImportFunctionStub(functionIndexSpace) < std::numeric_limits<int32_t>::max());
++        emitSignExtendI32ArgsForCCall(callInfo, signature);
+         m_jit.call(Address(GPRInfo::wasmContextInstancePointer, JSWebAssemblyInstance::offsetOfImportFunctionStub(functionIndexSpace)), WasmEntryPtrTag);
+     } else {
+         // Record the callee so the callee knows to look for it in updateCallsitesToCallUs.

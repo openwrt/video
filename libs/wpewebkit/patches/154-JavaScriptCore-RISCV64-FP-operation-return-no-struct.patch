@@ -1,0 +1,63 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: RISCV64: do not wrap FP JIT-op returns in ExceptionOperationResult
+
+OperationReturnType<T> wraps every JIT operation return value in
+ExceptionOperationResult<T> = { T value; Exception* exception; } so the
+JIT can hoist the exception check next to the result. For T = float or
+double on RISCV64, this produces a 16-byte aggregate that GCC returns
+via the *integer* calling convention (a0 holds the value, a1 holds the
+exception pointer) instead of the hardware floating-point convention
+(value in fa0, exception in a0). The JIT-emitted call sites assume the
+floating-point value is in fa0 and read it from there, so they get
+whatever stale FP value happened to be left in fa0 by the C function's
+prologue/epilogue, not the result.
+
+Reproducer (wasm-to-JS slow path for f32 results):
+
+  let m = new WebAssembly.Module(/* (func (import "imp" "func") (result f32))
+                                    (func (export "foo") (result f32)
+                                      (call 0)) */);
+  let i = new WebAssembly.Instance(m,
+      { imp: { func: () => ({ valueOf: () => 25.82 }) } });
+  i.exports.foo();   // expected 25.82 (as f32: 0x41ce8f5c)
+                     // actual on RISCV64: 0x851eb852 (== low 32 bits of
+                     //                    the f64 representation of 25.82)
+
+Direct repro of GCC's ABI choice (cross-toolchain, lp64d):
+
+  struct sf { float v; void *e; };
+  __attribute__((noinline)) struct sf make_sf(double x) {
+      return (struct sf){ (float)x, 0 };
+  }
+
+  // gcc -O2 -S emits:
+  //   make_sf:
+  //     fcvt.s.d fa0, fa0
+  //     fsw fa0, 0(sp)
+  //     ld   a0, 0(sp)      ; struct packed into a0+a1 (integer ABI),
+  //     li   a1, 0          ; *not* split fa0/a0 (hardware FP ABI)
+
+The same JSC source already excludes floating-point types from the
+struct wrapper on ARM64 / ARM_THUMB2 (where the ABI similarly returns
+single-FP values in the integer return register inside aggregates).
+Extend the same guard to RISCV64.
+
+With the wrapper disabled for FP types, OperationReturnType<float>
+collapses to plain `float`, GCC returns it in fa0 NaN-boxed per the
+plain RISC-V FP convention, and the JIT reads the correct value. The
+manual exception checks already present at every FP-returning call
+site (loadPtr of VM, branchTestPtr on VM::exception()) are unaffected.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+--- a/Source/JavaScriptCore/jit/OperationResult.h
++++ b/Source/JavaScriptCore/jit/OperationResult.h
+@@ -47,7 +47,7 @@ template<typename T>
+ concept canMakeExceptionOperationResult =
+     std::is_standard_layout_v<T>
+     && std::is_trivial_v<T>
+-#if CPU(ARM64) || CPU(ARM_THUMB2)
++#if CPU(ARM64) || CPU(ARM_THUMB2) || CPU(RISCV64)
+     && !std::is_floating_point_v<T> // The ARM64 ABI says that this should be returned in x0 instead of d0. Seems unlikely it's worth it to do the extra fmov.
+ #endif
+     && sizeof(T) <= sizeof(CPURegister);

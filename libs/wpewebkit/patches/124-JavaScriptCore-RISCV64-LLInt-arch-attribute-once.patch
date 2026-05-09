@@ -1,0 +1,38 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: emit the RISCV64 LLInt arch attribute only once
+
+The RISCV64 variant of OFFLINE_ASM_GLOBAL_LABEL_IMPL emits a
+'.attribute arch, "rv64gc"' directive for every global label in the
+generated LLInt assembly. The whole LLInt is emitted as a single
+top-level __asm__ block, so from the second label onwards the
+directive appears after instructions have already been emitted, and
+recent binutils rejects it:
+
+  {standard input}: Fatal error: architecture elf attributes must
+  set before any instructions
+
+The ELF architecture attribute is already emitted once for the
+translation unit by the compiler from -march=rv64gc, which equally
+covers the rv64gc instructions in the LLInt asm. Drop the RISCV64
+special case so the generic OFFLINE_ASM_GLOBAL_LABEL_IMPL is used,
+which does not emit the redundant per-label directive.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
+@@ -569,15 +569,6 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+     ".thumb\n"                                   \
+     ".thumb_func " THUMB_FUNC_PARAM(label) "\n"  \
+     SYMBOL_STRING(label) ":\n"
+-#elif CPU(RISCV64)
+-#define OFFLINE_ASM_GLOBAL_LABEL_IMPL(label, ALT_ENTRY, ALIGNMENT, VISIBILITY) \
+-    OFFLINE_ASM_TEXT_SECTION                    \
+-    ALIGNMENT                                   \
+-    ALT_ENTRY(label)                            \
+-    ".globl " SYMBOL_STRING(label) "\n"         \
+-    ".attribute arch, \"rv64gc\"" "\n"          \
+-    VISIBILITY(label) "\n"                      \
+-    SYMBOL_STRING(label) ":\n"
+ #else
+ #define OFFLINE_ASM_GLOBAL_LABEL_IMPL(label, ALT_ENTRY, ALIGNMENT, VISIBILITY) \
+     OFFLINE_ASM_TEXT_SECTION                    \

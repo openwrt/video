@@ -1,0 +1,50 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: use std::integral in RISCV64 immediate helpers
+
+Backport of WebKit commit 6b720e4 ("[JSC] Use std::integral in RISCV64
+immediate helpers").
+
+The RISCV64 MacroAssembler's Imm helper declared the runtime immediate
+constructors I(T)/S(T)/B(T) with a SFINAE default template argument
+'typename = EnableIfInteger<T>', but EnableIfInteger is not defined
+anywhere in the tree - it was left dangling when JavaScriptCore's
+assembler adopted C++20 concepts. The compiler rejects the declarations
+with:
+
+  error: 'EnableIfInteger' does not name a type
+
+which removes the runtime overloads entirely, leaving only the
+compile-time 'template<int32_t value>' variants. Every runtime use,
+e.g. store8()/store16() calling Imm::S(resolution.offset), then fails
+with "no matching function" and the RISCV64 JIT does not build.
+
+Replace the undefined constraint with the C++20 std::integral concept,
+exactly as done upstream.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
++++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
+@@ -4365,20 +4365,20 @@ private:
+         using IType = RISCV64Assembler::IImmediate;
+         template<int32_t value>
+         static IType I() { return IType::v<IType, value>(); }
+-        template<typename T, typename = EnableIfInteger<T>>
++        template<std::integral T>
+         static IType I(T value) { return IType::v<IType>(value); }
+         static IType I(uint32_t value) { return IType(value); }
+ 
+         using SType = RISCV64Assembler::SImmediate;
+         template<int32_t value>
+         static SType S() { return SType::v<SType, value>(); }
+-        template<typename T, typename = EnableIfInteger<T>>
++        template<std::integral T>
+         static SType S(T value) { return SType::v<SType>(value); }
+ 
+         using BType = RISCV64Assembler::BImmediate;
+         template<int32_t value>
+         static BType B() { return BType::v<BType, value>(); }
+-        template<typename T, typename = EnableIfInteger<T>>
++        template<std::integral T>
+         static BType B(T value) { return BType::v<BType>(value); }
+         static BType B(uint32_t value) { return BType(value); }
+ 

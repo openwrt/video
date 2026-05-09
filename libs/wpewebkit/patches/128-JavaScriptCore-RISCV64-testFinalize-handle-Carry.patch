@@ -1,0 +1,27 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: handle Carry in RISCV64 testFinalize switch
+
+testFinalize() switches on ResultCondition but does not list the Carry
+case, which makes every translation unit that includes
+MacroAssemblerRISCV64.h emit:
+
+  warning: enumeration value 'Carry' not handled in switch [-Wswitch]
+
+The Carry condition cannot be produced by RISC-V test operations (the
+ResultCondition enum declaration already comments it "<- not
+implemented"), and the sibling switch elsewhere in this file already
+groups Carry with Overflow/Signed/PositiveOrZero under
+RELEASE_ASSERT_NOT_REACHED(). Add the missing case so testFinalize
+matches that convention and the warning disappears.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
++++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
+@@ -4770,6 +4770,7 @@ private:
+     void testFinalize(ResultCondition cond, RegisterID src, RegisterID dest)
+     {
+         switch (cond) {
++        case Carry:
+         case Overflow:
+         case Signed:
+         case PositiveOrZero:

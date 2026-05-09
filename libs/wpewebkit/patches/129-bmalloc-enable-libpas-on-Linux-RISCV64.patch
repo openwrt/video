@@ -1,0 +1,47 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] bmalloc: enable libpas on Linux/RISCV64
+
+bmalloc's BPlatform.h enabled the libpas-backed bmalloc only on a
+small allow-list of 64-bit Linux architectures (X86_64 and ARM64).
+RISCV64 was missing from that list, so LIBPAS_ENABLED ended up 0 and
+the inline allocator entry points bmalloc_*_inline (declared inside
+'#if LIBPAS_ENABLED' in bmalloc_heap_inlines.h) were not available.
+JSC consumers - e.g. StructureAlignedMemoryAllocator.cpp calling
+bmalloc_try_allocate_auxiliary_with_alignment_inline /
+bmalloc_deallocate_inline - then fail to compile with "was not
+declared in this scope".
+
+RISCV64 is just another 64-bit Linux target as far as libpas is
+concerned, so:
+
+ * Add a BCPU(RISCV64) macro alongside the existing BCPU(X86_64) /
+   BCPU(ARM64) definitions, gated on __riscv && __riscv_xlen == 64.
+ * Add BCPU(RISCV64) to the BENABLE(LIBPAS) allow-list for Linux.
+
+This is what gives RISCV64 the same libpas-backed bmalloc as the
+other supported 64-bit Linux targets.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/bmalloc/bmalloc/BPlatform.h
++++ b/Source/bmalloc/bmalloc/BPlatform.h
+@@ -172,6 +172,11 @@
+ #endif
+ #endif
+ 
++/* BCPU(RISCV64) - RISC-V 64-bit */
++#if defined(__riscv) && __riscv_xlen == 64
++#define BCPU_RISCV64 1
++#endif
++
+ /* BCPU(ARM) - ARM, any version*/
+ #define BARM_ARCH_AT_LEAST(N) (BCPU(ARM) && BARM_ARCH_VERSION >= N)
+ 
+@@ -379,7 +384,7 @@
+ 
+ /* BENABLE(LIBPAS) is enabling libpas build. But this does not mean we use libpas for bmalloc replacement. */
+ #if !defined(BENABLE_LIBPAS)
+-#if BCPU(ADDRESS64) && (BOS(DARWIN) || BOS(WINDOWS) || (BOS(LINUX) && (BCPU(X86_64) || BCPU(ARM64))) || BPLATFORM(PLAYSTATION))
++#if BCPU(ADDRESS64) && (BOS(DARWIN) || BOS(WINDOWS) || (BOS(LINUX) && (BCPU(X86_64) || BCPU(ARM64) || BCPU(RISCV64))) || BPLATFORM(PLAYSTATION))
+ #define BENABLE_LIBPAS 1
+ #ifndef PAS_BMALLOC
+ #define PAS_BMALLOC 1

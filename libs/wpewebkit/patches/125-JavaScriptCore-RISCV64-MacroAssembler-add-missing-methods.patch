@@ -1,0 +1,121 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: add missing RISCV64 MacroAssembler methods
+
+The RISCV64 MacroAssembler is missing five primitives that JSC's
+optimising tiers (DFG, FTL, the inline-cache compiler) now call. Each
+is straightforward, the RISC-V base ISA has the instructions required,
+and the implementations mirror the patterns already used in this file:
+
+ * add8(TrustedImm32, Address) - lbu / addi / sb (with the same
+   immediate-out-of-range fallback used by add32(TrustedImm32, Address)
+   right below it); needed by InlineCacheCompiler to bump an 8-bit
+   countdown counter.
+
+ * or32(RegisterID, Address) - lw / or / sw, the missing direct-Address
+   counterpart of or32(RegisterID, AbsoluteAddress); used by FTL OSR
+   exit.
+
+ * convertUInt32ToDouble(RegisterID, FPRegisterID) and the TrustedImm32
+   overload - fcvt.d.wu via the FCVTType::WU template; called from DFG
+   and the inline-cache compiler.
+
+ * add64/sub64(FPRegisterID, FPRegisterID, FPRegisterID) - 64-bit
+   integer arithmetic performed on values that live in FP registers,
+   used by the JSValue double boxing / NaN purification paths (see
+   DFGSpeculativeJIT::boxDoubleAsDouble and purifyNaN). RISC-V has no
+   integer ALU on FPRs so the values are moved through GPR scratch
+   registers via fmv.x.d / add or sub / fmv.d.x.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
++++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
+@@ -199,6 +199,25 @@ public:
+         m_assembler.maskRegister<32>(dest);
+     }
+ 
++    void add8(TrustedImm32 imm, Address address)
++    {
++        auto temp = temps<Data, Memory>();
++        auto resolution = resolveAddress(address, temp.memory());
++        if (Imm::isValid<Imm::IType>(imm.m_value)) {
++            m_assembler.lbuInsn(temp.data(), resolution.base, Imm::I(resolution.offset));
++            m_assembler.addiInsn(temp.data(), temp.data(), Imm::I(imm.m_value));
++            m_assembler.sbInsn(resolution.base, temp.data(), Imm::S(resolution.offset));
++            return;
++        }
++
++        m_assembler.lbuInsn(temp.memory(), resolution.base, Imm::I(resolution.offset));
++        loadImmediate(imm, temp.data());
++        m_assembler.addInsn(temp.data(), temp.memory(), temp.data());
++
++        resolution = resolveAddress(address, temp.memory());
++        m_assembler.sbInsn(resolution.base, temp.data(), Imm::S(resolution.offset));
++    }
++
+     void add32(TrustedImm32 imm, AbsoluteAddress address)
+     {
+         auto temp = temps<Data, Memory>();
+@@ -1701,6 +1720,15 @@ public:
+         m_assembler.swInsn(temp.memory(), temp.data(), Imm::S<0>());
+     }
+ 
++    void or32(RegisterID src, Address address)
++    {
++        auto temp = temps<Data, Memory>();
++        auto resolution = resolveAddress(address, temp.memory());
++        m_assembler.lwInsn(temp.data(), resolution.base, Imm::I(resolution.offset));
++        m_assembler.orInsn(temp.data(), src, temp.data());
++        m_assembler.swInsn(resolution.base, temp.data(), Imm::S(resolution.offset));
++    }
++
+     void or32(TrustedImm32 imm, AbsoluteAddress address)
+     {
+         auto temp = temps<Data, Memory>();
+@@ -2007,6 +2035,28 @@ public:
+         m_assembler.fmvInsn<RISCV64Assembler::FMVType::W, RISCV64Assembler::FMVType::X>(dest, src);
+     }
+ 
++    // 64-bit integer arithmetic on values held in FP registers. Used by the
++    // JSValue double boxing / NaN purification paths, where the bit pattern of
++    // a double is offset by JSValue::DoubleEncodeOffset without leaving the FP
++    // register file. RISC-V has no integer ALU on FPRs, so move through GPRs.
++    void add64(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
++    {
++        auto temp = temps<Data, Memory>();
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::X, RISCV64Assembler::FMVType::D>(temp.data(), op1);
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::X, RISCV64Assembler::FMVType::D>(temp.memory(), op2);
++        m_assembler.addInsn(temp.data(), temp.data(), temp.memory());
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::D, RISCV64Assembler::FMVType::X>(dest, temp.data());
++    }
++
++    void sub64(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
++    {
++        auto temp = temps<Data, Memory>();
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::X, RISCV64Assembler::FMVType::D>(temp.data(), op1);
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::X, RISCV64Assembler::FMVType::D>(temp.memory(), op2);
++        m_assembler.subInsn(temp.data(), temp.data(), temp.memory());
++        m_assembler.fmvInsn<RISCV64Assembler::FMVType::D, RISCV64Assembler::FMVType::X>(dest, temp.data());
++    }
++
+     void moveDouble(FPRegisterID src, FPRegisterID dest)
+     {
+         if (src != dest)
+@@ -3609,6 +3659,18 @@ public:
+         convertInt32ToDouble(temp.data(), dest);
+     }
+ 
++    void convertUInt32ToDouble(RegisterID src, FPRegisterID dest)
++    {
++        m_assembler.fcvtInsn<RISCV64Assembler::FCVTType::D, RISCV64Assembler::FCVTType::WU>(dest, src);
++    }
++
++    void convertUInt32ToDouble(TrustedImm32 imm, FPRegisterID dest)
++    {
++        auto temp = temps<Data>();
++        loadImmediate(imm, temp.data());
++        convertUInt32ToDouble(temp.data(), dest);
++    }
++
+     void convertInt64ToFloat(RegisterID src, FPRegisterID dest)
+     {
+         m_assembler.fcvtInsn<RISCV64Assembler::FCVTType::S, RISCV64Assembler::FCVTType::L>(dest, src);

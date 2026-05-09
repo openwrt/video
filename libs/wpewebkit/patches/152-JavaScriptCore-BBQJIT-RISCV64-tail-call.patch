@@ -1,0 +1,52 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: BBQJIT: implement wasm tail call on RISCV64
+
+emitTailCall (direct) and emitIndirectTailCall in WasmBBQJIT.cpp branch
+on the host CPU to set up the caller's frame pointer + return address
+for the tail-jumped callee. ARM64/ARMv7 use loadPairPtr(fp, callerFP, lr)
+to read both at once; X86_64 has its own dedicated branch; everything
+else trips UNREACHABLE_FOR_PLATFORM() -> SIGABRT during BBQ compilation
+of any wasm function that uses return_call (tail call).
+
+RISC-V's standard prologue saves fp and ra adjacent at [sp, sp+8]
+(same layout as ARM64), so the ARM64 loadPair64-backed loadPairPtr
+also works on RISCV64. The "fix SP and FP" sequence (addPtr to
+stackPointerRegister + move callerFramePointer -> framePointerRegister)
+is also generic. Add CPU(RISCV64) to all three guarded branches.
+
+Reproducer: spec-tests/try_table.wast.js line 117
+(assert_exception(() => call($2, "return-call-in-try-catch", []))).
+BBQ aborts during compilation of the wasm function that does
+return_call inside try-catch.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
+@@ -4381,7 +4381,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
+     m_jit.loadPtr(Address(MacroAssembler::framePointerRegister), callerFramePointer);
+     resolvedArguments.append(Value::pinned(pointerType(), Location::fromStack(sizeof(Register))));
+     parameterLocations.append(Location::fromStack(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))));
+-#elif CPU(ARM64) || CPU(ARM_THUMB2)
++#elif CPU(ARM64) || CPU(ARM_THUMB2) || CPU(RISCV64)
+     m_jit.loadPairPtr(MacroAssembler::framePointerRegister, callerFramePointer, MacroAssembler::linkRegister);
+ #else
+     UNUSED_PARAM(callerFramePointer);
+@@ -4652,7 +4652,7 @@ void BBQJIT::emitIndirectTailCall(const
+ 
+     resolvedArguments.append(Value::pinned(pointerType(), Location::fromStack(sizeof(Register))));
+     parameterLocations.append(Location::fromStack(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))));
+-#elif CPU(ARM64) || CPU(ARM_THUMB2)
++#elif CPU(ARM64) || CPU(ARM_THUMB2) || CPU(RISCV64)
+     auto preserved = callingConvention.argumentGPRs();
+     preserved.add(importableFunction, IgnoreVectors);
+     if constexpr (isARM64E())
+@@ -4709,7 +4709,7 @@ void BBQJIT::emitIndirectTailCall(const
+     m_jit.loadPtr(Address(MacroAssembler::framePointerRegister, tailCallStackOffsetFromFP), wasmScratchGPR);
+     m_jit.addPtr(TrustedImm32(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))), MacroAssembler::framePointerRegister, MacroAssembler::stackPointerRegister);
+     m_jit.move(wasmScratchGPR, MacroAssembler::framePointerRegister);
+-#elif CPU(ARM64) || CPU(ARM_THUMB2)
++#elif CPU(ARM64) || CPU(ARM_THUMB2) || CPU(RISCV64)
+     m_jit.addPtr(TrustedImm32(tailCallStackOffsetFromFP + Checked<int>(sizeof(CallerFrameAndPC))), MacroAssembler::framePointerRegister, MacroAssembler::stackPointerRegister);
+     m_jit.move(callerFramePointer, MacroAssembler::framePointerRegister);
+ #else

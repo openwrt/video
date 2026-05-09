@@ -1,0 +1,33 @@
+From 5a93e9a6c82d93970742972e0cf68ef62cb4f313 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 26 May 2026 13:12:29 +0100
+Subject: [PATCH] ANGLE: skip excess-precision-sensitive roundToNearest
+ static_asserts on x87
+
+On 32-bit x86 targets with x87 FP (FLT_EVAL_METHOD == 2), constexpr
+float/double arithmetic is performed at 80-bit extended precision, so
+0.49999997f + 0.5f compares to long-double 0.99999996... != 1.0 and the
+static_assert fails. The runtime bias trick remains correct (the result
+is still cast back to float and rounded). Skip the compile-time checks
+when __FLT_EVAL_METHOD__ != 0.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/ThirdParty/ANGLE/src/common/mathutil.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/Source/ThirdParty/ANGLE/src/common/mathutil.h
++++ b/Source/ThirdParty/ANGLE/src/common/mathutil.h
+@@ -606,10 +606,12 @@ inline R roundToNearest(T input)
+     // On armv8, this expression is compiled to a dedicated round-to-nearest instruction
+     return static_cast<R>(std::round(input));
+ #else
++#if !defined(__FLT_EVAL_METHOD__) || __FLT_EVAL_METHOD__ == 0
+     static_assert(0.49999997f < 0.5f);
+     static_assert(0.49999997f + 0.5f == 1.0f);
+     static_assert(0.49999999999999994 < 0.5);
+     static_assert(0.49999999999999994 + 0.5 == 1.0);
++#endif
+     constexpr T bias = sizeof(T) == 8 ? 0.49999999999999994 : 0.49999997f;
+     return static_cast<R>(input + (std::is_signed<R>::value ? std::copysign(bias, input) : bias));
+ #endif

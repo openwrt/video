@@ -1,0 +1,52 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: stub IPInt call trampoline labels on unsupported archs
+
+InPlaceInterpreter is the WebAssembly in-place interpreter (IPInt).
+Its real implementation in InPlaceInterpreter64.asm and
+InPlaceInterpreter32_64.asm is gated on a small allow-list of
+architectures (ARM64/ARM64E/X86_64/ARMv7); every other CPU falls into
+the catch-all 'else' branch of InPlaceInterpreter.asm, which only
+emits unimplementedInstruction() stubs for the IPInt opcodes.
+
+LowLevelInterpreter.asm, however, unconditionally takes the address
+of nine IPInt call-sequence labels:
+
+  _wasm_trampoline_wasm_ipint_{call,tail_call}[_wide16][_wide32]
+  _wasm_ipint_call_return_location[_wide16][_wide32]
+
+so on a CPU where WEBASSEMBLY is enabled but the real IPInt is not
+(e.g. RISCV64) the link fails:
+
+  mold: error: undefined symbol: .Lwasm_trampoline_wasm_ipint_tail_call
+  ...
+
+LowLevelInterpreter.asm itself already emits crash() stubs for the
+same nine labels in its !WEBASSEMBLY branch. Mirror that here so the
+labels also exist when WEBASSEMBLY is on but the architecture has no
+IPInt - they trap if ever reached.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
++++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
+@@ -2177,5 +2177,21 @@ unimplementedInstruction(_i32_atomic_rmw
+ unimplementedInstruction(_i64_atomic_rmw8_cmpxchg_u)
+ unimplementedInstruction(_i64_atomic_rmw16_cmpxchg_u)
+ unimplementedInstruction(_i64_atomic_rmw32_cmpxchg_u)
++
++# LowLevelInterpreter.asm captures the addresses of these labels via
++# 'lla' / equivalent for the IPInt call sequence, so they have to exist
++# at link time on architectures that enable WEBASSEMBLY but have no
++# IPInt implementation. They should never be reached at run time.
++_wasm_trampoline_wasm_ipint_call:
++_wasm_trampoline_wasm_ipint_call_wide16:
++_wasm_trampoline_wasm_ipint_call_wide32:
++_wasm_trampoline_wasm_ipint_tail_call:
++_wasm_trampoline_wasm_ipint_tail_call_wide16:
++_wasm_trampoline_wasm_ipint_tail_call_wide32:
++
++_wasm_ipint_call_return_location:
++_wasm_ipint_call_return_location_wide16:
++_wasm_ipint_call_return_location_wide32:
++    crash()
+ end
+ 

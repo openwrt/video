@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpewebkit
-PKG_VERSION:=2.50.1
+PKG_VERSION:=2.52.3
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=305437a4ba869e4106c1d4a8cb2a7be3f43b75d9d026e9b97c6f6debc04a673b
+PKG_HASH:=b51b1db1e6ee99d1771f4a358c128fde27a77984df20ee6cb59858e520662d0b
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later BSD-2-Clause
@@ -60,7 +60,8 @@ define Package/libwpewebkit
   CATEGORY:=Libraries
   TITLE:=WPEWebKit Library
   URL:=https://wpewebkit.org
-  DEPENDS:=+bubblewrap +glib2 +gst1-mod-opengl +harfbuzz +icu-full-data \
+  DEPENDS:=+bubblewrap +glib2 +gst1-mod-autodetect +gst1-mod-opengl \
+	   +harfbuzz +icu-full-data \
 	   +libepoxy +libgcrypt +libgst1allocators +libgst1app +libgst1audio \
 	   +libgst1fft +libgst1gl +libgst1pbutils +libgst1tag \
 	   +libgst1transcoder +libgst1video +libinput +libmanette +libjpeg \

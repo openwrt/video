@@ -1,0 +1,33 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: LLInt asm: iterate all 8 wasm GPR args on RISCV64
+
+The forEachWasmArgumentGPR macro in InPlaceInterpreter.asm (used by
+js_to_wasm_wrapper_entry, the LLInt counterpart of the C++ JIT shared
+JS-to-wasm trampoline, and other wasm-arg shuffle macros) iterates 8
+GPRs only on ARM64; on JSVALUE64 it stops at wa5 to match X86_64's 6
+GPR args. RISC-V also has 8 GPR args (a0..a7), so the JSVALUE64 branch
+leaves wa6/wa7 unhandled.
+
+Symptom: any wasm function whose calling convention places i32/i64
+params in a6 or a7 sees garbage for those args on paths that route
+through this macro (e.g. js_to_wasm_wrapper_entry). Mirror the C++
+fix from patch 149 by adding an explicit RISCV64 branch with
+fn(6, wa6, wa7). The inner preserve/restore impl macros' JSVALUE64
+branch (storeq/loadq) already handles 64-bit GPRs correctly.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+--- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
++++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
+@@ -534,6 +534,11 @@ macro forEachWasmArgumentGPR(fn)
+         fn(2, wa2, wa3)
+         fn(4, wa4, wa5)
+         fn(6, wa6, wa7)
++    elsif RISCV64
++        fn(0, wa0, wa1)
++        fn(2, wa2, wa3)
++        fn(4, wa4, wa5)
++        fn(6, wa6, wa7)
+     elsif JSVALUE64
+         fn(0, wa0, wa1)
+         fn(2, wa2, wa3)

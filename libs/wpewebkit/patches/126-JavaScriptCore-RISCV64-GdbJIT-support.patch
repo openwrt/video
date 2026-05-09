@@ -1,0 +1,65 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: add RISCV64 support to GdbJIT
+
+GdbJIT emits a tiny in-memory ELF object for the debugger to pick up,
+and three places in the file hard-coded the supported architecture
+list to X86_64/ARM64 (with ARMv7/Thumb for the 32-bit case). Each of
+them refuses to compile on RISCV64.
+
+Add the missing CPU(RISCV64) branches:
+
+ * ELF e_ident: ELFCLASS64 / ELFDATA2LSB, the same as X86_64 / ARM64.
+ * ELF e_machine: EM_RISCV (243) from the RISC-V ELF psABI.
+ * ELFSymbol::SerializedLayout: the 64-bit layout shared with the
+   X86_64 / ARM64 branch, since RISCV64 has the same uintptr_t width
+   and packed-symbol layout.
+ * RegisterMapping (DWARF unwinding): RegisterFP = 8 (s0/x8) and
+   RegisterLR = 1 (ra/x1), matching the RISC-V psABI's DWARF register
+   numbering.
+
+This is a debug-only path; it has no effect on generated JIT code,
+it just makes GdbJIT.cpp compile on RISCV64.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/jit/GdbJIT.cpp
++++ b/Source/JavaScriptCore/jit/GdbJIT.cpp
+@@ -873,7 +873,7 @@ private:
+             0x7F, 'E', 'L', 'F', 1, 1, 1, 0,
+             0, 0, 0, 0, 0, 0, 0, 0
+         };
+-#elif CPU(X86_64) || CPU(ARM64)
++#elif CPU(X86_64) || CPU(ARM64) || CPU(RISCV64)
+         const uint8_t ident[16] = {
+             0x7F, 'E', 'L', 'F', 2, 1, 1, 0,
+             0, 0, 0, 0, 0, 0, 0, 0
+@@ -895,6 +895,9 @@ private:
+ #elif CPU(ARM64)
+         // AARCH64
+         header->machine = 0xB7;
++#elif CPU(RISCV64)
++        // EM_RISCV from the RISC-V ELF psABI specification.
++        header->machine = 243;
+ #else
+ #error Unsupported target architecture.
+ #endif
+@@ -996,7 +999,7 @@ public:
+         uint8_t m_other;
+         uint16_t m_section;
+     } __attribute__((packed,aligned(1)));
+-#elif CPU(X86_64) || CPU(ARM64)
++#elif CPU(X86_64) || CPU(ARM64) || CPU(RISCV64)
+     struct SerializedLayout {
+         SerializedLayout(uint32_t name, uintptr_t value, uintptr_t size, Binding binding, Type type, uint16_t section)
+             : m_name(name)
+@@ -1166,6 +1169,11 @@ private:
+ #elif CPU(ARM64)
+         RegisterFP = 29,
+         RegisterLR = 30,
++#elif CPU(RISCV64)
++        // RISC-V psABI: DWARF register numbers match x0..x31, so the frame
++        // pointer s0/x8 is 8 and the return-address register ra/x1 is 1.
++        RegisterFP = 8,
++        RegisterLR = 1,
+ #else
+         RegisterFP = 7,
+         RegisterLR = 14,

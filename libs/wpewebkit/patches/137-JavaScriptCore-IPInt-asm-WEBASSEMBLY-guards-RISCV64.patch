@@ -1,0 +1,83 @@
+--- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
++++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
+@@ -1215,7 +1215,7 @@ op(wasm_throw_from_fault_handler_trampol
+ end)
+ 
+ op(ipint_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+     preserveCallerPCAndCFR()
+     saveIPIntRegisters()
+     storep wasmInstance, CodeBlock[cfr]
+@@ -1233,7 +1233,7 @@ else
+ end
+ end)
+ 
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+ .ipint_entry_end_local:
+     argumINTInitializeDefaultLocals()
+     jmp .ipint_entry_end_local
+@@ -1331,7 +1331,7 @@ end
+ end
+ 
+ op(ipint_catch_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or RISCV64)
+     ipintCatchCommon()
+ 
+     move cfr, a1
+@@ -1348,7 +1348,7 @@ end
+ end)
+ 
+ op(ipint_catch_all_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or RISCV64)
+     ipintCatchCommon()
+ 
+     move cfr, a1
+@@ -1365,7 +1365,7 @@ end
+ end)
+ 
+ op(ipint_table_catch_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+     ipintCatchCommon()
+ 
+     # push arguments but no ref: sp in a2, call normal operation
+@@ -1384,7 +1384,7 @@ end
+ end)
+ 
+ op(ipint_table_catch_ref_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+     ipintCatchCommon()
+ 
+     # push both arguments and ref
+@@ -1403,7 +1403,7 @@ end
+ end)
+ 
+ op(ipint_table_catch_all_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+     ipintCatchCommon()
+ 
+     # do nothing: 0 in sp for no arguments, call normal operation
+@@ -1422,7 +1422,7 @@ end
+ end)
+ 
+ op(ipint_table_catch_allref_entry, macro()
+-if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
++if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
+     ipintCatchCommon()
+ 
+     # push only the ref
+@@ -1543,7 +1543,7 @@ defineWasmBuiltinTrampoline(jsstring, co
+ # 5. Instruction implementation #
+ #################################
+ 
+-if JSVALUE64 and (ARM64 or ARM64E or X86_64)
++if JSVALUE64 and (ARM64 or ARM64E or X86_64 or RISCV64)
+     include InPlaceInterpreter64
+ elsif ARMv7
+     include InPlaceInterpreter32_64

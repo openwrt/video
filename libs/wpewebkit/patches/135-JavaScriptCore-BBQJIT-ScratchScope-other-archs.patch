@@ -1,0 +1,45 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: declare BBQJIT ScratchScope for non-X86/non-ARM64 archs
+
+WasmBBQJIT64.cpp's addSIMDShuffle and addSIMDShift declare a ScratchScope
+named "scratches" only inside #if CPU(X86_64) / #elif CPU(ARM64), then
+reference that name from "if constexpr (isX86())" blocks and other code
+in the same function. In a non-template function, "if constexpr" does not
+discard the false branch from name lookup (C++17 [stmt.if]p2), so on any
+architecture not in that list the build fails with:
+
+  error: 'scratches' was not declared in this scope
+
+Add an #else branch in both functions declaring a ScratchScope with the
+same template arity as the X86 path. wasm SIMD is gated off at runtime
+on RISCV64 via Options::useWasmSIMD = false, so neither function is
+reached and the new scratches declaration is unused at run time; it
+only exists so the function bodies parse on RISCV64.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
+@@ -3442,6 +3442,11 @@ void BBQJIT::notifyFunctionUsesSIMD()
+     clobber(ARM64Registers::q28);
+     clobber(ARM64Registers::q29);
+     ScratchScope<0, 0> scratches(*this, Location::fromFPR(ARM64Registers::q28), Location::fromFPR(ARM64Registers::q29));
++#else
++    // Other architectures (e.g. RISCV64) have no wasm SIMD codegen and
++    // never reach this function at runtime (useWasmSIMD is forced off).
++    // Declare scratches so the if-constexpr(isX86()) block below parses.
++    ScratchScope<0, 1> scratches(*this);
+ #endif
+     Location aLocation = loadIfNecessary(a);
+     Location bLocation = loadIfNecessary(b);
+@@ -3497,6 +3502,11 @@ void BBQJIT::notifyFunctionUsesSIMD()
+     // Clobber and preserve RCX on x86, since we need it to do shifts.
+     clobber(shiftRCX);
+     ScratchScope<2, 2> scratches(*this, Location::fromGPR(shiftRCX));
++#elif !CPU(ARM64)
++    // RISCV64 / other archs: no wasm SIMD codegen exists; this function
++    // is unreachable at runtime via useWasmSIMD = false. Declare a
++    // ScratchScope so the X86-only sub-block below still parses.
++    ScratchScope<2, 2> scratches(*this);
+ #endif
+     Location srcLocation = loadIfNecessary(src);
+     Location shiftLocation;

@@ -1,0 +1,39 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Subject: [PATCH] JavaScriptCore: make WasmTypeDefinition::toB3Type available whenever B3 is
+
+The inline helper Wasm::toB3Type() was only declared when one of the
+WebAssembly B3-based JIT tiers (OMGJIT or BBQJIT) was enabled, and the
+header relied on those TUs having pulled in <JavaScriptCore/B3Type.h>
+transitively for B3::Type to be in scope.
+
+B3Validate.cpp uses Wasm::toB3Type to validate vector opcode operand
+types, and only depends on ENABLE(B3_JIT) - not on the WASM JIT tiers.
+RISCV64 currently enables B3_JIT but not WEBASSEMBLY_OMGJIT/BBQJIT, so
+B3Validate.cpp fails with "'toB3Type' is not a member of 'JSC::Wasm'".
+
+Gate toB3Type on ENABLE(B3_JIT) (the actual prerequisite) and include
+<JavaScriptCore/B3Type.h> explicitly so the header is self-sufficient
+in any TU that needs it. B3Type.h itself is guarded by ENABLE(B3_JIT)
+|| ENABLE(WEBASSEMBLY_BBQJIT), so the include is harmless when neither
+is set.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+--- a/Source/JavaScriptCore/wasm/WasmTypeDefinition.h
++++ b/Source/JavaScriptCore/wasm/WasmTypeDefinition.h
+@@ -29,6 +29,7 @@
+ 
+ #if ENABLE(WEBASSEMBLY)
+ 
++#include <JavaScriptCore/B3Type.h>
+ #include <JavaScriptCore/JITCompilation.h>
+ #include <JavaScriptCore/SIMDInfo.h>
+ #include <JavaScriptCore/WasmLimits.h>
+@@ -284,7 +285,7 @@ ALWAYS_INLINE Width Type::width() const
+     RELEASE_ASSERT_NOT_REACHED();
+ }
+ 
+-#if ENABLE(WEBASSEMBLY_OMGJIT) || ENABLE(WEBASSEMBLY_BBQJIT)
++#if ENABLE(B3_JIT)
+ #define CREATE_CASE(name, id, b3type, ...) case TypeKind::name: return b3type;
+ inline B3::Type toB3Type(Type type)
+ {

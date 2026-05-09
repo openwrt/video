@@ -1,0 +1,62 @@
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.h
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.h
+@@ -2032,6 +2032,12 @@ public:
+     template<typename Args>
+     void saveValuesAcrossCallAndPassArguments(const Args& arguments, const CallInformation& callInfo, const TypeDefinition& signature);
+ 
++    // On RISC-V the psABI requires 32-bit integer arguments to be sign-extended
++    // in their 64-bit argument registers; BBQ otherwise zero-extends them when
++    // loading from canonical i32 slots (lwu). Emit sext.w on any I32 arg that
++    // ends up in a register. No-op on other architectures.
++    void emitSignExtendI32ArgsForCCall(const CallInformation& callInfo, const TypeDefinition& signature);
++
+     void slowPathSpillBindings(const RegisterBindings& bindings);
+     void slowPathRestoreBindings(const RegisterBindings&);
+     void restoreValuesAfterCall(const CallInformation& callInfo);
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
+@@ -4286,6 +4286,26 @@ void BBQJIT::restoreValuesAfterCall(cons
+     // whenever they are next used.
+ }
+ 
++void BBQJIT::emitSignExtendI32ArgsForCCall(const CallInformation& callInfo, const TypeDefinition& signature)
++{
++#if CPU(RISCV64)
++    auto* fn = signature.as<FunctionSignature>();
++    for (size_t i = 0; i < callInfo.params.size(); ++i) {
++        auto type = fn->argumentType(i);
++        if (type.kind != TypeKind::I32)
++            continue;
++        Location loc = Location::fromArgumentLocation(callInfo.params[i], type.kind);
++        if (!loc.isGPR())
++            continue;
++        // sext.w rd, rs lowers via signExtend32To64 -> rv_addiw rd, rs, 0
++        m_jit.signExtend32To64(loc.asGPR(), loc.asGPR());
++    }
++#else
++    UNUSED_PARAM(callInfo);
++    UNUSED_PARAM(signature);
++#endif
++}
++
+ template<size_t N>
+ void BBQJIT::returnValuesFromCall(Vector<Value, N>& results, const FunctionSignature& functionType, const CallInformation& callInfo)
+ {
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.h
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.h
+@@ -505,6 +505,7 @@ void BBQJIT::emitCCall(Func function, co
+     // Preserve caller-saved registers and other info
+     prepareForExceptions();
+     saveValuesAcrossCallAndPassArguments(arguments, callInfo, *functionType);
++    emitSignExtendI32ArgsForCCall(callInfo, *functionType);
+ 
+     // Materialize address of native function and call register
+     void* taggedFunctionPtr = tagCFunctionPtr<void*, OperationPtrTag>(function);
+@@ -534,6 +535,7 @@ void BBQJIT::emitCCall(Func function, co
+     // Preserve caller-saved registers and other info
+     prepareForExceptions();
+     saveValuesAcrossCallAndPassArguments(arguments, callInfo, *functionType);
++    emitSignExtendI32ArgsForCCall(callInfo, *functionType);
+ 
+     // Materialize address of native function and call register
+     void* taggedFunctionPtr = tagCFunctionPtr<void*, OperationPtrTag>(function);
