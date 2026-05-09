@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gtk
-PKG_VERSION:=4.18.6
+PKG_VERSION:=4.22.4
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=@GNOME/$(PKG_NAME)/$(basename $(PKG_VERSION))
-PKG_HASH:=e1817c650ddc3261f9a8345b3b22a26a5d80af154630dedc03cc7becefffd0fa
+PKG_HASH:=51bd9f60c7d23a665a556c7364c21fb2e4e282566b3e7e092455e8f910330893
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later
@@ -91,6 +91,7 @@ MESON_ARGS += \
 	-Dprint-cpdb=disabled \
 	-Dprint-cups=disabled \
 	-Dcloudproviders=disabled \
+	-Dsysprof=disabled \
 	-Dbuild-testsuite=false \
 	-Dbuild-tests=false
 
@@ -99,8 +100,6 @@ define Build/InstallDev
 	$(CP) $(PKG_INSTALL_DIR)/usr/include/gtk-4.0 $(1)/usr/include/
 
 	$(INSTALL_DIR) $(1)/usr/lib
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/gtk-4.0 $(1)/usr/lib/
-
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/*.so* $(1)/usr/lib/
 
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
