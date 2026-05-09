@@ -4,10 +4,10 @@ PKG_NAME:=kmscube
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2024-11-06
-PKG_SOURCE_VERSION:=311eaaaa473d593c30d118799aa19ac4ad53cd65
+PKG_SOURCE_DATE:=2025-10-24
+PKG_SOURCE_VERSION:=f60e50e887d3c49e91ac9b06d8199b36152632fa
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/mesa/kmscube
-PKG_MIRROR_HASH:=23b4284c0665448e30b5dfae8f0e8b75b1fb512d47f821a87b66b5934c6060e6
+PKG_MIRROR_HASH:=480a9ee8d761be990b2296317562d4f1e2be84acf43a19240aaaf1df09039773
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -21,7 +21,7 @@ define Package/kmscube
   SECTION:=utils
   CATEGORY:=Utilities
   SUBMENU:=Video
-  DEPENDS:=+glib2 +libmesa +libpng +gstreamer1-plugins-base +libgstreamer1 +libgst1allocators +libgst1video +libgst1app
+  DEPENDS:=+glib2 +libmesa +libpng +gstreamer1-plugins-base +libgstreamer1 +libgst1allocators +libgst1video +libgst1app +libgst1gl
   TITLE:=kmscube KMS/DRM/EGL example
   URL:=https://www.mesa3d.org
 endef
