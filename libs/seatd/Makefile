@@ -1,19 +1,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=seatd
-PKG_VERSION:=0.9.1
-PKG_RELEASE:=2
+PKG_VERSION:=0.9.3
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://git.sr.ht/~kennylevinsen/seatd
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
-PKG_MIRROR_HASH:=bf572e248ba9f4bd7808b3fdfad04719f72bf2d1702d4c3bb503a0688f341936
+PKG_MIRROR_HASH:=9367dc4b644348ffd841634e7270ade94f5667289b798e24a17fd37e519c5908
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
 
 PKG_INSTALL:=1
 PKG_BUILD_DEPENDS:=wayland/host
+# upstream meson auto-enables -fhardened (which implies
+# -fstack-check=specific); MIPS16 codegen does not implement that and
+# the compile aborts. Build seatd as plain MIPS32 on those targets.
+PKG_BUILD_FLAGS:=no-mips16
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/meson.mk
