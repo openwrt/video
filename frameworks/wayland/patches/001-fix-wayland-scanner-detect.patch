@@ -1,6 +1,6 @@
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -81,8 +81,12 @@ if get_option('scanner')
+@@ -80,8 +80,12 @@ if get_option('scanner')
  endif
  
  if meson.is_cross_build() or not get_option('scanner')
