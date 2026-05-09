@@ -1,19 +1,22 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=glslang
-PKG_VERSION:=15.4.0
+# 16.2.0 references the same commit as the Vulkan SDK 1.4.341.0 release tag
+# (vulkan-sdk-1.4.341.0); use the semver tag here to keep package-manager
+# version comparisons monotonic.
+PKG_VERSION:=16.2.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/$(PKG_NAME)/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=b16c78e7604b9be9f546ee35ad8b6db6f39bbbbfb19e8d038b6fe2ea5bba4ff4
+PKG_HASH:=01985335785c97906a91afe3cb5ee015997696181ec6c125bab5555602ba08e2
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause BSD-2-Clause MIT Apache GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE.txt
 
 CMAKE_INSTALL:=1
-PKG_BUILD_FLAGS:=gc-sections lto
+PKG_BUILD_FLAGS:=gc-sections no-lto
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
