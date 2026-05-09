@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland-protocols
-PKG_VERSION:=1.45
+PKG_VERSION:=1.48
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/$(PKG_VERSION)/downloads/
-PKG_HASH:=4d2b2a9e3e099d017dc8107bf1c334d27bb87d9e4aff19a0c8d856d17cd41ef0
+PKG_HASH:=398036ac0eb6484982ddbde7ff86848d753231f9cdeeae983f06b52946625aa1
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -38,6 +38,8 @@ endef
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/share/wayland-protocols
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/wayland-protocols/* $(1)/usr/share/wayland-protocols
+	$(INSTALL_DIR) $(1)/usr/include/wayland-protocols
+	$(CP) $(PKG_INSTALL_DIR)/usr/include/wayland-protocols/*.h $(1)/usr/include/wayland-protocols
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/pkgconfig/*.pc $(1)/usr/lib/pkgconfig
 endef
