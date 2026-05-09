@@ -1,6 +1,6 @@
 --- a/meson.build
 +++ b/meson.build
-@@ -783,7 +783,7 @@ test(
+@@ -1055,7 +1055,7 @@ test(
  pymod = import('python')
  python = pymod.find_installation('python3', modules: ['jinja2'], required: false)
  has_merge_modes_tests = python.found() and python.language_version().version_compare('>=3.11')
