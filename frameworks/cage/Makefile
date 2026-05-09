@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cage
-PKG_VERSION:=0.2.0
+PKG_VERSION:=0.3.0
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://github.com/cage-kiosk/cage/releases/download/v0.2.0
-PKG_HASH:=557c194d18af7202a9ec2e8be6dd7129f6c16d0f4528f4079ba26ccd57b6ef88
+PKG_SOURCE_URL:=https://github.com/cage-kiosk/cage/releases/download/v$(PKG_VERSION)
+PKG_HASH:=cd2510f83bef3e08e660d99492ca7761b218ecb53ee01cdbbeee3d6aabc7734e
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
