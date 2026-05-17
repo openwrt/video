@@ -1,6 +1,6 @@
---- ./src/platformsupport/platformsupport.pro	2020-05-11 08:15:08.000000000 +0000
-+++ ./src/platformsupport/platformsupport.pro.mod	2020-06-11 21:15:01.922331522 +0000
-@@ -6,13 +6,13 @@
+--- a/src/platformsupport/platformsupport.pro
++++ b/src/platformsupport/platformsupport.pro
+@@ -6,13 +6,13 @@ SUBDIRS = \
      eventdispatchers \
      devicediscovery \
      fbconvenience \
@@ -15,3 +15,4 @@
 -    SUBDIRS += input
      input.depends += devicediscovery
  }
+ 

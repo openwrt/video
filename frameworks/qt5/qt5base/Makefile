@@ -12,7 +12,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qt5base
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKG_HASH:=b04815058c18058b6ba837206756a2c87d1391f07a0dcb0dd314f970fd041592
 
 include ../common.mk
@@ -79,7 +79,7 @@ endef
 define Package/qt5base-core
   $(call Package/qt5base/Default)
   TITLE+=core
-  DEPENDS+=+libpthread +zlib +libzstd +libstdcpp +librt +libpcre2-16 +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
+  DEPENDS+=+libatomic +libpthread +zlib +libzstd +libstdcpp +librt +libpcre2-16 +libdouble-conversion $(ICONV_DEPENDS) +PACKAGE_icu:icu #FIXME: do not include ICONV_DEPENDS if ICU is selected (though, that's only an issue when using GNU iconv)
 endef
 
 define Package/qt5base-core/config
@@ -167,7 +167,7 @@ endef
 define Package/qt5base-plugin-input-libinput
   $(call Package/qt5base/Default)
   TITLE+=libinput (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libinput @PACKAGE_qt5base-input-autodiscovery
 endef
 
 define Package/qt5base-plugin-input-evdevkeyboard
@@ -225,13 +225,13 @@ endef
 define Package/qt5base-plugin-platforms-linuxfb
   $(call Package/qt5base/Default)
   TITLE+=platform linuxfb (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +libdrm +PACKAGE_qt5base-input-autodiscovery:libudev +PACKAGE_qt5base-plugin-input-libinput:libinput
 endef
 
 define Package/qt5base-plugin-platforms-eglfs
   $(call Package/qt5base/Default)
   TITLE+=platform eglfs (plugin)
-  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libmesa # +qt5base-eglfs-device-integration
+  DEPENDS+=+qt5base-core +qt5base-gui +libfreetype +fontconfig +libmesa +libdrm # +qt5base-eglfs-device-integration
 endef
 
 define Package/qt5base-plugin-platforms-minimalegl
@@ -375,7 +375,7 @@ define Build/Configure
 			--opengles3=no \
 			--egl=$(if $(CONFIG_BUILD_qt5base-gui_OPENGL_OPENGLES2),yes,no) \
 			--xcb-xlib=no \
-			--qpa=$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),linuxfb,) \
+			$(if $(CONFIG_PACKAGE_qt5base-plugin-platforms-linuxfb),--qpa=linuxfb,) \
 			--directfb=no \
 			--eglfs=$(if $(CONFIG_BUILD_qt5base-gui_OPENGL_OPENGLES2),yes,no) \
 			--gbm=$(if $(CONFIG_BUILD_qt5base-gui_DRM),yes,no) \
@@ -625,23 +625,35 @@ define Package/qt5base-plugin-platforms-vnc/install
 endef
 
 define Package/qt5base-plugin-platforms-eglfs/install
-	$(call Build/Install/Libs,$(1),libQt5EglFsKmsSupport)
-	$(call Build/Install/Libs,$(1),libQt5EglFSDeviceIntegration)
-	$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-egldevice-integration)
-	$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-integration)
-	$(call Build/Install/Plugins,$(1),platforms,libqeglfs)
+	# Some architectures might not support or may disable the eglfs plugin
+	# during the configuration phase. We use wildcard checks to ensure
+	# installation only occurs if the files were actually generated,
+	# preventing build failures (cannot stat) during packaging.
+	$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/platforms/libqeglfs.so*), \
+		$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/libQt5EglFsKmsSupport.so*),$(call Build/Install/Libs,$(1),libQt5EglFsKmsSupport)) \
+		$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/libQt5EglFSDeviceIntegration.so*),$(call Build/Install/Libs,$(1),libQt5EglFSDeviceIntegration)) \
+		$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/egldeviceintegrations/libqeglfs-kms-egldevice-integration.so),$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-egldevice-integration)) \
+		$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/egldeviceintegrations/libqeglfs-kms-integration.so),$(call Build/Install/Plugins,$(1),egldeviceintegrations,libqeglfs-kms-integration)) \
+		$(call Build/Install/Plugins,$(1),platforms,libqeglfs)
+	)
 endef
 
 define Package/qt5base-plugin-platforms-minimalegl/install
-	$(call Build/Install/Plugins,$(1),platforms,libqminimalegl)
+	$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/platforms/libqminimalegl.so*), \
+		$(call Build/Install/Plugins,$(1),platforms,libqminimalegl)
+	)
 endef
 
 define Package/qt5base-plugin-platforms-minimal/install
-	$(call Build/Install/Plugins,$(1),platforms,libqminimal)
+	$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/platforms/libqminimal.so*), \
+		$(call Build/Install/Plugins,$(1),platforms,libqminimal)
+	)
 endef
 
 define Package/qt5base-plugin-platforms-offscreen/install
-	$(call Build/Install/Plugins,$(1),platforms,libqoffscreen)
+	$(if $(wildcard $(PKG_INSTALL_DIR)/usr/lib/qt5/plugins/platforms/libqoffscreen.so*), \
+		$(call Build/Install/Plugins,$(1),platforms,libqoffscreen)
+	)
 endef
 
 #define Package/qt5base-plugin-sqldrivers-sqlite/install
