@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
 PKG_VERSION:=26.0.6
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
@@ -475,7 +475,6 @@ $(call Package/mesa/Default)
   TITLE+= TFLite delegate for VeriSilicon NPU (etnaviv)
   DEPENDS+=+libdrm-etnaviv +libexpat +libzstd +zlib @aarch64
   VARIANT:=teflon-etnaviv
-  CONFLICTS:=libteflon-rocket
 endef
 
 define Package/libteflon-etnaviv/description
