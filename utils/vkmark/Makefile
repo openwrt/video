@@ -32,6 +32,8 @@ define Package/vkmark/description
 vkmark is an extensible Vulkan benchmarking suite with targeted, configurable scenes.
 endef
 
+MESON_VARS += CMAKE_PREFIX_PATH=$(STAGING_DIR)/usr
+
 MESON_ARGS += \
 	-Dxcb=false \
 	-Dwayland=true \
