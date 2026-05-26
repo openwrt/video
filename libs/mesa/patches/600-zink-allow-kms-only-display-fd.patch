@@ -1,0 +1,39 @@
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 25 May 2026 22:00:00 +0100
+Subject: zink: allow KMS-only display fd to fall through to default
+ Vulkan device selection
+
+When MESA_LOADER_DRIVER_OVERRIDE=zink is used with a GBM device created
+on a KMS-only display node (e.g. /dev/dri/card1 bound to verisilicon-dc
+on StarFive JH7110), zink_render_rdev() returned -1 because the device
+has no render node, causing zink_drm_create_screen() to bail and GBM
+initialisation to fail.
+
+Treat the missing render node as "no specific device requested" instead
+of an error.  zink_picks_device() then returns false, and choose_pdev()
+falls back to default Vulkan physical-device selection, picking
+whichever ICD vkEnumeratePhysicalDevices() reports first (PowerVR on
+JH7110).  Cross-device dma-buf import via VK_KHR_external_memory_fd
+takes care of getting the rendered frame onto the display controller.
+
+--- a/src/gallium/drivers/zink/zink_screen.c
++++ b/src/gallium/drivers/zink/zink_screen.c
+@@ -3862,10 +3862,15 @@ zink_render_rdev(int fd, int64_t *dev_ma
+    if (drmGetDevice2(fd, 0, &dev))
+       return -1;
+ 
+-   if(!(dev->available_nodes & (1 << DRM_NODE_RENDER))) {
+-      ret = -1;
++   /*
++    * If the fd points to a KMS-only display device with no render node,
++    * leave dev_major/dev_minor unset.  choose_pdev() will then fall back
++    * to default Vulkan physical-device selection, allowing zink to drive
++    * a render-only GPU (e.g. PowerVR via VK_KHR_external_memory_fd) on
++    * top of a separate display controller (e.g. verisilicon-dc).
++    */
++   if(!(dev->available_nodes & (1 << DRM_NODE_RENDER)))
+       goto free_device;
+-   }
+ 
+    if(stat(dev->nodes[DRM_NODE_RENDER], &stx)) {
+       ret = -1;

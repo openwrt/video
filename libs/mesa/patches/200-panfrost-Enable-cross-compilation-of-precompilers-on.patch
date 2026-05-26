@@ -1,8 +1,6 @@
-From ed8b98238061e6260ffaf507597e114a5a80ca4f Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
 Date: Mon, 13 Oct 2025 01:32:22 +0100
-Subject: [PATCH 2/2] panfrost: Enable cross-compilation of precompilers on
- non-Linux hosts
+Subject: panfrost: Enable cross-compilation of precompilers on non-Linux hosts
 
 This patch enables building Mesa's Panfrost precompilers on non-Linux
 hosts (macOS, Windows, etc.) by introducing a stub kernel mode driver
@@ -18,8 +16,8 @@ Changes:
 1. Created kmod/pan_kmod_stub.h with minimal type definitions needed
    by pan_desc.h inline functions (pan_kmod_dev_props)
 
-2. Modified pan_desc.h to conditionally include either the full kmod
-   header or the stub version based on PAN_KMOD_STUB define
+2. Modified pan_desc.h and pan_image.h to conditionally include either
+   the full kmod header or the stub version based on PAN_KMOD_STUB
 
 3. Updated build system to:
    - Skip building kmod/ subdirectory when not needed
@@ -31,23 +29,17 @@ Changes:
 4. Extended panfrost build to support with_drivers_clc for CLC
    precompiler requirements
 
-This allows building Panfrost precompilers for cross-compilation
-scenarios without requiring a Linux host or DRM development headers,
-while maintaining full backward compatibility for regular driver builds.
----
- src/meson.build                       |  2 +-
- src/panfrost/lib/kmod/pan_kmod_stub.h | 27 ++++++++++++++
- src/panfrost/lib/meson.build          | 51 ++++++++++++++++++++-------
- src/panfrost/lib/pan_desc.h           |  4 +++
- src/panfrost/meson.build              |  2 +-
- 5 files changed, 71 insertions(+), 15 deletions(-)
- create mode 100644 src/panfrost/lib/kmod/pan_kmod_stub.h
+Refreshed against Mesa 26.1.1: the per-arch source list now contains
+pan_buffer.c, pan_fb.c and pan_fb_nir.c in addition to pan_blend.c
+and pan_texture.c.  All of those include pan_desc.h transitively but
+do not call into kmod, so they can build against the stub header on
+non-Linux hosts.
 
 --- a/src/meson.build
 +++ b/src/meson.build
 @@ -92,7 +92,7 @@ endif
- if with_imagination_vk or with_tools.contains('imagination')
-   subdir('imagination')
+ if with_any_intel
+   subdir('intel')
  endif
 -if with_gallium_panfrost or with_gallium_lima or with_panfrost_vk or with_tools.contains('panfrost')
 +if with_drivers_clc or with_gallium_panfrost or with_gallium_lima or with_panfrost_vk or with_tools.contains('panfrost')
@@ -99,16 +91,21 @@ while maintaining full backward compatibility for regular driver builds.
  
  pixel_format_versions = ['5', '6', '7', '9', '10', '12', '13']
  libpanfrost_pixel_format = []
-@@ -21,18 +23,23 @@ foreach ver : pixel_format_versions
+@@ -21,21 +23,28 @@ foreach ver : pixel_format_versions
  endforeach
  
  libpanfrost_per_arch = []
-+libpanfrost_per_arch_files = [ 'pan_blend.c', 'pan_texture.c' ]
++libpanfrost_per_arch_files = [
++  'pan_blend.c',
++  'pan_buffer.c',
++  'pan_fb.c',
++  'pan_fb_nir.c',
++  'pan_texture.c',
++]
 +libpanfrost_per_arch_c_args = []
 +
 +if with_gallium_panfrost or with_panfrost_vk
-+  libpanfrost_per_arch_files += 'pan_desc.c'
-+  libpanfrost_per_arch_files += 'pan_mod.c'
++  libpanfrost_per_arch_files += ['pan_desc.c', 'pan_mod.c']
 +else
 +  # Building without full driver support (e.g., for precompilers only)
 +  # Use stub kmod definitions to avoid requiring DRM headers
@@ -120,7 +117,10 @@ while maintaining full backward compatibility for regular driver builds.
 -    'pan-arch-v' + ver,
 -    [
 -      'pan_blend.c',
+-      'pan_buffer.c',
 -      'pan_desc.c',
+-      'pan_fb.c',
+-      'pan_fb_nir.c',
 -      'pan_mod.c',
 -      'pan_texture.c',
 -    ],
@@ -131,10 +131,10 @@ while maintaining full backward compatibility for regular driver builds.
      gnu_symbol_visibility : 'hidden',
      dependencies : [deps_for_libpanfrost, idep_nir],
    )
-@@ -48,26 +55,44 @@ libpanfrost_lib_files = files(
-   'pan_tiler.c',
+@@ -52,26 +61,44 @@ libpanfrost_lib_files = files(
    'pan_layout.c',
    'pan_scratch.c',
+   'pan_trace.c',
 -  'pan_props.c',
    'pan_util.c',
    'pan_afbc.c',
@@ -169,7 +169,7 @@ while maintaining full backward compatibility for regular driver builds.
  
 +libpanfrost_dependencies = [deps_for_libpanfrost, idep_nir]
 +if with_gallium_panfrost or with_panfrost_vk
-+  libpanfrost_dependencies = libpankmod_dep
++  libpanfrost_dependencies += libpankmod_dep
 +endif
 +
  libpanfrost_dep = declare_dependency(
