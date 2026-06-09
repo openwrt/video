@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
-PKG_VERSION:=26.1.1
+PKG_VERSION:=26.1.2
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
-PKG_HASH:=8bd36c031cc6d0edfec04617527609454ee3a09ad53bdf983b45fc2c1e129b2e
+PKG_HASH:=bac2bca9121897a2b8162e79636b50ac998fca799c8e6cf914edd85962babdf0
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=BSD-3-Clause
