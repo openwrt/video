@@ -1,0 +1,68 @@
+From 9f4f3835a072293c185842972e713c2972fa3ec0 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 9 Jun 2026 17:06:18 +0100
+Subject: [PATCH] st_stuff: fix arms widget crash from boolean width mismatch
+
+boolean is typedef'd to the C99 bool, which is one byte wide, but the
+status bar arms widgets were initialised with
+
+    (int *) &plyr->weaponowned[i+1]
+
+and STlib_updateMultIcon() dereferences that int* to index mi->p[]. On a
+one-byte bool this reads four adjacent ownership bytes as a single int,
+yielding values such as 257 that index far out of the two-element arms
+patch array. The result is a NULL patch passed to V_DrawPatch(), which
+dereferences it and crashes; this triggers within seconds of the
+attract-mode demo once the status bar is drawn.
+
+Mirror the existing keyboxes idiom: keep an int shadow array,
+st_armsowned[], updated each tick from plyr->weaponowned[], and point the
+arms widgets at it. The widget then reads a correctly sized int holding 0
+or 1, as it expects.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/st_stuff.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+--- a/src/st_stuff.c
++++ b/src/st_stuff.c
+@@ -380,7 +380,10 @@ static int	st_facecount = 0;
+ static int	st_faceindex = 0;
+ 
+ // holds key-type for each key box on bar
+-static int	keyboxes[3]; 
++static int	keyboxes[3];
++
++// holds weapon ownership (0 or 1) for each arms widget on bar
++static int	st_armsowned[6];
+ 
+ // a random number per tick
+ static int	st_randomnumber;  
+@@ -894,6 +897,12 @@ void ST_updateWidgets(void)
+ 	    keyboxes[i] = i+3;
+     }
+ 
++    // update weapon ownership widgets
++    for (i=0;i<6;i++)
++    {
++	st_armsowned[i] = plyr->weaponowned[i+1] ? 1 : 0;
++    }
++
+     // refresh everything if this is him coming back to life
+     ST_updateFaceWidget();
+ 
+@@ -1261,10 +1270,12 @@ void ST_createWidgets(void)
+     // weapons owned
+     for(i=0;i<6;i++)
+     {
++	st_armsowned[i] = plyr->weaponowned[i+1] ? 1 : 0;
++
+ 	STlib_initMultIcon(&w_arms[i],
+ 			   ST_ARMSX+(i%3)*ST_ARMSXSPACE,
+ 			   ST_ARMSY+(i/3)*ST_ARMSYSPACE,
+-			   arms[i], (int *) &plyr->weaponowned[i+1],
++			   arms[i], &st_armsowned[i],
+ 			   &st_armson);
+     }
+ 

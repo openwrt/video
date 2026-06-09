@@ -1,0 +1,287 @@
+From 0898b8bc17127829ea44325985e70c49c800ff21 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 9 Jun 2026 16:25:51 +0100
+Subject: [PATCH] i_sdlmusic: port music backend to the SDL3_mixer 3.2 MIX_*
+ API
+
+The Mix_* SDL_mixer API used by this port was removed in SDL_mixer 3.2.0.
+Port the music backend to the new track-based MIX_* API: a single
+MIX_Mixer device and MIX_Track, MIX_LoadAudio for songs, MIX_PlayTrack
+with the MIX_PROP_PLAY_LOOPS_NUMBER property for looping, MIX_SetTrackGain
+for volume and MIX_GetTrackPlaybackPosition for the substitute-music loop
+points (replacing the removed post-mix effect callback).
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/i_sdlmusic.c | 107 ++++++++++++++++++++++++-----------------------
+ 1 file changed, 55 insertions(+), 52 deletions(-)
+
+--- a/src/i_sdlmusic.c
++++ b/src/i_sdlmusic.c
+@@ -119,12 +119,13 @@ static char *temp_timidity_cfg = NULL;
+ static boolean playing_substitute = false;
+ static file_metadata_t file_metadata;
+ 
+-// Position (in samples) that we have reached in the current track.
+-// This is updated by the TrackPositionCallback function.
+-static unsigned int current_track_pos;
++// SDL3_mixer mixer device and the single track used for music playback.
++static MIX_Mixer *music_mixer = NULL;
++static MIX_Track *music_track = NULL;
++static int music_freq = 44100;
+ 
+ // Currently playing music track.
+-static Mix_Music *current_track_music = NULL;
++static MIX_Audio *current_track_music = NULL;
+ 
+ // If true, the currently playing track is being played on loop.
+ static boolean current_track_loop;
+@@ -852,12 +853,16 @@ static void I_SDL_ShutdownMusic(void)
+ {
+     if (music_initialized)
+     {
+-        Mix_HaltMusic();
++        MIX_StopTrack(music_track, 0);
+         music_initialized = false;
+ 
+         if (sdl_was_initialized)
+         {
+-            Mix_CloseAudio();
++            MIX_DestroyTrack(music_track);
++            music_track = NULL;
++            MIX_DestroyMixer(music_mixer);
++            music_mixer = NULL;
++            MIX_Quit();
+             SDL_QuitSubSystem(SDL_INIT_AUDIO);
+             sdl_was_initialized = false;
+         }
+@@ -866,17 +871,7 @@ static void I_SDL_ShutdownMusic(void)
+ 
+ static boolean SDLIsInitialized(void)
+ {
+-    int freq, channels;
+-    SDL_AudioFormat format;
+-
+-    return Mix_QuerySpec(&freq, &format, &channels) != 0;
+-}
+-
+-// Callback function that is invoked to track current track position.
+-void TrackPositionCallback(int chan, void *stream, int len, void *udata)
+-{
+-    // Position is doubled up twice: for 16-bit samples and for stereo.
+-    current_track_pos += len / 4;
++    return music_mixer != NULL;
+ }
+ 
+ // Initialize music subsystem
+@@ -928,20 +923,29 @@ static boolean I_SDL_InitMusic(void)
+     }
+     else
+     {
+-        const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, 1024};
++        const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, 44100};
+         if (!SDL_Init(SDL_INIT_AUDIO))
+         {
+             fprintf(stderr, "Unable to set up sound.\n");
+         }
+-        else if (!Mix_OpenAudio(0, &spec))
++        else if (!MIX_Init())
+         {
+-            fprintf(stderr, "Error initializing SDL_mixer: %s\n",
++            fprintf(stderr, "Error initializing SDL3_mixer: %s\n",
+                     SDL_GetError());
+             SDL_QuitSubSystem(SDL_INIT_AUDIO);
+         }
++        else if (!(music_mixer = MIX_CreateMixerDevice(
++                       SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec)))
++        {
++            fprintf(stderr, "Error initializing SDL3_mixer: %s\n",
++                    SDL_GetError());
++            MIX_Quit();
++            SDL_QuitSubSystem(SDL_INIT_AUDIO);
++        }
+         else
+         {
+-            Mix_PauseAudio(0);
++            music_track = MIX_CreateTrack(music_mixer);
++            music_freq = spec.freq;
+ 
+             sdl_was_initialized = true;
+             music_initialized = true;
+@@ -961,9 +965,6 @@ static boolean I_SDL_InitMusic(void)
+         fprintf(stderr, "SDL3_Mixer does not support external music playback.\n");
+     }
+ 
+-    // Register an effect function to track the music position.
+-    Mix_RegisterEffect(MIX_CHANNEL_POST, TrackPositionCallback, NULL, NULL);
+-
+     // If we're in GENMIDI mode, try to load sound packs.
+     if (snd_musicdevice == SNDDEVICE_GENMIDI)
+     {
+@@ -980,18 +981,18 @@ static boolean I_SDL_InitMusic(void)
+ 
+ static void UpdateMusicVolume(void)
+ {
+-    int vol;
++    float gain;
+ 
+     if (musicpaused)
+     {
+-        vol = 0;
++        gain = 0.0f;
+     }
+     else
+     {
+-        vol = (current_music_volume * MIX_MAX_VOLUME) / 127;
++        gain = (float) current_music_volume / 127.0f;
+     }
+ 
+-    Mix_VolumeMusic(vol);
++    MIX_SetTrackGain(music_track, gain);
+ }
+ 
+ // Set music volume (0 - 127)
+@@ -1020,7 +1021,7 @@ static void I_SDL_PlaySong(void *handle,
+         return;
+     }
+ 
+-    current_track_music = (Mix_Music *) handle;
++    current_track_music = (MIX_Audio *) handle;
+     current_track_loop = looping;
+ 
+     if (looping)
+@@ -1029,18 +1030,23 @@ static void I_SDL_PlaySong(void *handle,
+     }
+     else
+     {
+-        loops = 1;
++        loops = 0;
+     }
+ 
+     // Don't loop when playing substitute music, as we do it
+     // ourselves instead.
+     if (playing_substitute && file_metadata.valid)
+     {
+-        loops = 1;
+-        current_track_pos = 0;  // start of track
++        loops = 0;
+     }
+ 
+-    Mix_PlayMusic(current_track_music, loops);
++    {
++        SDL_PropertiesID opts = SDL_CreateProperties();
++        SDL_SetNumberProperty(opts, MIX_PROP_PLAY_LOOPS_NUMBER, loops);
++        MIX_SetTrackAudio(music_track, current_track_music);
++        MIX_PlayTrack(music_track, opts);
++        SDL_DestroyProperties(opts);
++    }
+ }
+ 
+ static void I_SDL_PauseSong(void)
+@@ -1074,14 +1080,14 @@ static void I_SDL_StopSong(void)
+         return;
+     }
+ 
+-    Mix_HaltMusic();
++    MIX_StopTrack(music_track, 0);
+     playing_substitute = false;
+     current_track_music = NULL;
+ }
+ 
+ static void I_SDL_UnRegisterSong(void *handle)
+ {
+-    Mix_Music *music = (Mix_Music *) handle;
++    MIX_Audio *music = (MIX_Audio *) handle;
+ 
+     if (!music_initialized)
+     {
+@@ -1093,7 +1099,7 @@ static void I_SDL_UnRegisterSong(void *h
+         return;
+     }
+ 
+-    Mix_FreeMusic(music);
++    MIX_DestroyAudio(music);
+ }
+ 
+ // Determine whether memory block is a .mid file 
+@@ -1132,7 +1138,7 @@ static boolean ConvertMus(byte *musdata,
+ static void *I_SDL_RegisterSong(void *data, int len)
+ {
+     char *filename;
+-    Mix_Music *music;
++    MIX_Audio *music;
+ 
+     if (!music_initialized)
+     {
+@@ -1146,7 +1152,7 @@ static void *I_SDL_RegisterSong(void *da
+ 
+     if (filename != NULL)
+     {
+-        music = Mix_LoadMUS(filename);
++        music = MIX_LoadAudio(music_mixer, filename, false);
+ 
+         if (music == NULL)
+         {
+@@ -1185,7 +1191,7 @@ static void *I_SDL_RegisterSong(void *da
+     // by now, but Mix_SetMusicCMD() only works with Mix_LoadMUS(), so
+     // we have to generate a temporary file.
+ 
+-    music = Mix_LoadMUS(filename);
++    music = MIX_LoadAudio(music_mixer, filename, false);
+ 
+     if (music == NULL)
+     {
+@@ -1217,19 +1223,13 @@ static boolean I_SDL_MusicIsPlaying(void
+         return false;
+     }
+ 
+-    return Mix_PlayingMusic();
++    return MIX_TrackPlaying(music_track);
+ }
+ 
+ // Get position in substitute music track, in seconds since start of track.
+ static double GetMusicPosition(void)
+ {
+-    unsigned int music_pos;
+-    int freq;
+-
+-    Mix_QuerySpec(&freq, NULL, NULL);
+-    music_pos = current_track_pos;
+-
+-    return (double) music_pos / freq;
++    return (double) MIX_GetTrackPlaybackPosition(music_track) / music_freq;
+ }
+ 
+ static void RestartCurrentTrack(void)
+@@ -1244,15 +1244,18 @@ static void RestartCurrentTrack(void)
+         // If the track finished we need to restart it.
+         if (current_track_music != NULL)
+         {
+-            Mix_PlayMusic(current_track_music, 1);
++            SDL_PropertiesID opts = SDL_CreateProperties();
++            SDL_SetNumberProperty(opts, MIX_PROP_PLAY_LOOPS_NUMBER, 0);
++            MIX_SetTrackAudio(music_track, current_track_music);
++            MIX_PlayTrack(music_track, opts);
++            SDL_DestroyProperties(opts);
+         }
+ 
+-        Mix_SetMusicPosition(start);
+-        current_track_pos = file_metadata.start_time;
++        MIX_SetTrackPlaybackPosition(music_track, (Sint64) (start * music_freq));
+     }
+     else
+     {
+-        Mix_HaltMusic();
++        MIX_StopTrack(music_track, 0);
+         current_track_music = NULL;
+         playing_substitute = false;
+     }
+@@ -1274,7 +1277,7 @@ static void I_SDL_PollMusic(void)
+         }
+ 
+         // Have we reached the actual end of track (not loop end)?
+-        if (!Mix_PlayingMusic() && current_track_loop)
++        if (!MIX_TrackPlaying(music_track) && current_track_loop)
+         {
+             RestartCurrentTrack();
+         }

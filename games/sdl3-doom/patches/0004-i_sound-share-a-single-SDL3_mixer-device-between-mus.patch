@@ -1,0 +1,332 @@
+From 586e123b3d64025739c6eef8e3f16c1091166150 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 9 Jun 2026 17:06:08 +0100
+Subject: [PATCH] i_sound: share a single SDL3_mixer device between music and
+ SFX
+
+The SDL2_mixer build opened one audio device with Mix_OpenAudio() that
+was shared by music and every sound effect channel. The port to the
+SDL3_mixer 3.2 MIX_* API instead created two independent mixers, one in
+i_sdlmusic.c (music_mixer) and one in i_sdlsound.c (sound_mixer), each
+via its own MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK).
+That opens two separate output streams on the default device and leaves
+both backends independently calling SDL_Init(SDL_INIT_AUDIO), MIX_Init()
+and, on shutdown, MIX_Quit() plus SDL_QuitSubSystem(); whichever backend
+shuts down first tears the mixer library out from under the other.
+
+Introduce a small reference-counted helper, i_sdlmixer, that owns one
+MIX_Mixer on the default playback device. Both backends acquire it on
+init and release it on shutdown, so the device, MIX_Init() and the audio
+subsystem are set up once and torn down once. Each backend keeps its own
+MIX_Track(s) on the shared mixer, which matches the canonical SDL3_mixer
+model of one mixer feeding many tracks.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ CMakeLists.txt       |  4 +-
+ include/i_sdlmixer.h | 29 +++++++++++++++
+ src/i_sdlmixer.c     | 87 ++++++++++++++++++++++++++++++++++++++++++++
+ src/i_sdlmusic.c     | 65 +++++++--------------------------
+ src/i_sdlsound.c     | 28 +++-----------
+ 5 files changed, 138 insertions(+), 75 deletions(-)
+ create mode 100644 include/i_sdlmixer.h
+ create mode 100644 src/i_sdlmixer.c
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,8 +12,8 @@ include_directories(${SDL3_MIXER_INCLUDE
+ add_definitions(-Wall -D_REENTRANT -D_THREAD_SAFE)
+ add_executable(sdl3-doom src/i_main.c src/dummy.c src/am_map.c src/doomdef.c src/doomstat.c src/dstrings.c src/d_event.c
+  src/d_items.c src/d_iwad.c src/d_loop.c src/d_main.c src/d_mode.c src/d_net.c src/f_finale.c src/f_wipe.c src/g_game.c src/hu_lib.c 
+- src/hu_stuff.c src/info.c src/i_cdmus.c src/i_endoom.c src/i_joystick.c src/i_scale.c src/i_sound.c src/i_sdlmusic.c  
+- src/i_sdlsound.c src/i_system.c src/i_timer.c src/i_input.c  src/i_video.c  src/mus2mid.c  src/memio.c src/m_argv.c 
++ src/hu_stuff.c src/info.c src/i_cdmus.c src/i_endoom.c src/i_joystick.c src/i_scale.c src/i_sound.c src/i_sdlmixer.c src/i_sdlmusic.c
++ src/i_sdlsound.c src/i_system.c src/i_timer.c src/i_input.c  src/i_video.c  src/mus2mid.c  src/memio.c src/m_argv.c
+  src/m_bbox.c src/m_cheat.c src/m_config.c src/m_controls.c src/m_fixed.c src/m_menu.c src/m_misc.c src/m_random.c 
+  src/p_ceilng.c src/p_doors.c src/p_enemy.c src/p_floor.c src/p_inter.c src/p_lights.c src/p_map.c src/p_maputl.c 
+  src/p_mobj.c src/p_plats.c src/p_pspr.c src/p_saveg.c src/p_setup.c src/p_sight.c src/p_spec.c src/p_switch.c 
+--- /dev/null
++++ b/include/i_sdlmixer.h
+@@ -0,0 +1,29 @@
++//
++// Copyright(C) 1993-1996 Id Software, Inc.
++// Copyright(C) 2005-2014 Simon Howard
++//
++// This program is free software; you can redistribute it and/or
++// modify it under the terms of the GNU General Public License
++// as published by the Free Software Foundation; either version 2
++// of the License, or (at your option) any later version.
++//
++// This program is distributed in the hope that it will be useful,
++// but WITHOUT ANY WARRANTY; without even the implied warranty of
++// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++// GNU General Public License for more details.
++//
++// DESCRIPTION:
++//	Shared SDL3_mixer device, used by both the music and sound
++//	effect backends.
++//
++
++#ifndef __I_SDLMIXER__
++#define __I_SDLMIXER__
++
++#include "SDL3_mixer/SDL_mixer.h"
++#include "doomtype.h"
++
++MIX_Mixer *I_SDLMixer_Acquire(void);
++void I_SDLMixer_Release(void);
++
++#endif
+--- /dev/null
++++ b/src/i_sdlmixer.c
+@@ -0,0 +1,87 @@
++//
++// Copyright(C) 1993-1996 Id Software, Inc.
++// Copyright(C) 2005-2014 Simon Howard
++//
++// This program is free software; you can redistribute it and/or
++// modify it under the terms of the GNU General Public License
++// as published by the Free Software Foundation; either version 2
++// of the License, or (at your option) any later version.
++//
++// This program is distributed in the hope that it will be useful,
++// but WITHOUT ANY WARRANTY; without even the implied warranty of
++// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++// GNU General Public License for more details.
++//
++// DESCRIPTION:
++//	Shared SDL3_mixer device, used by both the music and sound
++//	effect backends.
++//
++
++#include <stdio.h>
++
++#include "SDL3/SDL.h"
++#include "SDL3_mixer/SDL_mixer.h"
++
++#include "i_sdlmixer.h"
++#include "i_sound.h"
++
++static MIX_Mixer *shared_mixer = NULL;
++static int mixer_refcount = 0;
++
++MIX_Mixer *I_SDLMixer_Acquire(void)
++{
++    if (shared_mixer != NULL)
++    {
++        ++mixer_refcount;
++        return shared_mixer;
++    }
++
++    if (!SDL_Init(SDL_INIT_AUDIO))
++    {
++        fprintf(stderr, "Unable to set up sound.\n");
++        return NULL;
++    }
++
++    if (!MIX_Init())
++    {
++        fprintf(stderr, "Error initialising SDL3_mixer: %s\n", SDL_GetError());
++        SDL_QuitSubSystem(SDL_INIT_AUDIO);
++        return NULL;
++    }
++
++    const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, snd_samplerate};
++
++    shared_mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec);
++
++    if (shared_mixer == NULL)
++    {
++        fprintf(stderr, "Error initialising SDL3_mixer: %s\n", SDL_GetError());
++        MIX_Quit();
++        SDL_QuitSubSystem(SDL_INIT_AUDIO);
++        return NULL;
++    }
++
++    mixer_refcount = 1;
++
++    return shared_mixer;
++}
++
++void I_SDLMixer_Release(void)
++{
++    if (mixer_refcount <= 0)
++    {
++        return;
++    }
++
++    --mixer_refcount;
++
++    if (mixer_refcount > 0)
++    {
++        return;
++    }
++
++    MIX_DestroyMixer(shared_mixer);
++    shared_mixer = NULL;
++    MIX_Quit();
++    SDL_QuitSubSystem(SDL_INIT_AUDIO);
++}
+--- a/src/i_sdlmusic.c
++++ b/src/i_sdlmusic.c
+@@ -31,6 +31,7 @@
+ 
+ #include "deh_str.h"
+ #include "gusconf.h"
++#include "i_sdlmixer.h"
+ #include "i_sound.h"
+ #include "i_system.h"
+ #include "i_swap.h"
+@@ -102,11 +103,6 @@ static const char *subst_config_filename
+ 
+ static boolean music_initialized = false;
+ 
+-// If this is true, this module initialized SDL sound and has the 
+-// responsibility to shut it down
+-
+-static boolean sdl_was_initialized = false;
+-
+ static boolean musicpaused = false;
+ static int current_music_volume;
+ 
+@@ -856,24 +852,13 @@ static void I_SDL_ShutdownMusic(void)
+         MIX_StopTrack(music_track, 0);
+         music_initialized = false;
+ 
+-        if (sdl_was_initialized)
+-        {
+-            MIX_DestroyTrack(music_track);
+-            music_track = NULL;
+-            MIX_DestroyMixer(music_mixer);
+-            music_mixer = NULL;
+-            MIX_Quit();
+-            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+-            sdl_was_initialized = false;
+-        }
++        MIX_DestroyTrack(music_track);
++        music_track = NULL;
++        music_mixer = NULL;
++        I_SDLMixer_Release();
+     }
+ }
+ 
+-static boolean SDLIsInitialized(void)
+-{
+-    return music_mixer != NULL;
+-}
+-
+ // Initialize music subsystem
+ static boolean I_SDL_InitMusic(void)
+ {
+@@ -914,42 +899,20 @@ static boolean I_SDL_InitMusic(void)
+         DumpSubstituteConfig(myargv[i + 1]);
+     }
+ 
+-    // If SDL_mixer is not initialized, we have to initialize it
+-    // and have the responsibility to shut it down later on.
++    music_mixer = I_SDLMixer_Acquire();
+ 
+-    if (SDLIsInitialized())
+-    {
+-        music_initialized = true;
+-    }
+-    else
++    if (music_mixer != NULL)
+     {
+-        const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, 44100};
+-        if (!SDL_Init(SDL_INIT_AUDIO))
+-        {
+-            fprintf(stderr, "Unable to set up sound.\n");
+-        }
+-        else if (!MIX_Init())
+-        {
+-            fprintf(stderr, "Error initializing SDL3_mixer: %s\n",
+-                    SDL_GetError());
+-            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+-        }
+-        else if (!(music_mixer = MIX_CreateMixerDevice(
+-                       SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec)))
+-        {
+-            fprintf(stderr, "Error initializing SDL3_mixer: %s\n",
+-                    SDL_GetError());
+-            MIX_Quit();
+-            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+-        }
+-        else
++        SDL_AudioSpec spec;
++
++        music_track = MIX_CreateTrack(music_mixer);
++
++        if (MIX_GetMixerFormat(music_mixer, &spec))
+         {
+-            music_track = MIX_CreateTrack(music_mixer);
+             music_freq = spec.freq;
+-
+-            sdl_was_initialized = true;
+-            music_initialized = true;
+         }
++
++        music_initialized = true;
+     }
+ 
+     // Once initialization is complete, the temporary Timidity config
+--- a/src/i_sdlsound.c
++++ b/src/i_sdlsound.c
+@@ -32,6 +32,7 @@
+ #endif
+ 
+ #include "deh_str.h"
++#include "i_sdlmixer.h"
+ #include "i_sound.h"
+ #include "i_system.h"
+ #include "i_swap.h"
+@@ -957,10 +958,8 @@ static void I_SDL_ShutdownSound(void)
+         sound_tracks[i] = NULL;
+     }
+ 
+-    MIX_DestroyMixer(sound_mixer);
+     sound_mixer = NULL;
+-    MIX_Quit();
+-    SDL_QuitSubSystem(SDL_INIT_AUDIO);
++    I_SDLMixer_Release();
+ 
+     sound_initialized = false;
+ }
+@@ -978,33 +977,18 @@ static boolean I_SDL_InitSound(boolean _
+         channels_playing[i] = NULL;
+     }
+ 
+-    if (!SDL_Init(SDL_INIT_AUDIO))
+-    {
+-        fprintf(stderr, "Unable to set up sound.\n");
+-        return false;
+-    }
+-    const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, snd_samplerate};
+-
+-    if (!MIX_Init())
+-    {
+-        fprintf(stderr, "Error initialising SDL3_mixer: %s\n", SDL_GetError());
+-        return false;
+-    }
+-
+-    sound_mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec);
++    sound_mixer = I_SDLMixer_Acquire();
+ 
+     if (sound_mixer == NULL)
+     {
+-        fprintf(stderr, "Error initialising SDL3_mixer: %s\n", SDL_GetError());
+-        MIX_Quit();
+         return false;
+     }
+ 
+     ExpandSoundData = ExpandSoundData_SDL;
+ 
+-    mixer_freq = spec.freq;
+-    mixer_format = spec.format;
+-    mixer_channels = spec.channels;
++    mixer_freq = snd_samplerate;
++    mixer_format = SDL_AUDIO_S16;
++    mixer_channels = 2;
+ 
+ #ifdef HAVE_LIBSAMPLERATE
+     if (use_libsamplerate != 0)

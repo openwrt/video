@@ -1,0 +1,43 @@
+From d76f4e70fae478c139112f24d28a01e7f11769a4 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 9 Jun 2026 17:32:27 +0100
+Subject: [PATCH] build: enable FEATURE_SOUND so the SDL sound-effect module is
+ built
+
+The sound-effect backend (i_sdlsound.c, registered as sound_sdl_module)
+is compiled in only when FEATURE_SOUND is defined. The legacy makefiles
+pass -DFEATURE_SOUND, but the CMake build never did, so sound_modules[]
+was empty, I_SDL_InitSound() was never called and the game had no sound
+effects (only the music backend opened a device, which is hardcoded).
+
+Define FEATURE_SOUND in CMakeLists.txt to match the makefiles, and fix
+the now-compiled SDL_mixer include in i_sound.c to the SDL3_mixer path.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ CMakeLists.txt | 2 +-
+ src/i_sound.c  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -9,7 +9,7 @@ include_directories("/usr/local/include/
+ include_directories(${SDL3_INCLUDE_DIR})
+ include_directories(${SDL3_MIXER_INCLUDE_DIR})
+ 
+-add_definitions(-Wall -D_REENTRANT -D_THREAD_SAFE)
++add_definitions(-Wall -D_REENTRANT -D_THREAD_SAFE -DFEATURE_SOUND)
+ add_executable(sdl3-doom src/i_main.c src/dummy.c src/am_map.c src/doomdef.c src/doomstat.c src/dstrings.c src/d_event.c
+  src/d_items.c src/d_iwad.c src/d_loop.c src/d_main.c src/d_mode.c src/d_net.c src/f_finale.c src/f_wipe.c src/g_game.c src/hu_lib.c 
+  src/hu_stuff.c src/info.c src/i_cdmus.c src/i_endoom.c src/i_joystick.c src/i_scale.c src/i_sound.c src/i_sdlmixer.c src/i_sdlmusic.c
+--- a/src/i_sound.c
++++ b/src/i_sound.c
+@@ -19,7 +19,7 @@
+ #include <stdlib.h>
+ 
+ #ifdef FEATURE_SOUND
+-#include "SDL3/SDL_mixer.h"
++#include "SDL3_mixer/SDL_mixer.h"
+ #endif
+ 
+ #include "config.h"

@@ -1,0 +1,40 @@
+From b649f9423125f87f63c2cdf611327547526a35b9 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 9 Jun 2026 18:30:46 +0100
+Subject: [PATCH] build: change name to SDL3-Doom
+
+Replace stale reference to the SDL2-Doom name.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ include/config.h | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/include/config.h
++++ b/include/config.h
+@@ -70,13 +70,13 @@
+ #undef PACKAGE_BUGREPORT
+ 
+ /* Define to the full name of this package. */
+-#define PACKAGE_NAME "SDL2-Doom"
++#define PACKAGE_NAME "SDL3-Doom"
+ 
+ /* Define to the full name and version of this package. */
+-#define PACKAGE_STRING "SDL2-Doom"
++#define PACKAGE_STRING "SDL3-Doom"
+ 
+ /* Define to the one symbol short name of this package. */
+-#define PACKAGE_TARNAME "sdl2-doom.tar"
++#define PACKAGE_TARNAME "sdl3-doom.tar"
+ 
+ /* Define to the home page for this package. */
+ #define PACKAGE_URL ""
+@@ -85,7 +85,7 @@
+ #define PACKAGE_VERSION 0.1
+ 
+ /* Change this when you create your awesome forked version */
+-#define PROGRAM_PREFIX "sdl2-doom"
++#define PROGRAM_PREFIX "sdl3-doom"
+ 
+ /* Define to 1 if you have the ANSI C header files. */
+ #define STDC_HEADERS 1
