@@ -27,11 +27,13 @@ CMAKE_OPTIONS += \
 	-DSDL2IMAGE_INSTALL=ON \
 	-DSDL2IMAGE_VENDORED=OFF \
 	-DSDL2IMAGE_DEPS_SHARED=OFF \
-	-DSDL2IMAGE_BACKEND_STB=ON \
+	-DSDL2IMAGE_BACKEND_STB=OFF \
+	-DSDL2IMAGE_PNG=ON \
+	-DSDL2IMAGE_JPG=ON \
+	-DSDL2IMAGE_TIF=ON \
+	-DSDL2IMAGE_WEBP=ON \
 	-DSDL2IMAGE_AVIF=OFF \
-	-DSDL2IMAGE_JXL=OFF \
-	-DSDL2IMAGE_TIF=OFF \
-	-DSDL2IMAGE_WEBP=OFF
+	-DSDL2IMAGE_JXL=OFF
 
 define Build/InstallDev
 	$(call Build/InstallDev/cmake,$(1))
@@ -45,12 +47,12 @@ define Package/libsdl2-image
   CATEGORY:=Libraries
   TITLE:=SDL2 Image
   URL:=https://www.libsdl.org/
-  DEPENDS:=+libsdl2
+  DEPENDS:=+libsdl2 +libpng +libjpeg +libtiff +libwebp
 endef
 
 define Package/libsdl2-image/description
-  SDL_image is an image file loading library for SDL2. PNG and JPEG are
-  handled by the bundled stb_image backend, alongside built-in support for
+  SDL_image is an image file loading library for SDL2. PNG, JPEG, TIFF and
+  WebP are handled by libpng, libjpeg, libtiff and libwebp, alongside built-in support for
   BMP, GIF, LBM, PCX, PNM, QOI, SVG, TGA, XCF, XPM and XV.
 endef
 
