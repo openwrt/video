@@ -1,0 +1,183 @@
+From 27f9125b3975310b19a78b6b86801ce557a216ba Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <foss@mirko.in>
+Date: Sat, 18 Jul 2026 21:58:17 +0000
+Subject: [PATCH 1/6] drm: fix cold-start initialization
+
+On a display with no prior modeset (no fbcon/fbdev emulation, no
+firmware POST pass - e.g. a bootloader handing straight over to bare
+KMS), the drm platform failed to initialize:
+
+- The CRTC was picked only by matching an encoder's CURRENT binding
+  (encoder->crtc_id), which is 0 on cold start, aborting with "no crtc
+  for encoder found". Prefer the target connector's own encoders and
+  fall back to the first CRTC an encoder can drive (possible_crtcs).
+  This also fixes picking another output's encoder whose CRTC cannot
+  drive the chosen connector. Note that the incomplete display setup
+  resulting from the old selection is also what left e.g. radeon
+  DCE4.1's hardware cursor fetch uninitialized (cursor rendered as
+  garbage) - a full cold-start modeset cures that as well.
+
+- kms_screen_create() dereferenced con->modes[0] unconditionally; it
+  is NULL for disconnected/modeless connectors (any dual-output card
+  with one output unused), crashing at startup when the cursor is
+  enabled. A zeroed mode now marks the screen unusable.
+
+- init_cursor() used screens[0], which may be that dead connector;
+  pick the first usable screen. The initial cursor plane set may fail
+  while the CRTC is still off (first modeset happens at first frame
+  commit) - treat that as non-fatal, the pointer-motion handler
+  retries.
+
+Signed-off-by: Mirko Vogt <foss@mirko.in>
+---
+ platform/drm/cog-platform-drm.c | 75 ++++++++++++++++++++++++++-------
+ platform/drm/kms.c              | 12 ++++--
+ 2 files changed, 69 insertions(+), 18 deletions(-)
+
+diff --git a/platform/drm/cog-platform-drm.c b/platform/drm/cog-platform-drm.c
+index b9f28a8..da2c639 100644
+--- a/platform/drm/cog-platform-drm.c
++++ b/platform/drm/cog-platform-drm.c
+@@ -362,6 +362,15 @@ find_crtc_for_encoder(const drmModeRes *resources, const drmModeEncoder *encoder
+         }
+     }
+ 
++    /* Cold start: with no prior modeset (no fbcon/firmware POST) the
++     * encoder is bound to no CRTC yet (crtc_id == 0), so the match on
++     * the CURRENT binding above finds nothing. Fall back to the first
++     * CRTC this encoder can physically drive. */
++    for (int i = 0; i < resources->count_crtcs; i++) {
++        if (encoder->possible_crtcs & (1 << i))
++            return resources->crtcs[i];
++    }
++
+     /* no match found */
+     return -1;
+ }
+@@ -508,21 +517,35 @@ init_drm(void)
+             (long)((drm_data.mode - drm_data.connector.obj->modes) / sizeof(drmModeModeInfo *)), drm_data.mode->name,
+             drm_data.mode->vrefresh);
+ 
+-    /* Try the currently connected encoder+crtc */
+-    for (int i = 0; i < drm_data.base_resources->count_encoders; ++i) {
+-        drm_data.encoder = drmModeGetEncoder(drm_data.fd, drm_data.base_resources->encoders[i]);
+-        if (!drm_data.encoder) {
+-            /* cannot retrieve encoder, ignoring... */
++    /* Prefer THIS connector's own encoders: scanning all encoders can
++     * pick another output's encoder whose CRTC does not drive our
++     * connector. find_crtc_for_encoder() handles the cold-start case
++     * (no active CRTC binding yet) via its possible_crtcs fallback. */
++    for (int i = 0; i < drm_data.connector.obj->count_encoders && !drm_data.encoder; ++i) {
++        drmModeEncoder *enc = drmModeGetEncoder(drm_data.fd, drm_data.connector.obj->encoders[i]);
++        if (!enc)
+             continue;
++        const int32_t crtc_id = find_crtc_for_encoder(drm_data.base_resources, enc);
++        if (crtc_id != -1) {
++            drm_data.encoder = enc;
++            drm_data.crtc.obj_id = crtc_id;
++            break;
+         }
++        drmModeFreeEncoder(enc);
++    }
+ 
+-        const int32_t crtc_id = find_crtc_for_encoder(drm_data.base_resources, drm_data.encoder);
++    /* Last resort: any encoder that yields a CRTC. */
++    for (int i = 0; i < drm_data.base_resources->count_encoders && !drm_data.encoder; ++i) {
++        drmModeEncoder *enc = drmModeGetEncoder(drm_data.fd, drm_data.base_resources->encoders[i]);
++        if (!enc)
++            continue;
++        const int32_t crtc_id = find_crtc_for_encoder(drm_data.base_resources, enc);
+         if (crtc_id != -1) {
++            drm_data.encoder = enc;
+             drm_data.crtc.obj_id = crtc_id;
+             break;
+         }
+-
+-        g_clear_pointer (&drm_data.encoder, drmModeFreeEncoder);
++        drmModeFreeEncoder(enc);
+     }
+ 
+     if (!drm_data.encoder) {
+@@ -623,8 +646,10 @@ init_cursor (void)
+     }
+ 
+     cursor.device = kms_device_open(drm_data.fd);
+-    if (!cursor.device)
++    if (!cursor.device) {
++        g_warning("cursor: kms_device_open failed");
+         return FALSE;
++    }
+ 
+     cursor.plane = kms_device_find_plane_by_type(cursor.device, DRM_PLANE_TYPE_CURSOR, 0);
+     if (!cursor.plane) {
+@@ -640,21 +665,41 @@ init_cursor (void)
+ 
+     cursor.cursor = create_cursor_framebuffer(cursor.device, format);
+     if (!cursor.cursor) {
++        g_warning("cursor: framebuffer creation failed");
+         g_clear_pointer(&cursor.device, kms_device_free);
+         return FALSE;
+     }
+ 
+-    cursor.x = (cursor.device->screens[0]->width - cursor.cursor->width) / 2;
+-    cursor.y = (cursor.device->screens[0]->height - cursor.cursor->height) / 2;
+-    cursor.screen_width = cursor.device->screens[0]->width;
+-    cursor.screen_height = cursor.device->screens[0]->height;
+-
+-    if (kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y)) {
++    /* screens[0] may be a disconnected/modeless connector (e.g. the
++     * unused second output of a dual-output card) - pick the first
++     * usable screen instead. */
++    struct kms_screen *cursor_screen = NULL;
++    for (unsigned int i = 0; i < cursor.device->num_screens; i++) {
++        if (cursor.device->screens[i]->connected && cursor.device->screens[i]->width > 0) {
++            cursor_screen = cursor.device->screens[i];
++            break;
++        }
++    }
++    if (!cursor_screen) {
++        g_warning("cursor: no usable screen (num_screens %u)", cursor.device->num_screens);
+         g_clear_pointer(&cursor.device, kms_device_free);
+         g_clear_pointer(&cursor.cursor, kms_framebuffer_free);
+         return FALSE;
+     }
+ 
++    cursor.x = (cursor_screen->width - cursor.cursor->width) / 2;
++    cursor.y = (cursor_screen->height - cursor.cursor->height) / 2;
++    cursor.screen_width = cursor_screen->width;
++    cursor.screen_height = cursor_screen->height;
++
++    /* The CRTC is usually not lit yet at platform setup time - the
++     * renderer performs the first modeset on the first frame commit -
++     * so this initial cursor upload may fail (display still off). Not
++     * fatal: the pointer-motion handler retries on every move and
++     * succeeds once a mode is active. */
++    if (kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y))
++        g_message("cursor plane not set yet (display off?) - will appear on first pointer motion");
++
+     cursor.enabled = TRUE;
+ 
+     return TRUE;
+diff --git a/platform/drm/kms.c b/platform/drm/kms.c
+index 7b6d894..fe742f5 100644
+--- a/platform/drm/kms.c
++++ b/platform/drm/kms.c
+@@ -361,9 +361,15 @@ static void kms_screen_probe(struct kms_screen *screen)
+     else
+         screen->connected = false;
+ 
+-    memcpy(&screen->mode, &con->modes[0], sizeof(drmModeModeInfo));
+-    screen->width = screen->mode.hdisplay;
+-    screen->height = screen->mode.vdisplay;
++    /* Disconnected connectors (or connected ones without EDID) have no
++     * mode list - con->modes is NULL and count_modes 0. screen is
++     * calloc'd, so leaving mode/width/height zeroed marks the screen
++     * unusable instead of reading address 0. */
++    if (con->count_modes > 0 && con->modes) {
++        memcpy(&screen->mode, &con->modes[0], sizeof(drmModeModeInfo));
++        screen->width = screen->mode.hdisplay;
++        screen->height = screen->mode.vdisplay;
++    }
+ 
+     drmModeFreeConnector(con);
+ }

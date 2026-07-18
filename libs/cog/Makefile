@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cog
 PKG_VERSION:=0.18.5
-PKG_RELEASE:=1
+PKG_RELEASE:=9
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
@@ -44,7 +44,18 @@ libcogcore is a library with ready-to-use components typically needed
 for implementing applications which use the WPE WebKit API.
 endef
 
+# every meson option of this release pinned explicitly, so a version
+# bump cannot silently change the platform set or defaults
 MESON_ARGS += \
+	-Dplugin_path=/usr/lib/cog/modules \
+	-Dplatforms=drm,headless,wayland \
+	-Dprograms=true \
+	-Dwpe_api=2.0 \
+	-Dlibmanette=enabled \
+	-Dwayland_weston_direct_display=false \
+	-Dwayland_weston_content_protection=false \
+	-Dcog_appid=com.igalia.Cog \
+	-Dcog_home_uri= \
 	-Dcog_dbus_control=system \
 	-Dcog_dbus_system_owner=cog \
 	-Ddocumentation=false \

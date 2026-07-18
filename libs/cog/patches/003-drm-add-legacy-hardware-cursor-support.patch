@@ -1,0 +1,182 @@
+From 605a5f42d1e449d33c22200d7bbbbf9698eae639 Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <foss@mirko.in>
+Date: Sat, 18 Jul 2026 21:58:17 +0000
+Subject: [PATCH 3/6] drm: add legacy hardware cursor support, fix cursor image
+
+Legacy (non-atomic) drivers - radeon, older nouveau - expose no
+universal cursor plane, only primary planes, so the plane-based cursor
+could never work there. Fall back to drmModeSetCursor()/
+drmModeMoveCursor() on the CRTC, re-uploading on pointer motion since a
+modeset silently disables the legacy cursor with no notification.
+
+The cursor image also rendered wrong on hardware cursors:
+
+- Several drivers only display cursor buffers of exactly the size
+  advertised by DRM_CAP_CURSOR_WIDTH/HEIGHT (typically 64x64) and read
+  tightly packed rows regardless of the BO's (aligned) pitch. Allocate
+  64x64 and place the image top-left with a fixed 64-pixel stride.
+
+- KMS blending expects premultiplied alpha; the image data is straight
+  alpha. Premultiply during conversion - otherwise pixels with color >
+  alpha wash out additively and only the dark outline stays visible.
+
+Signed-off-by: Mirko Vogt <foss@mirko.in>
+---
+ platform/drm/cog-platform-drm.c | 41 ++++++++++++++++++++++++++----
+ platform/drm/cursor-drm.c       | 44 ++++++++++++++++++++++++---------
+ 2 files changed, 69 insertions(+), 16 deletions(-)
+
+diff --git a/platform/drm/cog-platform-drm.c b/platform/drm/cog-platform-drm.c
+index da2c639..1d46ba4 100644
+--- a/platform/drm/cog-platform-drm.c
++++ b/platform/drm/cog-platform-drm.c
+@@ -163,6 +163,8 @@ static struct {
+ 
+ static struct {
+     gboolean enabled;
++    gboolean legacy; /* no universal cursor plane: drmModeSetCursor path */
++    gboolean armed;  /* legacy cursor uploaded to the CRTC */
+     struct kms_device *device;
+     struct kms_plane *plane;
+     struct kms_framebuffer *cursor;
+@@ -631,6 +633,8 @@ choose_format (struct kms_plane *plane)
+ 
+ static void
+ clear_cursor (void) {
++    if (cursor.legacy && cursor.armed)
++        drmModeSetCursor(drm_data.fd, drm_data.crtc.obj_id, 0, 0, 0);
+     g_clear_pointer(&cursor.cursor, kms_framebuffer_free);
+     g_clear_pointer(&cursor.device, kms_device_free);
+     cursor.plane = NULL;
+@@ -653,12 +657,15 @@ init_cursor (void)
+ 
+     cursor.plane = kms_device_find_plane_by_type(cursor.device, DRM_PLANE_TYPE_CURSOR, 0);
+     if (!cursor.plane) {
+-        g_clear_pointer(&cursor.device, kms_device_free);
+-        return FALSE;
++        /* Legacy (non-atomic) drivers - radeon, older nouveau - expose no
++         * universal cursor plane; their hardware cursor is driven with
++         * drmModeSetCursor()/drmModeMoveCursor() on the CRTC instead. */
++        cursor.legacy = TRUE;
+     }
+ 
+-    uint32_t format = choose_format(cursor.plane);
++    uint32_t format = cursor.legacy ? DRM_FORMAT_ARGB8888 : choose_format(cursor.plane);
+     if (!format) {
++        g_warning("cursor: no supported plane format");
+         g_clear_pointer(&cursor.device, kms_device_free);
+         return FALSE;
+     }
+@@ -697,7 +704,14 @@ init_cursor (void)
+      * so this initial cursor upload may fail (display still off). Not
+      * fatal: the pointer-motion handler retries on every move and
+      * succeeds once a mode is active. */
+-    if (kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y))
++    if (cursor.legacy) {
++        if (drmModeSetCursor(drm_data.fd, drm_data.crtc.obj_id, cursor.cursor->handle,
++                             cursor.cursor->width, cursor.cursor->height) == 0) {
++            cursor.armed = TRUE;
++            drmModeMoveCursor(drm_data.fd, drm_data.crtc.obj_id, cursor.x, cursor.y);
++        } else
++            g_message("legacy cursor not set yet (display off?) - will appear on first pointer motion");
++    } else if (kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y))
+         g_message("cursor plane not set yet (display off?) - will appear on first pointer motion");
+ 
+     cursor.enabled = TRUE;
+@@ -940,7 +954,24 @@ input_handle_pointer_motion_event(struct libinput_event_pointer *pointer_event,
+     };
+ 
+     wpe_view_backend_dispatch_pointer_event(wpe_view_data.backend, &event);
+-    kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y);
++    if (cursor.legacy) {
++        /* Re-upload on every motion: a modeset (the renderer's first
++         * frame commit, a mode change) silently disables the legacy
++         * hardware cursor, and there is no notification - MoveCursor
++         * alone would move an invisible cursor forever. */
++        static gboolean logged = FALSE;
++        int sret = drmModeSetCursor(drm_data.fd, drm_data.crtc.obj_id, cursor.cursor->handle,
++                                    cursor.cursor->width, cursor.cursor->height);
++        int mret = drmModeMoveCursor(drm_data.fd, drm_data.crtc.obj_id, cursor.x, cursor.y);
++        if (!logged) {
++            g_message("legacy cursor: SetCursor=%d MoveCursor=%d (crtc %u, handle %u, %ux%u, pos %u,%u)",
++                      sret, mret, drm_data.crtc.obj_id, cursor.cursor->handle,
++                      cursor.cursor->width, cursor.cursor->height, cursor.x, cursor.y);
++            logged = TRUE;
++        }
++        cursor.armed = (sret == 0);
++    } else
++        kms_plane_set(cursor.plane, cursor.cursor, cursor.x, cursor.y);
+ }
+ 
+ static void
+diff --git a/platform/drm/cursor-drm.c b/platform/drm/cursor-drm.c
+index 3e715f5..c1db9a2 100644
+--- a/platform/drm/cursor-drm.c
++++ b/platform/drm/cursor-drm.c
+@@ -52,8 +52,17 @@ static uint32_t convert_rgba_to_pixel_format(uint32_t rgba_pixel, uint32_t forma
+             return rgba_pixel;
+ 
+         case DRM_FORMAT_ARGB8888: {
++            /* KMS blending (hardware cursors included) expects
++             * PREMULTIPLIED alpha; the cursor image data is straight
++             * alpha. Without premultiplication every pixel whose color
++             * exceeds its alpha blends additively and washes out - on a
++             * light page only the black outline stays visible, reducing
++             * the arrow to a thin dotted line. */
+             uint8_t alpha = rgba_pixel & 0xff;
+-            return (alpha << 24) + (rgba_pixel >> 8);
++            uint8_t r = ((rgba_pixel >> 24) & 0xff) * alpha / 255;
++            uint8_t g = ((rgba_pixel >> 16) & 0xff) * alpha / 255;
++            uint8_t b = ((rgba_pixel >> 8) & 0xff) * alpha / 255;
++            return ((uint32_t) alpha << 24) | ((uint32_t) r << 16) | ((uint32_t) g << 8) | b;
+         }
+ 
+         default:
+@@ -66,7 +75,12 @@ struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uin
+     struct kms_framebuffer *fb;
+     uint32_t *buf;
+ 
+-    fb = kms_framebuffer_create(device, CURSOR_WIDTH, CURSOR_HEIGHT, format);
++    /* Hardware cursors on several drivers (radeon in particular) only
++     * display buffers of exactly the size advertised by
++     * DRM_CAP_CURSOR_WIDTH/HEIGHT - typically 64x64. Smaller uploads are
++     * accepted by the ioctl but shown as nothing. Allocate 64x64 and
++     * blit the cursor image into the top-left corner, rest transparent. */
++    fb = kms_framebuffer_create(device, 64, 64, format);
+     if (!fb)
+         return NULL;
+ 
+@@ -75,16 +89,24 @@ struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uin
+ 
+     int index;
+     uint32_t pixel;
++    /* The legacy cursor engine ignores the BO's pitch and always reads
++     * tightly packed WIDTHx4-byte rows (radeon aligns dumb-buffer
++     * pitches far wider, e.g. 256 pixels - writing with that pitch
++     * smears the image into a dotted vertical line). Lay the pixels
++     * out with the hardware's fixed 64-pixel stride. */
++    unsigned int stride_px = 64;
+ 
+-    for (int row = 0; row < fb->height; row++) {
+-        for (int column = 0; column < fb->width; column++) {
+-            index = (row * fb->width * 4) + (column * 4);
+-            pixel = (cursorData[index] << 24) +
+-                    (cursorData[index + 1] << 16) +
+-                    (cursorData[index + 2] << 8) +
+-                    cursorData[index + 3];
+-
+-            *buf++ = convert_rgba_to_pixel_format(pixel, format);
++    for (unsigned int row = 0; row < fb->height; row++) {
++        for (unsigned int column = 0; column < stride_px; column++) {
++            if (row < CURSOR_HEIGHT && column < CURSOR_WIDTH) {
++                index = (row * CURSOR_WIDTH * 4) + (column * 4);
++                pixel = (cursorData[index] << 24) +
++                        (cursorData[index + 1] << 16) +
++                        (cursorData[index + 2] << 8) +
++                        cursorData[index + 3];
++                buf[row * stride_px + column] = convert_rgba_to_pixel_format(pixel, format);
++            } else
++                buf[row * stride_px + column] = 0;
+         }
+     }
+ 
