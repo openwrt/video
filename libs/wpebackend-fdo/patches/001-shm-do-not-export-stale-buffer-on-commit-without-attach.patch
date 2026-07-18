@@ -1,0 +1,78 @@
+From 38cbc2156017aaabd1a176b15dc660c820676a4c Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <foss@mirko.in>
+Date: Sat, 18 Jul 2026 21:58:31 +0000
+Subject: [PATCH] ws: do not export a stale buffer on a commit without attach
+
+Surface::shmBuffer (and, in the EGL implementation, also dmabufBuffer)
+is set at wl_surface.attach and was never cleared: a commit without a
+fresh attach - e.g. one issued only for frame-callback pacing -
+re-exported the previous buffer pointer. Once the client had destroyed
+that buffer after its release, the embedder received a dangling
+wl_shm_buffer whose metadata reads as garbage (observed as negative
+width/stride crashing cog's drm renderer copy loop).
+
+Consume the attached buffer state at commit and export nothing when no
+buffer was attached. Apply to both ImplSHM and ImplEGL - the code is
+duplicated between ws-shm.cpp and ws-egl.cpp.
+
+Signed-off-by: Mirko Vogt <foss@mirko.in>
+---
+ src/ws-egl.cpp | 18 ++++++++++++++----
+ src/ws-shm.cpp | 15 +++++++++++++--
+ 2 files changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/src/ws-egl.cpp b/src/ws-egl.cpp
+index 76d6194..b44e64c 100644
+--- a/src/ws-egl.cpp
++++ b/src/ws-egl.cpp
+@@ -102,10 +102,20 @@ void ImplEGL::surfaceCommit(Surface& surface)
+     struct wl_resource* bufferResource = surface.bufferResource;
+     surface.bufferResource = nullptr;
+ 
+-    if (surface.dmabufBuffer)
+-        surface.apiClient->exportLinuxDmabuf(surface.dmabufBuffer);
+-    else if (surface.shmBuffer)
+-        surface.apiClient->exportShmBuffer(bufferResource, surface.shmBuffer);
++    // Consume the buffer state (see ws-shm.cpp): stale dmabuf/shm pointers
++    // must never be re-exported on a commit without a fresh attach.
++    const struct linux_dmabuf_buffer* dmabufBuffer = surface.dmabufBuffer;
++    surface.dmabufBuffer = nullptr;
++    struct wl_shm_buffer* shmBuffer = surface.shmBuffer;
++    surface.shmBuffer = nullptr;
++
++    if (!bufferResource)
++        return;
++
++    if (dmabufBuffer)
++        surface.apiClient->exportLinuxDmabuf(dmabufBuffer);
++    else if (shmBuffer)
++        surface.apiClient->exportShmBuffer(bufferResource, shmBuffer);
+     else
+         surface.apiClient->exportBufferResource(bufferResource);
+ }
+diff --git a/src/ws-shm.cpp b/src/ws-shm.cpp
+index fb6b0ba..7f730a8 100644
+--- a/src/ws-shm.cpp
++++ b/src/ws-shm.cpp
+@@ -47,8 +47,19 @@ void ImplSHM::surfaceCommit(Surface& surface)
+     struct wl_resource* bufferResource = surface.bufferResource;
+     surface.bufferResource = nullptr;
+ 
+-    if (surface.shmBuffer)
+-        surface.apiClient->exportShmBuffer(bufferResource, surface.shmBuffer);
++    // Consume the buffer state: it belongs to the buffer attached for THIS
++    // commit. Leaving it set would re-export a stale - and, once the client
++    // destroyed the released buffer, dangling - pointer on a commit that
++    // did not attach a new buffer (e.g. a commit issued only for
++    // frame-callback pacing), handing the embedder garbage metadata.
++    struct wl_shm_buffer* shmBuffer = surface.shmBuffer;
++    surface.shmBuffer = nullptr;
++
++    if (!bufferResource)
++        return;
++
++    if (shmBuffer)
++        surface.apiClient->exportShmBuffer(bufferResource, shmBuffer);
+     else
+         surface.apiClient->exportBufferResource(bufferResource);
+ }
