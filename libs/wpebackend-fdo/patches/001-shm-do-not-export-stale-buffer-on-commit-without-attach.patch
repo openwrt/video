@@ -21,11 +21,9 @@ Signed-off-by: Mirko Vogt <foss@mirko.in>
  src/ws-shm.cpp | 15 +++++++++++++--
  2 files changed, 27 insertions(+), 6 deletions(-)
 
-diff --git a/src/ws-egl.cpp b/src/ws-egl.cpp
-index 76d6194..b44e64c 100644
 --- a/src/ws-egl.cpp
 +++ b/src/ws-egl.cpp
-@@ -102,10 +102,20 @@ void ImplEGL::surfaceCommit(Surface& surface)
+@@ -102,10 +102,20 @@ void ImplEGL::surfaceCommit(Surface& sur
      struct wl_resource* bufferResource = surface.bufferResource;
      surface.bufferResource = nullptr;
  
@@ -50,11 +48,9 @@ index 76d6194..b44e64c 100644
      else
          surface.apiClient->exportBufferResource(bufferResource);
  }
-diff --git a/src/ws-shm.cpp b/src/ws-shm.cpp
-index fb6b0ba..7f730a8 100644
 --- a/src/ws-shm.cpp
 +++ b/src/ws-shm.cpp
-@@ -47,8 +47,19 @@ void ImplSHM::surfaceCommit(Surface& surface)
+@@ -47,8 +47,19 @@ void ImplSHM::surfaceCommit(Surface& sur
      struct wl_resource* bufferResource = surface.bufferResource;
      surface.bufferResource = nullptr;
  
