@@ -1,21 +1,33 @@
---- a/Source/JavaScriptCore/wasm/WasmBBQJIT.h
-+++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.h
-@@ -2032,6 +2032,12 @@ public:
-     template<typename Args>
-     void saveValuesAcrossCallAndPassArguments(const Args& arguments, const CallInformation& callInfo, const TypeDefinition& signature);
- 
-+    // On RISC-V the psABI requires 32-bit integer arguments to be sign-extended
-+    // in their 64-bit argument registers; BBQ otherwise zero-extends them when
-+    // loading from canonical i32 slots (lwu). Emit sext.w on any I32 arg that
-+    // ends up in a register. No-op on other architectures.
-+    void emitSignExtendI32ArgsForCCall(const CallInformation& callInfo, const TypeDefinition& signature);
-+
-     void slowPathSpillBindings(const RegisterBindings& bindings);
-     void slowPathRestoreBindings(const RegisterBindings&);
-     void restoreValuesAfterCall(const CallInformation& callInfo);
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 9 May 2026 01:37:44 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64: sign-extend i32 ccall args in BBQJIT
+
+On RISC-V the lp64d psABI requires 32-bit integer arguments to be
+sign-extended in their 64-bit argument registers by the caller. BBQ's
+saveValuesAcrossCallAndPassArguments otherwise leaves them
+zero-extended when loading from canonical i32 slots (lwu), which
+callees compiled under the psABI assumption (e.g. GCC-compiled C
+helpers doing a signed comparison) misread.
+
+Add BBQJIT::emitSignExtendI32ArgsForCCall(), which walks the call's
+I32 arguments and emits sext.w (via signExtend32To64) on any that
+ended up in a register; a no-op on other architectures. Call it from
+both emitCCall overloads in WasmBBQJIT64.h, right after arguments are
+placed and before the call is materialised.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/wasm/WasmBBQJIT.cpp | 20 ++++++++++++++++++++
+ Source/JavaScriptCore/wasm/WasmBBQJIT.h   |  6 ++++++
+ Source/JavaScriptCore/wasm/WasmBBQJIT64.h |  2 ++
+ 3 files changed, 28 insertions(+)
+
+diff --git a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
+index a210845f..785792a5 100644
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
-@@ -4286,6 +4286,26 @@ void BBQJIT::restoreValuesAfterCall(cons
+@@ -4298,6 +4298,26 @@ void BBQJIT::restoreValuesAfterCall(const CallInformation& callInfo)
      // whenever they are next used.
  }
  
@@ -42,9 +54,28 @@
  template<size_t N>
  void BBQJIT::returnValuesFromCall(Vector<Value, N>& results, const FunctionSignature& functionType, const CallInformation& callInfo)
  {
+diff --git a/Source/JavaScriptCore/wasm/WasmBBQJIT.h b/Source/JavaScriptCore/wasm/WasmBBQJIT.h
+index 2e23ad7d..db872fa1 100644
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.h
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.h
+@@ -2034,6 +2034,12 @@ public:
+     template<typename Args>
+     void saveValuesAcrossCallAndPassArguments(const Args& arguments, const CallInformation& callInfo, const TypeDefinition& signature);
+ 
++    // On RISC-V the psABI requires 32-bit integer arguments to be sign-extended
++    // in their 64-bit argument registers; BBQ otherwise zero-extends them when
++    // loading from canonical i32 slots (lwu). Emit sext.w on any I32 arg that
++    // ends up in a register. No-op on other architectures.
++    void emitSignExtendI32ArgsForCCall(const CallInformation& callInfo, const TypeDefinition& signature);
++
+     void slowPathSpillBindings(const RegisterBindings& bindings);
+     void slowPathRestoreBindings(const RegisterBindings&);
+     void restoreValuesAfterCall(const CallInformation& callInfo);
+diff --git a/Source/JavaScriptCore/wasm/WasmBBQJIT64.h b/Source/JavaScriptCore/wasm/WasmBBQJIT64.h
+index a42391b8..01ae6061 100644
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.h
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.h
-@@ -505,6 +505,7 @@ void BBQJIT::emitCCall(Func function, co
+@@ -506,6 +506,7 @@ void BBQJIT::emitCCall(Func function, const Vector<Value, N>& arguments)
      // Preserve caller-saved registers and other info
      prepareForExceptions();
      saveValuesAcrossCallAndPassArguments(arguments, callInfo, *functionType);
@@ -52,7 +83,7 @@
  
      // Materialize address of native function and call register
      void* taggedFunctionPtr = tagCFunctionPtr<void*, OperationPtrTag>(function);
-@@ -534,6 +535,7 @@ void BBQJIT::emitCCall(Func function, co
+@@ -535,6 +536,7 @@ void BBQJIT::emitCCall(Func function, const Vector<Value, N>& arguments, Value&
      // Preserve caller-saved registers and other info
      prepareForExceptions();
      saveValuesAcrossCallAndPassArguments(arguments, callInfo, *functionType);
@@ -60,3 +91,6 @@
  
      // Materialize address of native function and call register
      void* taggedFunctionPtr = tagCFunctionPtr<void*, OperationPtrTag>(function);
+-- 
+2.55.0
+
