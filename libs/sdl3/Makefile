@@ -16,7 +16,7 @@ PKG_LICENSE_FILES:=LICENSE.txt
 
 CMAKE_INSTALL:=1
 PKG_CONFIG_DEPENDS:=CONFIG_PACKAGE_libsdl3-tests
-PKG_BUILD_DEPENDS:=wayland/host libwayland wayland-protocols libxkbcommon
+PKG_BUILD_DEPENDS:=wayland/host wayland wayland-protocols libxkbcommon
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
