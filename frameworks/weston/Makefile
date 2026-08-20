@@ -1,13 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=weston
-PKG_RELEASE:=2
+PKG_RELEASE:=1
 
-PKG_VERSION:=15.0.1
+PKG_VERSION:=16.0.0
 PKG_MAJOR_VERSION:=$(firstword $(subst .,$(space),$(PKG_VERSION)))
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/$(PKG_NAME)/-/releases/$(PKG_VERSION)/downloads/
-PKG_HASH:=551d039bfb0c837ba5a4d027cdb8ee16bded0eedb789821f8025d8a64b791f6d
+PKG_HASH:=dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
@@ -45,7 +45,7 @@ MESON_ARGS += \
 	-Dxwayland=false \
 	-Dcolor-management-lcms=false \
 	-Dsystemd=false \
-	-Dpipewire=false \
+	-Ddeprecated-pipewire=false \
 	-Dtest-junit-xml=false \
 	-Ddemo-clients=true \
 	-Drenderer-gl=true \
@@ -53,7 +53,7 @@ MESON_ARGS += \
 	-Dshell-ivi=true \
 	-Dshell-kiosk=true \
 	-Dshell-lua=false \
-	-Dremoting=false \
+	-Ddeprecated-remoting=false \
 	-Dimage-jpeg=true \
 	-Dimage-webp=true \
 	-Dtools=calibrator,debug,info,terminal,touch-calibrator \
