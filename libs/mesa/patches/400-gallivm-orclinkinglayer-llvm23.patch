@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 17 Sep 2026 12:00:00 +0100
+Subject: [PATCH] gallivm: adapt the ObjectLinkingLayer creator to LLVM 23
+
+LLVM 23 changed LLJITBuilderState::ObjectLinkingLayerCreator to take
+the JITLinkMemoryManager that LLJIT itself owns instead of leaving the
+creator to provide one, so the existing lambda no longer converts and
+the build fails on targets without MCJIT support, such as riscv64.
+Select a third lambda for LLVM 23 and later which forwards that memory
+manager to the ObjectLinkingLayer.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+--- a/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
+@@ -341,14 +341,21 @@ LPJit::LPJit() :jit_dylib_count(0) {
+          .setJITTargetMachineBuilder(std::move(JTMB))
+ #ifdef USE_JITLINK
+          .setObjectLinkingLayerCreator(
+-#if LLVM_VERSION_MAJOR >= 21
++#if LLVM_VERSION_MAJOR >= 23
++            /* LLVM 23 passes in the memory manager owned by the LLJIT */
++            [&](ExecutionSession &ES,
++                llvm::jitlink::JITLinkMemoryManager &MemMgr) {
++               return std::make_unique<ObjectLinkingLayer>(ES, MemMgr);
++#elif LLVM_VERSION_MAJOR >= 21
+             /* LLVM 21 removed the Triple argument */
+             [&](ExecutionSession &ES) {
++               return std::make_unique<ObjectLinkingLayer>(
++                  ES, ExitOnErr(llvm::jitlink::InProcessMemoryManager::Create()));
+ #else
+             [&](ExecutionSession &ES, const llvm::Triple &TT) {
+-#endif
+                return std::make_unique<ObjectLinkingLayer>(
+                   ES, ExitOnErr(llvm::jitlink::InProcessMemoryManager::Create()));
++#endif
+             })
+ #else
+ #if LLVM_USE_INTEL_JITEVENTS
