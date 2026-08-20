@@ -1,3 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 9 May 2026 01:37:16 +0100
+Subject: [PATCH] teflon: make linked NPU driver dependencies conditional
+
+libteflon unconditionally linked driver_etnaviv, driver_rocket and
+driver_ethosu, even when the corresponding gallium driver is disabled,
+causing a link failure. Build the dependency list conditionally on
+with_gallium_etnaviv/with_gallium_rocket/with_gallium_ethosu instead.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/gallium/targets/teflon/meson.build | 19 ++++++++++++-------
+ 1 file changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/src/gallium/targets/teflon/meson.build b/src/gallium/targets/teflon/meson.build
+index fa8b9c4..a82c13f 100644
 --- a/src/gallium/targets/teflon/meson.build
 +++ b/src/gallium/targets/teflon/meson.build
 @@ -1,3 +1,14 @@
@@ -30,3 +47,6 @@
    install : true,
  )
  
+-- 
+2.55.0
+

@@ -1,6 +1,7 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Date: Mon, 25 May 2026 22:00:00 +0100
-Subject: zink: allow KMS-only display fd to fall through to default
+Date: Tue, 26 May 2026 01:55:36 +0100
+Subject: [PATCH] zink: allow KMS-only display fd to fall through to default
  Vulkan device selection
 
 When MESA_LOADER_DRIVER_OVERRIDE=zink is used with a GBM device created
@@ -16,9 +17,16 @@ whichever ICD vkEnumeratePhysicalDevices() reports first (PowerVR on
 JH7110).  Cross-device dma-buf import via VK_KHR_external_memory_fd
 takes care of getting the rendered frame onto the display controller.
 
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/gallium/drivers/zink/zink_screen.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/gallium/drivers/zink/zink_screen.c b/src/gallium/drivers/zink/zink_screen.c
+index c11c6a2..2ef6527 100644
 --- a/src/gallium/drivers/zink/zink_screen.c
 +++ b/src/gallium/drivers/zink/zink_screen.c
-@@ -3862,10 +3862,15 @@ zink_render_rdev(int fd, int64_t *dev_ma
+@@ -3882,10 +3882,15 @@ zink_render_rdev(int fd, int64_t *dev_major, int64_t *dev_minor)
     if (drmGetDevice2(fd, 0, &dev))
        return -1;
  
@@ -37,3 +45,6 @@ takes care of getting the rendered frame onto the display controller.
  
     if(stat(dev->nodes[DRM_NODE_RENDER], &stx)) {
        ret = -1;
+-- 
+2.55.0
+
