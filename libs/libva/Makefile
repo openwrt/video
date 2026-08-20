@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libva
-PKG_VERSION:=2.23.0
+PKG_VERSION:=2.24.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/intel/$(PKG_NAME)/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=b10aceb30e93ddf13b2030eb70079574ba437be9b3b76065caf28a72c07e23e7
+PKG_HASH:=0b4a3649ee8d683b9cce2ef094df4fb039d276c0cef7e49337c43d3b297b9f42
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
