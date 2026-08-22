@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sdl3
 PKG_VERSION:=3.4.10
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=SDL3-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://github.com/libsdl-org/SDL/releases/download/release-$(PKG_VERSION)/
@@ -16,7 +16,7 @@ PKG_LICENSE_FILES:=LICENSE.txt
 
 CMAKE_INSTALL:=1
 PKG_CONFIG_DEPENDS:=CONFIG_PACKAGE_libsdl3-tests
-PKG_BUILD_DEPENDS:=wayland/host libwayland wayland-protocols libxkbcommon
+PKG_BUILD_DEPENDS:=wayland/host wayland-protocols libxkbcommon
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
