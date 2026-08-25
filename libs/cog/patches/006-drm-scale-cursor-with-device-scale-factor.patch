@@ -1,0 +1,245 @@
+From 98e57b5bab834054cf75999f77777cc76ae98e65 Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <foss@mirko.in>
+Date: Sat, 18 Jul 2026 21:58:17 +0000
+Subject: [PATCH 6/6] drm: scale the cursor with the device scale factor
+
+The cursor is drawn at the fixed physical size of its 16x16 artwork,
+so on a scaled view (--device-scale) it shrinks relative to everything
+else - at 2x it looks half its intended size.
+
+Enlarge the artwork by the device scale factor (nearest neighbour,
+rounded to the nearest integer) when building the cursor: up to 4x for
+the hardware cursor, bounded by its 64x64 buffer, and the same factor
+for the modeset renderer's composited software cursor, whose buffers
+are sized for the maximum.
+
+Signed-off-by: Mirko Vogt <foss@mirko.in>
+---
+ platform/drm/cog-drm-modeset-renderer.c | 24 ++++++++-----
+ platform/drm/cog-drm-renderer.h         |  3 +-
+ platform/drm/cog-platform-drm.c         | 14 ++++++--
+ platform/drm/cursor-drm.c               | 46 ++++++++++++++++++-------
+ platform/drm/cursor-drm.h               | 11 ++++--
+ 5 files changed, 71 insertions(+), 27 deletions(-)
+
+diff --git a/platform/drm/cog-drm-modeset-renderer.c b/platform/drm/cog-drm-modeset-renderer.c
+index 761bde0..c620f97 100644
+--- a/platform/drm/cog-drm-modeset-renderer.c
++++ b/platform/drm/cog-drm-modeset-renderer.c
+@@ -107,12 +107,17 @@ typedef struct {
+         drmModePropertyRes     **props_info;
+     } connector_props, crtc_props, plane_props;
+ 
+-    /* Software cursor: composited into the scanout dumb buffer. */
++    /* Software cursor: composited into the scanout dumb buffer.
++     * size is the (square) cursor edge in pixels - the 16x16 artwork
++     * times the device scale factor; buffers hold the maximum. */
+     struct {
+         bool           enabled;
+         int            x, y;
+-        uint32_t       image[COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_SIZE];
+-        uint32_t       saved[COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_SIZE];
++        int            size;
++        uint32_t       image[COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_MAX_SCALE *
++                             COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_MAX_SCALE];
++        uint32_t       saved[COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_MAX_SCALE *
++                             COG_DRM_CURSOR_IMAGE_SIZE * COG_DRM_CURSOR_IMAGE_MAX_SCALE];
+         struct gbm_bo *drawn_bo; /* cursor currently painted on this bo */
+         int            drawn_x, drawn_y, drawn_w, drawn_h;
+         gint64         last_move_us;
+@@ -141,7 +146,7 @@ sw_cursor_restore(CogDrmModesetRenderer *self)
+         return;
+     for (int r = 0; r < self->sw_cursor.drawn_h; r++)
+         memcpy((uint8_t *) map + (self->sw_cursor.drawn_y + r) * stride + self->sw_cursor.drawn_x * 4,
+-               self->sw_cursor.saved + r * COG_DRM_CURSOR_IMAGE_SIZE,
++               self->sw_cursor.saved + r * self->sw_cursor.size,
+                self->sw_cursor.drawn_w * 4);
+     gbm_bo_unmap(bo, map);
+ }
+@@ -152,7 +157,7 @@ sw_cursor_paint(CogDrmModesetRenderer *self, struct gbm_bo *bo)
+     if (!self->sw_cursor.enabled || !bo)
+         return;
+ 
+-    const int S = COG_DRM_CURSOR_IMAGE_SIZE;
++    const int S = self->sw_cursor.size;
+     int bw = gbm_bo_get_width(bo), bh = gbm_bo_get_height(bo);
+     int x = self->sw_cursor.x, y = self->sw_cursor.y;
+     if (x < 0) x = 0;
+@@ -196,11 +201,14 @@ sw_cursor_paint(CogDrmModesetRenderer *self, struct gbm_bo *bo)
+ }
+ 
+ bool
+-cog_drm_modeset_renderer_sw_cursor_enable(CogDrmRenderer *renderer, unsigned *screen_w, unsigned *screen_h)
++cog_drm_modeset_renderer_sw_cursor_enable(CogDrmRenderer *renderer, unsigned scale, unsigned *screen_w,
++                                          unsigned *screen_h)
+ {
+     CogDrmModesetRenderer *self = (CogDrmModesetRenderer *) renderer;
+ 
+-    cog_drm_cursor_image_argb_premult(self->sw_cursor.image);
++    scale = CLAMP(scale, 1, COG_DRM_CURSOR_IMAGE_MAX_SCALE);
++    self->sw_cursor.size = COG_DRM_CURSOR_IMAGE_SIZE * scale;
++    cog_drm_cursor_image_argb_premult(self->sw_cursor.image, scale);
+     self->sw_cursor.enabled = true;
+     self->sw_cursor.x = self->mode.hdisplay / 2;
+     self->sw_cursor.y = self->mode.vdisplay / 2;
+@@ -241,7 +249,7 @@ cog_drm_modeset_renderer_sw_cursor_move(CogDrmRenderer *renderer, int x, int y)
+     if (!bo)
+         return;
+ 
+-    const int S = COG_DRM_CURSOR_IMAGE_SIZE;
++    const int S = self->sw_cursor.size;
+     int bw = gbm_bo_get_width(bo), bh = gbm_bo_get_height(bo);
+     uint32_t stride = 0;
+     void    *map = NULL;
+diff --git a/platform/drm/cog-drm-renderer.h b/platform/drm/cog-drm-renderer.h
+index 46cf748..2791313 100644
+--- a/platform/drm/cog-drm-renderer.h
++++ b/platform/drm/cog-drm-renderer.h
+@@ -68,7 +68,8 @@ CogDrmRenderer *cog_drm_modeset_renderer_new(struct gbm_device     *dev,
+ /* Software cursor, modeset renderer only: composited into the scanout
+  * buffer (hardware cursors are broken on some display blocks, e.g.
+  * radeon DCE4.1 - see RADEON_DCE41_CURSOR_NOTES). */
+-bool cog_drm_modeset_renderer_sw_cursor_enable(CogDrmRenderer *, unsigned *screen_w, unsigned *screen_h);
++bool cog_drm_modeset_renderer_sw_cursor_enable(CogDrmRenderer *, unsigned scale, unsigned *screen_w,
++                                               unsigned *screen_h);
+ void cog_drm_modeset_renderer_sw_cursor_move(CogDrmRenderer *, int x, int y);
+ 
+ CogDrmRenderer *cog_drm_gles_renderer_new(struct gbm_device     *dev,
+diff --git a/platform/drm/cog-platform-drm.c b/platform/drm/cog-platform-drm.c
+index 8220ddd..2946f0f 100644
+--- a/platform/drm/cog-platform-drm.c
++++ b/platform/drm/cog-platform-drm.c
+@@ -643,6 +643,16 @@ clear_cursor (void) {
+     cursor.plane = NULL;
+ }
+ 
++static unsigned
++cursor_scale (void)
++{
++    /* Track the view's device scale factor (init_config ran before any
++     * cursor setup) so the pointer keeps its apparent size next to the
++     * scaled UI; nearest integer, bounded by the 64x64 cursor buffer. */
++    unsigned scale = (unsigned) (drm_data.device_scale + 0.5);
++    return CLAMP(scale, 1, COG_DRM_CURSOR_IMAGE_MAX_SCALE);
++}
++
+ static gboolean
+ init_cursor (void)
+ {
+@@ -673,7 +683,7 @@ init_cursor (void)
+         return FALSE;
+     }
+ 
+-    cursor.cursor = create_cursor_framebuffer(cursor.device, format);
++    cursor.cursor = create_cursor_framebuffer(cursor.device, format, cursor_scale());
+     if (!cursor.cursor) {
+         g_warning("cursor: framebuffer creation failed");
+         g_clear_pointer(&cursor.device, kms_device_free);
+@@ -1548,7 +1558,7 @@ cog_drm_platform_setup(CogPlatform *platform, CogShell *shell, const char *param
+     if (cursor_env && strcmp (cursor_env, "sw") == 0) {
+         if (g_strcmp0 (self->renderer->name, "modeset") == 0) {
+             unsigned scr_w = 0, scr_h = 0;
+-            if (cog_drm_modeset_renderer_sw_cursor_enable (self->renderer, &scr_w, &scr_h)) {
++            if (cog_drm_modeset_renderer_sw_cursor_enable (self->renderer, cursor_scale(), &scr_w, &scr_h)) {
+                 cursor.software = TRUE;
+                 cursor.enabled = TRUE;
+                 cursor.screen_width = scr_w;
+diff --git a/platform/drm/cursor-drm.c b/platform/drm/cursor-drm.c
+index abe086e..de54e29 100644
+--- a/platform/drm/cursor-drm.c
++++ b/platform/drm/cursor-drm.c
+@@ -71,25 +71,42 @@ static uint32_t convert_rgba_to_pixel_format(uint32_t rgba_pixel, uint32_t forma
+     }
+ }
+ 
+-void cog_drm_cursor_image_argb_premult(uint32_t *dst)
++static unsigned clamp_cursor_scale(unsigned scale)
+ {
+-    for (int i = 0; i < CURSOR_WIDTH * CURSOR_HEIGHT; i++) {
+-        uint8_t r = cursorData[i * 4 + 0];
+-        uint8_t g = cursorData[i * 4 + 1];
+-        uint8_t b = cursorData[i * 4 + 2];
+-        uint8_t a = cursorData[i * 4 + 3];
+-        r = (uint16_t) r * a / 255;
+-        g = (uint16_t) g * a / 255;
+-        b = (uint16_t) b * a / 255;
+-        dst[i] = ((uint32_t) a << 24) | ((uint32_t) r << 16) | ((uint32_t) g << 8) | b;
++    if (scale < 1)
++        return 1;
++    if (scale > COG_DRM_CURSOR_IMAGE_MAX_SCALE)
++        return COG_DRM_CURSOR_IMAGE_MAX_SCALE;
++    return scale;
++}
++
++void cog_drm_cursor_image_argb_premult(uint32_t *dst, unsigned scale)
++{
++    scale = clamp_cursor_scale(scale);
++    const unsigned size = CURSOR_WIDTH * scale;
++
++    for (unsigned y = 0; y < size; y++) {
++        for (unsigned x = 0; x < size; x++) {
++            unsigned i = (y / scale) * CURSOR_WIDTH + (x / scale);
++            uint8_t r = cursorData[i * 4 + 0];
++            uint8_t g = cursorData[i * 4 + 1];
++            uint8_t b = cursorData[i * 4 + 2];
++            uint8_t a = cursorData[i * 4 + 3];
++            r = (uint16_t) r * a / 255;
++            g = (uint16_t) g * a / 255;
++            b = (uint16_t) b * a / 255;
++            dst[y * size + x] = ((uint32_t) a << 24) | ((uint32_t) r << 16) | ((uint32_t) g << 8) | b;
++        }
+     }
+ }
+ 
+-struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uint32_t format)
++struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uint32_t format, unsigned scale)
+ {
+     struct kms_framebuffer *fb;
+     uint32_t *buf;
+ 
++    scale = clamp_cursor_scale(scale);
++
+     /* Hardware cursors on several drivers (radeon in particular) only
+      * display buffers of exactly the size advertised by
+      * DRM_CAP_CURSOR_WIDTH/HEIGHT - typically 64x64. Smaller uploads are
+@@ -112,10 +129,13 @@ struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uin
+      * out with the hardware's fixed 64-pixel stride. */
+     unsigned int stride_px = 64;
+ 
++    /* Nearest-neighbour upscale of the 16x16 artwork: a hardware cursor
++     * has a fixed physical size, so it must grow with the view's device
++     * scale factor or it dwarfs next to the scaled UI. */
+     for (unsigned int row = 0; row < fb->height; row++) {
+         for (unsigned int column = 0; column < stride_px; column++) {
+-            if (row < CURSOR_HEIGHT && column < CURSOR_WIDTH) {
+-                index = (row * CURSOR_WIDTH * 4) + (column * 4);
++            if (row < CURSOR_HEIGHT * scale && column < CURSOR_WIDTH * scale) {
++                index = ((row / scale) * CURSOR_WIDTH * 4) + ((column / scale) * 4);
+                 pixel = (cursorData[index] << 24) +
+                         (cursorData[index + 1] << 16) +
+                         (cursorData[index + 2] << 8) +
+diff --git a/platform/drm/cursor-drm.h b/platform/drm/cursor-drm.h
+index 763069b..fe112ec 100644
+--- a/platform/drm/cursor-drm.h
++++ b/platform/drm/cursor-drm.h
+@@ -5,12 +5,17 @@
+ #include "kms.h"
+ #include <stdint.h>
+ 
+-struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uint32_t format);
++/* scale enlarges the 16x16 cursor artwork (nearest-neighbour) so it keeps
++ * pace with the view's device scale factor; the 64x64 hardware cursor
++ * buffer bounds it to 4. */
++struct kms_framebuffer *create_cursor_framebuffer(struct kms_device *device, uint32_t format, unsigned scale);
+ 
+ /* The built-in cursor image as premultiplied ARGB8888, for renderers
+  * that composite a software cursor (broken hardware cursors exist,
+- * see RADEON_DCE41_CURSOR_NOTES). dst must hold SIZE*SIZE pixels. */
++ * see RADEON_DCE41_CURSOR_NOTES). dst must hold (SIZE*scale)^2 pixels,
++ * scale in [1, MAX_SCALE]. */
+ #define COG_DRM_CURSOR_IMAGE_SIZE 16
+-void cog_drm_cursor_image_argb_premult(uint32_t *dst);
++#define COG_DRM_CURSOR_IMAGE_MAX_SCALE 4
++void cog_drm_cursor_image_argb_premult(uint32_t *dst, unsigned scale);
+ 
+ #endif //COG_CURSOR_DRM_H
