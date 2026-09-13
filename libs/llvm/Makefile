@@ -2,6 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=llvm-project
 PKG_VERSION:=22.1.5
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).src.tar.xz
 PKG_SOURCE_URL:=https://github.com/llvm/llvm-project/releases/download/llvmorg-$(PKG_VERSION)
@@ -89,6 +90,8 @@ else
 ifeq ($(ARCH),i686)
   LLVM_TARGETS_TO_BUILD:=X86
 else
+TARGET_LDFLAGS += $(if $(CONFIG_HAS_ATOMIC64),,-latomic)
+
 ifeq ($(ARCH),x86_64)
   LLVM_TARGETS_TO_BUILD:=X86
 else
@@ -106,7 +109,6 @@ ifneq ($(findstring loongarch,$(ARCH)),)
 else
 ifneq ($(findstring mips,$(ARCH)),)
   LLVM_TARGETS_TO_BUILD:=Mips
-  TARGET_LDFLAGS+=-latomic
 else
 ifneq ($(findstring powerpc,$(ARCH)),)
   LLVM_TARGETS_TO_BUILD:=PowerPC
@@ -174,7 +176,7 @@ define Package/llvm
   CATEGORY:=Development
   TITLE:=LLVM
   URL:=https://llvm.org/
-  DEPENDS:=@(!arc&&!powerpc64&&!powerpc||BROKEN)
+  DEPENDS:=@(!powerpc64&&!powerpc||BROKEN)
   BUILDONLY:=1
 endef
 
@@ -187,7 +189,7 @@ define Package/libclang
   CATEGORY:=Libraries
   TITLE:=LLVM Clang library
   URL:=https://llvm.org/
-  DEPENDS:=@(!arc&&!powerpc64&&!powerpc||BROKEN) +libatomic +libstdcpp
+  DEPENDS:=@(!powerpc64&&!powerpc||BROKEN) $(ATOMIC64_DEPENDS) +libstdcpp
 endef
 
 define Package/libclang-cpp
@@ -195,7 +197,7 @@ define Package/libclang-cpp
   CATEGORY:=Libraries
   TITLE:=LLVM Clang C++ library
   URL:=https://llvm.org/
-  DEPENDS:=@(!arc&&!powerpc64&&!powerpc||BROKEN) +libatomic +libstdcpp
+  DEPENDS:=@(!powerpc64&&!powerpc||BROKEN) $(ATOMIC64_DEPENDS) +libstdcpp
 endef
 
 define Package/liblto
@@ -203,7 +205,7 @@ define Package/liblto
   CATEGORY:=Libraries
   TITLE:=LLVM LTO library
   URL:=https://llvm.org/
-  DEPENDS:=@(!arc&&!powerpc64&&!powerpc||BROKEN) +libatomic +libstdcpp
+  DEPENDS:=@(!powerpc64&&!powerpc||BROKEN) $(ATOMIC64_DEPENDS) +libstdcpp
 endef
 
 define Package/libremarks
@@ -211,7 +213,7 @@ define Package/libremarks
   CATEGORY:=Libraries
   TITLE:=LLVM diagnostic remarks library
   URL:=https://llvm.org/
-  DEPENDS:=@(!arc&&!powerpc64&&!powerpc||BROKEN) +libatomic +libstdcpp
+  DEPENDS:=@(!powerpc64&&!powerpc||BROKEN) $(ATOMIC64_DEPENDS) +libstdcpp
 endef
 
 define Host/Prepare
