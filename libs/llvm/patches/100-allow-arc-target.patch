@@ -1,6 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 25 Nov 2024 22:34:54 +0100
+Subject: [PATCH] cmake: recognise arc as a native target architecture
+
+LLVM_NATIVE_ARCH is derived from the host triple, so an ARC host ends
+up unmapped and the native target is left unset. Map it to the ARC
+backend the same way the other architectures are mapped.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ llvm/cmake/config-ix.cmake | 2 ++
+ 1 file changed, 2 insertions(+)
+
 --- a/llvm/cmake/config-ix.cmake
 +++ b/llvm/cmake/config-ix.cmake
-@@ -555,6 +555,8 @@ elseif (LLVM_NATIVE_ARCH MATCHES "aarch6
+@@ -560,6 +560,8 @@ elseif (LLVM_NATIVE_ARCH MATCHES "aarch6
    set(LLVM_NATIVE_ARCH AArch64)
  elseif (LLVM_NATIVE_ARCH MATCHES "arm64")
    set(LLVM_NATIVE_ARCH AArch64)
