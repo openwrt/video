@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland
 PKG_VERSION:=1.26.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/wayland/-/releases/$(PKG_VERSION)/downloads/
@@ -76,8 +76,6 @@ define Package/libwayland/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so.* $(1)/usr/lib/
 	$(INSTALL_DIR) $(1)/etc/profile.d
 	$(INSTALL_DATA) ./files/xdg-runtime-dir.profile $(1)/etc/profile.d/xdr-runtime-dir.sh
-	$(INSTALL_DIR) $(1)/etc/hotplug.d/drm
-	$(INSTALL_BIN) ./files/video.hotplug $(1)/etc/hotplug.d/drm/wayland
 endef
 
 define Package/wayland-scanner/install
