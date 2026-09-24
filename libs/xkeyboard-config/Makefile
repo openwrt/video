@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkeyboard-config
 PKG_VERSION:=2.45
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://www.x.org/releases/individual/data/$(PKG_NAME)/
@@ -40,6 +40,12 @@ endef
 
 define Package/xkeyboard-config/description
   The non-arch keyboard configuration database for X Window.
+endef
+
+define Build/InstallDev
+	$(INSTALL_DIR) $(1)/usr/share/pkgconfig
+	$(CP) $(PKG_INSTALL_DIR)/usr/share/pkgconfig/xkeyboard-config*.pc \
+		$(1)/usr/share/pkgconfig/
 endef
 
 define Package/xkeyboard-config/install
