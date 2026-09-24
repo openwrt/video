@@ -1,0 +1,59 @@
+From 9c89ed3cbf208c61faa4df2323b018c95db32787 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 21:01:33 +0100
+Subject: [PATCH] font: build the unifont generator only when unifont is
+ enabled
+
+genunifont and the custom target that runs it sit outside the
+enable_font_unifont guard, so they are built even when the unifont
+backend is disabled. The generator is a native executable and pulls in
+zlib for the build machine, which fails a cross build whose pkg-config
+answers for the host with the target's library:
+
+  ld: staging_dir/target-.../usr/lib/libz.so: error adding symbols:
+  file in wrong format
+
+Nothing outside the unifont module uses either of them, so move both
+inside the guard.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/font/meson.build | 26 ++++++++++++++------------
+ 1 file changed, 14 insertions(+), 12 deletions(-)
+
+--- a/src/font/meson.build
++++ b/src/font/meson.build
+@@ -20,19 +20,21 @@ font_deps = declare_dependency(
+ # Unifont Generator
+ # This generates the unifont sources from raw hex-encoded font data.
+ #
+-genunifont = executable(
+-    'genunifont',
+-    'genunifont.c',
+-    dependencies: [zlib_deps_native],
+-    native: true,
+-)
++if enable_font_unifont
++    genunifont = executable(
++        'genunifont',
++        'genunifont.c',
++        dependencies: [zlib_deps_native],
++        native: true,
++    )
+ 
+-unifont_bin = custom_target(
+-    'unifont-bin',
+-    input: ['font_unifont_data.hex'],
+-    output: ['font_unifont_data'],
+-    command: [genunifont, '@OUTPUT@', '@INPUT@'],
+-)
++    unifont_bin = custom_target(
++        'unifont-bin',
++        input: ['font_unifont_data.hex'],
++        output: ['font_unifont_data'],
++        command: [genunifont, '@OUTPUT@', '@INPUT@'],
++    )
++endif
+ 
+ #
+ # Fonts Modules

@@ -1,0 +1,35 @@
+From 69f643f87db21db2820ead3efff8f08c712fa2dc Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 22:43:44 +0100
+Subject: [PATCH] drm: treat a node without resources as having no displays
+
+A render-only drm node has neither crtcs nor connectors, and
+drmModeGetResources returns NULL for it. The hotplug path logged that
+as an error and returned -EACCES, and since it runs from the poll
+handler the result was a tight error loop: on an rk3588, where panthor
+takes card0 and the display controller card1, kmscon wrote 776 error
+lines in eighty seconds while the console itself worked fine on card1.
+
+Such a node simply has no displays to offer, so say so once at debug
+level and carry on.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/video/drm_shared.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/src/video/drm_shared.c
++++ b/src/video/drm_shared.c
+@@ -1462,8 +1462,10 @@ int drm_video_hotplug(struct video *vide
+ 
+ 	res = drmModeGetResources(vdrm->fd);
+ 	if (!res) {
+-		log_err("cannot retrieve drm resources");
+-		return -EACCES;
++		/* A render-only node carries no crtcs or connectors. */
++		log_debug("no drm resources on %s, no displays here",
++			  vdrm->name);
++		return 0;
+ 	}
+ 
+ 	shl_dlist_for_each(iter, &video->displays)
