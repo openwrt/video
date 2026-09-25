@@ -1,0 +1,72 @@
+#!/bin/sh /etc/rc.common
+
+START=11
+STOP=06
+
+PIDFILE=/var/run/plymouth.pid
+
+running() {
+	/usr/bin/plymouth --ping 2>/dev/null
+}
+
+boot() {
+	start "$@"
+}
+
+start() {
+	# The KMS device is not always card0; a render-only node can
+	# enumerate first.
+	ls /dev/dri/card* >/dev/null 2>&1 || return 0
+	running && return 0
+
+	# plymouth only draws a graphical splash when the kernel was asked
+	# for one, and requiring that of every board's boot script would put
+	# a plymouth-ism in front of everyone. Ask for it here instead.
+	# Where the console is a serial port plymouth drops to text on it
+	# and never opens a renderer, so leave those alone.
+	/usr/sbin/plymouthd --mode=boot --pid-file="$PIDFILE" \
+		--ignore-serial-consoles --attach-to-session \
+		--kernel-command-line="$(cat /proc/cmdline) splash" || return 1
+	/usr/bin/plymouth show-splash
+}
+
+# Give the display up without going away. The daemon keeps the device
+# open and the mode configured, so whatever draws next inherits a live
+# crtc, and the splash can return later without a second modeset.
+release() {
+	running || return 0
+	/usr/bin/plymouth deactivate
+}
+
+stop() {
+	running || return 0
+	/usr/bin/plymouth quit --retain-splash
+	rm -f "$PIDFILE"
+}
+
+# procd runs the K scripts as "shutdown", so this is the start of that
+# sequence rather than the end. Take the display back from whoever has
+# it, reusing the daemon that has been there since boot.
+shutdown() {
+	ls /dev/dri/card* >/dev/null 2>&1 || return 0
+	[ -x /usr/sbin/plymouthd ] || return 0
+
+	if running; then
+		/usr/bin/plymouth reactivate
+		/usr/bin/plymouth change-mode --shutdown
+		/usr/bin/plymouth show-splash
+		return 0
+	fi
+
+	/usr/sbin/plymouthd --mode=shutdown --pid-file="$PIDFILE" \
+		--ignore-serial-consoles \
+		--kernel-command-line="$(cat /proc/cmdline) splash" || return 0
+	/usr/bin/plymouth show-splash
+}
+
+reload() {
+	/usr/bin/plymouth update --status=reload
+}
+
+EXTRA_COMMANDS="release"
+EXTRA_HELP="	release	Drop the display but keep the daemon running"

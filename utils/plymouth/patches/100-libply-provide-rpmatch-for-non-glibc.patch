@@ -1,0 +1,42 @@
+From dd1ec1448548beee9b9c6a6b1a627580a087b179 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 21:07:31 +0100
+Subject: [PATCH] libply: provide rpmatch where the C library lacks it
+
+rpmatch() is a GNU extension. Building against musl fails with an
+implicit declaration, and the call is only used to read a yes or no
+answer for a boolean command line option, so a plain first-letter test
+covers what the parser needs.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/libply/ply-command-parser.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+--- a/src/libply/ply-command-parser.c
++++ b/src/libply/ply-command-parser.c
+@@ -32,6 +32,24 @@
+ #include "ply-list.h"
+ #include "ply-utils.h"
+ 
++#ifndef __GLIBC__
++/* rpmatch() is a GNU extension; the C library need not provide it. */
++static int
++rpmatch (const char *response)
++{
++        if (response == NULL)
++                return -1;
++
++        if (response[0] == 'y' || response[0] == 'Y')
++                return 1;
++
++        if (response[0] == 'n' || response[0] == 'N')
++                return 0;
++
++        return -1;
++}
++#endif
++
+ typedef union
+ {
+         bool  as_boolean;

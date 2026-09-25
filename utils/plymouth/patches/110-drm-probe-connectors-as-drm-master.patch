@@ -1,0 +1,105 @@
+From 0cdc68b17ed3290a233e699dc31e973650b216ee Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Fri, 25 Sep 2026 11:22:40 +0100
+Subject: [PATCH] drm: Probe connectors while holding DRM master
+
+The DRM renderer drops master immediately after opening the device and
+takes it back only when the splash is activated, so the connector
+enumeration in query_device () runs as a client that is not DRM master.
+
+The kernel refuses a forced probe from such a client and returns the
+cached connection status instead:
+
+  User-space requested a forced probe on [CONNECTOR:84:HDMI-A-1] but is
+  not the DRM master, demoting to read-only probe
+
+On a display nothing has driven yet that status is unknown, so no output
+counts as connected, no controller is assigned, and the renderer gives
+up with "Could not initialize heads". The splash therefore appears only
+on a screen that some other client has already lit, which on a system
+without fbdev emulation never happens.
+
+This commit holds master for the duration of the connector enumeration,
+dropping it again unless the backend was already active. The probe then
+detects for real, reads the EDID and brings up a sink that had gone to
+low power. On an rk3588 board with no other DRM client running, this
+takes the HDMI connector from unknown to connected at 1920x1080.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/plugins/renderers/drm/plugin.c | 57 ++++++++++++++++++++++--------
+ 1 file changed, 43 insertions(+), 14 deletions(-)
+
+--- a/src/plugins/renderers/drm/plugin.c
++++ b/src/plugins/renderers/drm/plugin.c
+@@ -1421,6 +1421,46 @@ check_simpledrm_resolution (ply_renderer
+         return true;
+ }
+ 
++/* Probe every connector, holding DRM master so the kernel performs a real
++ * detect rather than handing back the cached connection status.
++ */
++static bool
++probe_outputs (ply_renderer_backend_t *backend,
++               ply_output_t           *outputs,
++               int                     outputs_len,
++               bool                    force,
++               bool                   *changed)
++{
++        bool was_master;
++        bool ret = true;
++        int i;
++
++        was_master = backend->is_active;
++        if (!was_master)
++                drmSetMaster (backend->device_fd);
++
++        backend->connected_count = 0;
++        for (i = 0; i < outputs_len; i++) {
++                get_output_info (backend, backend->resources->connectors[i], &outputs[i]);
++
++                if (!force && !check_simpledrm_resolution (backend, &outputs[i])) {
++                        ret = false;
++                        break;
++                }
++
++                if (check_if_output_has_changed (backend, &outputs[i]))
++                        *changed = true;
++
++                if (outputs[i].connected)
++                        backend->connected_count++;
++        }
++
++        if (!was_master)
++                drmDropMaster (backend->device_fd);
++
++        return ret;
++}
++
+ /* Update our outputs array to match the hardware state and
+  * create and/or remove heads as necessary.
+  * Returns true if any heads were modified.
+@@ -1447,20 +1487,9 @@ create_heads_for_active_connectors (ply_
+         outputs = calloc (backend->resources->count_connectors, sizeof(*outputs));
+         outputs_len = backend->resources->count_connectors;
+ 
+-        backend->connected_count = 0;
+-        for (i = 0; i < outputs_len; i++) {
+-                get_output_info (backend, backend->resources->connectors[i], &outputs[i]);
+-
+-                if (!force && !check_simpledrm_resolution (backend, &outputs[i])) {
+-                        free (outputs);
+-                        return false;
+-                }
+-
+-                if (check_if_output_has_changed (backend, &outputs[i]))
+-                        changed = true;
+-
+-                if (outputs[i].connected)
+-                        backend->connected_count++;
++        if (!probe_outputs (backend, outputs, outputs_len, force, &changed)) {
++                free (outputs);
++                return false;
+         }
+ 
+         /* Step 2:

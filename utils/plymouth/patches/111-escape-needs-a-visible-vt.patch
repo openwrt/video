@@ -1,0 +1,122 @@
+From 7d73b0fd2746cd24c758dd75fc73ac92b5162d0b Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Fri, 25 Sep 2026 13:20:37 +0100
+Subject: [PATCH] Ignore the escape key when the VT shows nothing
+
+Escape toggles between the splash and the details view, guarded on
+there being a VT console to show the details on. The guard asks only
+whether the local console terminal is a VT, which it is whenever the
+kernel has CONFIG_VT and a /dev/tty1 node exists, even where no console
+driver draws that VT.
+
+On a system built without a framebuffer console that leaves only the
+dummy driver bound, so escape blanks the screen: the splash is torn
+down, the details view writes to a VT nobody renders, and the display
+stays dark until escape is pressed again.
+
+Require a bound console driver other than the dummy one before treating
+a VT as somewhere the details view can be read.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/main.c | 68 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 68 insertions(+)
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -36,6 +36,7 @@
+ #include <assert.h>
+ #include <values.h>
+ #include <locale.h>
++#include <string.h>
+ 
+ #include <linux/kd.h>
+ #include <linux/vt.h>
+@@ -56,6 +57,7 @@
+ #include "ply-progress.h"
+ #include "ply-kmsg-reader.h"
+ 
++#define VT_CONSOLE_DIRECTORY "/sys/class/vtconsole"
+ #define BOOT_DURATION_FILE     PLYMOUTH_TIME_DIRECTORY "/boot-duration"
+ #define SHUTDOWN_DURATION_FILE PLYMOUTH_TIME_DIRECTORY "/shutdown-duration"
+ 
+@@ -1638,6 +1640,70 @@ toggle_between_splash_and_details (state
+         }
+ }
+ 
++static bool
++vt_console_driver_draws (const char *directory)
++{
++        char path[PATH_MAX];
++        char name[64];
++        FILE *file;
++        bool draws;
++
++        snprintf (path, sizeof(path), "%s/bind", directory);
++        file = fopen (path, "r");
++
++        if (file == NULL)
++                return false;
++
++        draws = (fgetc (file) == '1');
++        fclose (file);
++
++        if (!draws)
++                return false;
++
++        snprintf (path, sizeof(path), "%s/name", directory);
++        file = fopen (path, "r");
++
++        if (file == NULL)
++                return false;
++
++        if (fgets (name, sizeof(name), file) == NULL)
++                name[0] = '\0';
++
++        fclose (file);
++
++        return strstr (name, "dummy") == NULL;
++}
++
++/* The dummy console driver puts nothing on screen, so a VT it is the only
++ * driver for cannot show the details view.
++ */
++static bool
++vt_console_is_visible (void)
++{
++        char directory[PATH_MAX];
++        struct dirent *entry;
++        bool visible = false;
++        DIR *consoles;
++
++        consoles = opendir (VT_CONSOLE_DIRECTORY);
++
++        if (consoles == NULL)
++                return true;
++
++        while (!visible && (entry = readdir (consoles)) != NULL) {
++                if (strncmp (entry->d_name, "vtcon", strlen ("vtcon")) != 0)
++                        continue;
++
++                snprintf (directory, sizeof(directory), "%s/%s",
++                          VT_CONSOLE_DIRECTORY, entry->d_name);
++                visible = vt_console_driver_draws (directory);
++        }
++
++        closedir (consoles);
++
++        return visible;
++}
++
+ static void
+ on_escape_pressed (state_t *state)
+ {
+@@ -1647,6 +1713,8 @@ on_escape_pressed (state_t *state)
+         if (state->local_console_terminal != NULL) {
+                 if (!ply_terminal_is_vt (state->local_console_terminal))
+                         has_vt_consoles = false;
++                else if (!vt_console_is_visible ())
++                        has_vt_consoles = false;
+         } else {
+                 has_vt_consoles = false;
+         }
