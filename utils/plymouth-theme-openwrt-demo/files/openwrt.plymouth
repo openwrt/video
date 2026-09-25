@@ -1,0 +1,9 @@
+[Plymouth Theme]
+Name=OpenWrt demo
+Description=A network graph growing and carrying the boot, drawn in ucode
+ModuleName=ucode
+
+[ucode]
+ScriptFile=/usr/share/plymouth/themes/openwrt-demo/openwrt.uc
+ThemeDir=/usr/share/plymouth/themes/openwrt-demo
+FrameRate=30
