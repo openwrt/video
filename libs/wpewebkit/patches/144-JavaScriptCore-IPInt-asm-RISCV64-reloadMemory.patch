@@ -1,11 +1,28 @@
+From 4ea88cc5db943eb84b1194a7dc5dcbe849c43c46 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: handle RISCV64 in ipintReloadMemory
+
+ipintReloadMemory() reloads the cached memory base and bounds-checking
+size, using a paired load on ARM64 and two separate loads on X86_64. Any
+other architecture falls through the if without loading anything, leaving
+both registers stale.
+
+RISC-V has no load-pair instruction, so reuse the X86_64 path.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/llint/InPlaceInterpreter.asm | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
-@@ -328,7 +328,7 @@ end
- macro ipintReloadMemory()
+@@ -429,7 +429,7 @@ end
+ macro ipintReloadMemory(scratch)
      if ARM64 or ARM64E
-         loadpairq JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase, boundsCheckingSize
+         loadpairq constexpr (JSWebAssemblyInstance::offsetOfCachedMemoryBaseSizePair(0))[wasmInstance], memoryBase, boundsCheckingSize
 -    elsif X86_64
 +    elsif X86_64 or RISCV64
-         loadp JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase
-         loadp JSWebAssemblyInstance::m_cachedBoundsCheckingSize[wasmInstance], boundsCheckingSize
+         loadp constexpr (JSWebAssemblyInstance::offsetOfCachedMemoryBaseSizePair(0))[wasmInstance], memoryBase
+         loadp constexpr (JSWebAssemblyInstance::offsetOfCachedMemoryBaseSizePair(0) + 8)[wasmInstance], boundsCheckingSize
      end

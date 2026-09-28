@@ -1,0 +1,39 @@
+From 7844e9c773b0382cc1cd939d9a3cddc74b753d26 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 10:03:52 +0100
+Subject: [PATCH] WebKit: resolve WebCore headers reached by bare name
+
+WebCore stages its private headers as a flat directory of symlinks into
+the source tree. A WebCore header reached from WebKit therefore resolves
+its own siblings by bare name against the directory it really lives in,
+not against that flat directory.
+
+WebKitPrefix.h reaches GStreamerCommon.h through SharedBuffer.h, and it
+includes "GraphicsTypesGL.h", which sits one level up in
+platform/graphics. Nothing on WebKit's include path covers either
+directory, so the prefix header fails to compile as a translation unit
+of its own, which is what building it as a precompiled header does.
+
+Add the flat private header directory to WebKit's include path. It goes
+last: WebKit has its own headers with the same names as some WebCore
+ones, WebGPUSupportedFeatures.h among them, and those must keep winning.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebKit/CMakeLists.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/Source/WebKit/CMakeLists.txt
++++ b/Source/WebKit/CMakeLists.txt
+@@ -131,6 +131,11 @@ set(WebKit_PRIVATE_INCLUDE_DIRECTORIES
+     "${WEBKIT_DIR}/WebProcess/XR"
+     "${CMAKE_SOURCE_DIR}/Source"
+     "${CMAKE_SOURCE_DIR}/WebKitLibraries"
++    # Last: WebCore stages its private headers as a flat directory of symlinks
++    # into the source tree, so a WebCore header reached from here resolves its
++    # own siblings by bare name. It must not precede WebKit's own directories,
++    # which carry same-named headers such as WebGPUSupportedFeatures.h.
++    "${WebCore_PRIVATE_HEADERS_DIR}"
+ )
+ 
+ set(PROTOCOL_GENERATOR_SCRIPTS_DIR "${JAVASCRIPTCORE_DIR}/inspector/scripts")

@@ -1,0 +1,40 @@
+From 312f8a1f2a35fb421a112e3d96bf8586cc1f55c5 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] WebDriver: guard LOG_CHANNEL use when logging is disabled
+
+Source/WebDriver/Logging.h declares the WebDriver log channels only
+under "#if !LOG_DISABLED || !RELEASE_LOG_DISABLED", but
+WebDriverService::handleRequest() reads LOG_CHANNEL(WebDriverClassic)
+unconditionally. A release build with assertions off and no journald,
+OS_LOG or Android backend disables both forms, so the channel is never
+declared and the file fails to compile.
+
+Guard the use with the same condition that guards the declaration. The
+block only produces log output, and the RELEASE_LOG_INFO calls inside it
+already compile to nothing in that configuration, so nothing else is
+lost.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebDriver/WebDriverService.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/Source/WebDriver/WebDriverService.cpp
++++ b/Source/WebDriver/WebDriverService.cpp
+@@ -380,6 +380,7 @@ bool WebDriverService::findCommand(HTTPM
+ void WebDriverService::handleRequest(HTTPRequestHandler::Request&& request, Function<void (HTTPRequestHandler::Response&&)>&& replyHandler)
+ {
+     Function<void (HTTPRequestHandler::Response&&)> actualReplyHandler = WTF::move(replyHandler);
++#if !LOG_DISABLED || !RELEASE_LOG_DISABLED
+     if (LOG_CHANNEL(WebDriverClassic).state != WTFLogChannelState::Off) {
+         RELEASE_LOG_INFO(WebDriverClassic, "HTTP request %s %s (body=%zu bytes)", request.method.utf8().data(), request.path.utf8().data(), request.dataLength);
+         actualReplyHandler = [startTime = MonotonicTime::now(), replyHandler = WTF::move(actualReplyHandler)](HTTPRequestHandler::Response&& response) mutable {
+@@ -387,6 +388,7 @@ void WebDriverService::handleRequest(HTT
+             replyHandler(WTF::move(response));
+         };
+     }
++#endif
+ 
+     auto method = toCommandHTTPMethod(request.method);
+     if (!method) {

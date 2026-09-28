@@ -1,5 +1,8 @@
+From 96c4acb3e7567c990d473f8cbddd75e19e15bf90 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: declare BBQJIT ScratchScope for non-X86/non-ARM64 archs
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: declare BBQJIT ScratchScope for
+ non-X86/non-ARM64 archs
 
 WasmBBQJIT64.cpp's addSIMDShuffle and addSIMDShift declare a ScratchScope
 named "scratches" only inside #if CPU(X86_64) / #elif CPU(ARM64), then
@@ -17,9 +20,13 @@ reached and the new scratches declaration is unused at run time; it
 only exists so the function bodies parse on RISCV64.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
-@@ -3442,6 +3442,11 @@ void BBQJIT::notifyFunctionUsesSIMD()
+@@ -3652,6 +3652,11 @@ void NODELETE BBQJIT::notifyFunctionUses
      clobber(ARM64Registers::q28);
      clobber(ARM64Registers::q29);
      ScratchScope<0, 0> scratches(*this, Location::fromFPR(ARM64Registers::q28), Location::fromFPR(ARM64Registers::q29));
@@ -31,7 +38,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #endif
      Location aLocation = loadIfNecessary(a);
      Location bLocation = loadIfNecessary(b);
-@@ -3497,6 +3502,11 @@ void BBQJIT::notifyFunctionUsesSIMD()
+@@ -3709,6 +3714,11 @@ void NODELETE BBQJIT::notifyFunctionUses
      // Clobber and preserve RCX on x86, since we need it to do shifts.
      clobber(shiftRCX);
      ScratchScope<2, 2> scratches(*this, Location::fromGPR(shiftRCX));

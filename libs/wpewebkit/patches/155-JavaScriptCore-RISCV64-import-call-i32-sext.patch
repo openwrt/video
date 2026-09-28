@@ -1,5 +1,8 @@
+From dee872534055a89749c79039c8398cc4ae631e2b Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: RISCV64: sign-extend i32 args at wasm import call sites
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64: sign-extend i32 args at wasm import
+ call sites
 
 The RISCV64 lp64d psABI requires that integer arguments narrower than
 XLEN be sign-extended into the full 64-bit argument register by the
@@ -49,13 +52,16 @@ argument and the BBQ "w-form" i32 ops mask to 32 bits.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/wasm/WasmBBQJIT.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
-@@ -4484,6 +4484,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
+@@ -4601,6 +4601,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
      if (m_info.isImportedFunctionFromFunctionIndexSpace(functionIndexSpace)) {
          static_assert(sizeof(WasmOrJSImportableFunctionCallLinkInfo) * maxImports < std::numeric_limits<int32_t>::max());
-         RELEASE_ASSERT(JSWebAssemblyInstance::offsetOfImportFunctionStub(functionIndexSpace) < std::numeric_limits<int32_t>::max());
+         RELEASE_ASSERT(JSWebAssemblyInstance::offsetOfImportFunctionStub(m_module.moduleInformation(), functionIndexSpace) < std::numeric_limits<int32_t>::max());
 +        emitSignExtendI32ArgsForCCall(callInfo, signature);
-         m_jit.call(Address(GPRInfo::wasmContextInstancePointer, JSWebAssemblyInstance::offsetOfImportFunctionStub(functionIndexSpace)), WasmEntryPtrTag);
+         m_jit.call(Address(GPRInfo::wasmContextInstancePointer, JSWebAssemblyInstance::offsetOfImportFunctionStub(m_module.moduleInformation(), functionIndexSpace)), WasmEntryPtrTag);
      } else {
          // Record the callee so the callee knows to look for it in updateCallsitesToCallUs.

@@ -1,0 +1,33 @@
+From bb31b267d7218c8176c228f9d04e60f6165b1c86 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 23:28:09 +0100
+Subject: [PATCH] WPE: fix inverted prefers-reduced-motion
+
+SystemSettingsManagerProxy::reducedMotion() negates the reduced-motion
+setting, so the documented default of false reports that the user
+prefers reduced motion. Every site that honours the
+prefers-reduced-motion media query then disables its animations.
+
+The negation is left over from enableAnimations(), which this function
+replaced in 446267f9f445 ("[WPE][GTK] Improvements to platform media
+queries (prefers reduced motion, high contrast, and dark theme)"). There
+it was correct, because the value being read was the opposite setting,
+WPE_SETTING_DISABLE_ANIMATIONS. Both the function and the setting
+changed polarity together, so the negation has to go.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebKit/UIProcess/wpe/SystemSettingsManagerProxyWPE.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/WebKit/UIProcess/wpe/SystemSettingsManagerProxyWPE.cpp
++++ b/Source/WebKit/UIProcess/wpe/SystemSettingsManagerProxyWPE.cpp
+@@ -186,7 +186,7 @@ bool SystemSettingsManagerProxy::overlay
+ 
+ bool SystemSettingsManagerProxy::reducedMotion() const
+ {
+-    return !getBool(m_settings, WPE_SETTING_REDUCED_MOTION, false);
++    return getBool(m_settings, WPE_SETTING_REDUCED_MOTION, false);
+ }
+ 
+ WebCore::InterfaceContrastPreference SystemSettingsManagerProxy::interfaceContrast() const

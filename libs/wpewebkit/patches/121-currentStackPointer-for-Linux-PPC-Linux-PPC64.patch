@@ -1,17 +1,19 @@
-From fe687ccb463fa42de923c5440259d89f781f3c69 Mon Sep 17 00:00:00 2001
+From 7931bf3de0c93ca3782a9483ca30b3061356b167 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Date: Mon, 9 Dec 2024 01:01:44 +0000
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] currentStackPointer for Linux/PPC, Linux/PPC64
 
 Add inline assembly implementation to return the current stack
 pointer on Linux running on PowerPC and PowerPC64 archtecture.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
  Source/WTF/wtf/StackPointer.cpp | 11 +++++++++++
  1 file changed, 11 insertions(+)
 
 --- a/Source/WTF/wtf/StackPointer.cpp
 +++ b/Source/WTF/wtf/StackPointer.cpp
-@@ -157,6 +157,17 @@ __asm__(
+@@ -171,6 +171,17 @@ __asm__(
       ".previous" "\n"
  );
  

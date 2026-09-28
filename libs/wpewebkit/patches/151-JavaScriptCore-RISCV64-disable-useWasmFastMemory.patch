@@ -1,4 +1,6 @@
+From 840f43134a110dfd6120fc41fc0bf2f8db4462ad Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] JavaScriptCore: disable useWasmFastMemory on RISCV64
 
 Base RISC-V doesn't require stores that fault to be atomic w.r.t. the
@@ -28,9 +30,12 @@ issuing any load/store.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/runtime/Options.cpp | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
 --- a/Source/JavaScriptCore/runtime/Options.cpp
 +++ b/Source/JavaScriptCore/runtime/Options.cpp
-@@ -804,6 +804,21 @@ void Options::notifyOptionsChanged()
+@@ -849,6 +849,21 @@ void Options::notifyOptionsChanged()
  #endif
  #endif
  

@@ -1,0 +1,41 @@
+From b1d708cc5d395b8b545d681fb6bc091574b9c78c Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 26 Sep 2026 10:37:02 +0100
+Subject: [PATCH] JavaScriptCore: allow a global label as a RISCV64 FP branch
+ target
+
+An FP branch whose target is a global label aborts offlineasm with
+"Unable to match operands [FPRegisterID, FPRegisterID, LabelReference]"
+while generating LLIntAssembly.h. riscv64LowerFPBranch accepts only a
+LocalLabelReference, and it lowers to the zero-compare branches, whose
+renderer accepts only a LocalLabelReference as well.
+
+Accept a LabelReference in both, as the two-register branch renderer
+beside them already does. Both emit the operand's asmLabel, which is
+defined for either kind.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/offlineasm/riscv64.rb | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/Source/JavaScriptCore/offlineasm/riscv64.rb
++++ b/Source/JavaScriptCore/offlineasm/riscv64.rb
+@@ -1607,7 +1607,7 @@ def riscv64LowerFPBranch(list)
+     end
+ 
+     def emit(newList, node, precision, condition)
+-        riscv64ValidateOperands(node.operands, [FPRegisterID, FPRegisterID, LocalLabelReference])
++        riscv64ValidateOperands(node.operands, [FPRegisterID, FPRegisterID, LocalLabelReference], [FPRegisterID, FPRegisterID, LabelReference])
+         operands = node.operands
+ 
+         if [:equn, :nequn, :gtun, :gtequn, :ltun, :ltequn].include? condition
+@@ -1761,7 +1761,7 @@ class Instruction
+             riscv64ValidateOperands(operands, [RegisterID, RegisterID, LocalLabelReference], [RegisterID, RegisterID, LabelReference])
+             $asm.puts "#{rvop(opcode)} #{operands[0].riscv64Operand}, #{operands[1].riscv64Operand}, #{operands[2].asmLabel}"
+         when /^rv_b(eqz|nez|lez|ltz|gez|gtz)$/
+-            riscv64ValidateOperands(operands, [RegisterID, LocalLabelReference])
++            riscv64ValidateOperands(operands, [RegisterID, LocalLabelReference], [RegisterID, LabelReference])
+             $asm.puts "#{rvop(opcode)} #{operands[0].riscv64Operand}, #{operands[1].asmLabel}"
+         when "rv_nop", "rv_ret", "rv_ebreak"
+             $asm.puts "#{rvop(opcode)}"

@@ -1,0 +1,30 @@
+From 40b2bf5c5155b226eefe9dcdbb01e7005a60667b Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 24 Sep 2026 09:24:35 +0100
+Subject: [PATCH] JavaScriptCore: allow RISCV64 call to a local label
+
+LowLevelInterpreter.asm calls a local label, "call .continue", in the
+validateVMEntryCalleeSaves path. The RISCV64 backend's emitCall accepts
+only RegisterID and LabelReference, so offlineasm aborts with "Unable to
+match operands [LocalLabelReference]" while generating LLIntAssembly.h.
+
+emitJump already treats LabelReference and LocalLabelReference alike,
+and the RISC-V call pseudo-instruction takes any label, so accept
+LocalLabelReference in emitCall too.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/offlineasm/riscv64.rb | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/JavaScriptCore/offlineasm/riscv64.rb
++++ b/Source/JavaScriptCore/offlineasm/riscv64.rb
+@@ -670,7 +670,7 @@ def riscv64LowerOperation(list)
+         case riscv64OperandTypes(node.operands)
+         when [RegisterID]
+             callOpcode = "jalr"
+-        when [LabelReference]
++        when [LabelReference], [LocalLabelReference]
+             callOpcode = "call"
+         else
+             riscv64RaiseMismatchedOperands(node.operands)

@@ -1,5 +1,8 @@
+From 697fec69a7963a90633ec3c808c9811ceabfed25 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: forward MacroAssemblerRISCV64.h and friends to PrivateHeaders
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: forward MacroAssemblerRISCV64.h and friends
+ to PrivateHeaders
 
 JSC's CMakeLists copies a curated list of assembler headers into
 PrivateHeaders/JavaScriptCore/ so that external consumers (WebCore,
@@ -27,9 +30,13 @@ Add the three RISCV64 headers to the forwarding-headers list, matching
 what is already done for the other architectures.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
 --- a/Source/JavaScriptCore/CMakeLists.txt
 +++ b/Source/JavaScriptCore/CMakeLists.txt
-@@ -609,7 +609,10 @@ set(JavaScriptCore_PRIVATE_FRAMEWORK_HEA
+@@ -639,7 +639,10 @@ set(JavaScriptCore_PRIVATE_FRAMEWORK_HEA
      assembler/MacroAssemblerARMv7.h
      assembler/MacroAssemblerCodeRef.h
      assembler/MacroAssemblerHelpers.h

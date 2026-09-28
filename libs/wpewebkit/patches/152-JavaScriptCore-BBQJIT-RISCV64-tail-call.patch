@@ -1,4 +1,6 @@
+From e613ff67599a3d768ea3ebc5fa7a9cb3d06976eb Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] JavaScriptCore: BBQJIT: implement wasm tail call on RISCV64
 
 emitTailCall (direct) and emitIndirectTailCall in WasmBBQJIT.cpp branch
@@ -21,9 +23,12 @@ return_call inside try-catch.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/wasm/WasmBBQJIT.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
-@@ -4381,7 +4381,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
+@@ -4498,7 +4498,7 @@ void BBQJIT::emitTailCall(FunctionSpaceI
      m_jit.loadPtr(Address(MacroAssembler::framePointerRegister), callerFramePointer);
      resolvedArguments.append(Value::pinned(pointerType(), Location::fromStack(sizeof(Register))));
      parameterLocations.append(Location::fromStack(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))));
@@ -32,7 +37,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      m_jit.loadPairPtr(MacroAssembler::framePointerRegister, callerFramePointer, MacroAssembler::linkRegister);
  #else
      UNUSED_PARAM(callerFramePointer);
-@@ -4652,7 +4652,7 @@ void BBQJIT::emitIndirectTailCall(const
+@@ -4774,7 +4774,7 @@ void BBQJIT::emitIndirectTailCall(const
  
      resolvedArguments.append(Value::pinned(pointerType(), Location::fromStack(sizeof(Register))));
      parameterLocations.append(Location::fromStack(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))));
@@ -41,7 +46,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      auto preserved = callingConvention.argumentGPRs();
      preserved.add(importableFunction, IgnoreVectors);
      if constexpr (isARM64E())
-@@ -4709,7 +4709,7 @@ void BBQJIT::emitIndirectTailCall(const
+@@ -4831,7 +4831,7 @@ void BBQJIT::emitIndirectTailCall(const
      m_jit.loadPtr(Address(MacroAssembler::framePointerRegister, tailCallStackOffsetFromFP), wasmScratchGPR);
      m_jit.addPtr(TrustedImm32(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))), MacroAssembler::framePointerRegister, MacroAssembler::stackPointerRegister);
      m_jit.move(wasmScratchGPR, MacroAssembler::framePointerRegister);

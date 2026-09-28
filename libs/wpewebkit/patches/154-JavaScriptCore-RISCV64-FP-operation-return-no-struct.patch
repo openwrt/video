@@ -1,5 +1,8 @@
+From e58f5b5dadf0b771ed8bd668236aa04e06dc0fd2 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: RISCV64: do not wrap FP JIT-op returns in ExceptionOperationResult
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64: do not wrap FP JIT-op returns in
+ ExceptionOperationResult
 
 OperationReturnType<T> wraps every JIT operation return value in
 ExceptionOperationResult<T> = { T value; Exception* exception; } so the
@@ -50,12 +53,15 @@ site (loadPtr of VM, branchTestPtr on VM::exception()) are unaffected.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/jit/OperationResult.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/jit/OperationResult.h
 +++ b/Source/JavaScriptCore/jit/OperationResult.h
-@@ -47,7 +47,7 @@ template<typename T>
- concept canMakeExceptionOperationResult =
+@@ -48,7 +48,7 @@ concept canMakeExceptionOperationResult
      std::is_standard_layout_v<T>
-     && std::is_trivial_v<T>
+     && std::is_trivially_copyable_v<T>
+     && std::is_trivially_default_constructible_v<T>
 -#if CPU(ARM64) || CPU(ARM_THUMB2)
 +#if CPU(ARM64) || CPU(ARM_THUMB2) || CPU(RISCV64)
      && !std::is_floating_point_v<T> // The ARM64 ABI says that this should be returned in x0 instead of d0. Seems unlikely it's worth it to do the extra fmov.

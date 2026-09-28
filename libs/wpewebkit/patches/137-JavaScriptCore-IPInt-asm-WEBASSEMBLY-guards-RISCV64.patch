@@ -1,6 +1,25 @@
+From 2e4dafd94f1413a3199eee30c6eb4ed44dc27d18 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: add RISCV64 to the IPInt asm WEBASSEMBLY
+ guards
+
+InPlaceInterpreter.asm gates the IPInt entry, catch and table-catch
+trampolines on an explicit architecture list, and selects the 64-bit
+implementation file the same way. RISCV64 is absent from every one of
+them, so no IPInt code is emitted at all.
+
+Add RISCV64 to those guards and to the JSVALUE64 include of
+InPlaceInterpreter64.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../llint/InPlaceInterpreter.asm               | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
-@@ -1215,7 +1215,7 @@ op(wasm_throw_from_fault_handler_trampol
+@@ -1341,7 +1341,7 @@ op(wasm_throw_from_fault_handler_trampol
  end)
  
  op(ipint_entry, macro()
@@ -9,16 +28,16 @@
      preserveCallerPCAndCFR()
      saveIPIntRegisters()
      storep wasmInstance, CodeBlock[cfr]
-@@ -1233,7 +1233,7 @@ else
+@@ -1355,7 +1355,7 @@ else
  end
  end)
  
 -if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
 +if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7 or RISCV64)
  .ipint_entry_end_local:
-     argumINTInitializeDefaultLocals()
-     jmp .ipint_entry_end_local
-@@ -1331,7 +1331,7 @@ end
+     loadp UnboxedWasmCalleeStackSlot[cfr], MC
+     loadp Wasm::IPIntCallee::m_localInitBytecode + VectorBufferOffset[MC], MC
+@@ -1446,7 +1446,7 @@ end
  end
  
  op(ipint_catch_entry, macro()
@@ -27,7 +46,7 @@
      ipintCatchCommon()
  
      move cfr, a1
-@@ -1348,7 +1348,7 @@ end
+@@ -1462,7 +1462,7 @@ end
  end)
  
  op(ipint_catch_all_entry, macro()
@@ -36,7 +55,7 @@
      ipintCatchCommon()
  
      move cfr, a1
-@@ -1365,7 +1365,7 @@ end
+@@ -1478,7 +1478,7 @@ end
  end)
  
  op(ipint_table_catch_entry, macro()
@@ -45,7 +64,7 @@
      ipintCatchCommon()
  
      # push arguments but no ref: sp in a2, call normal operation
-@@ -1384,7 +1384,7 @@ end
+@@ -1496,7 +1496,7 @@ end
  end)
  
  op(ipint_table_catch_ref_entry, macro()
@@ -54,7 +73,7 @@
      ipintCatchCommon()
  
      # push both arguments and ref
-@@ -1403,7 +1403,7 @@ end
+@@ -1514,7 +1514,7 @@ end
  end)
  
  op(ipint_table_catch_all_entry, macro()
@@ -63,7 +82,7 @@
      ipintCatchCommon()
  
      # do nothing: 0 in sp for no arguments, call normal operation
-@@ -1422,7 +1422,7 @@ end
+@@ -1532,7 +1532,7 @@ end
  end)
  
  op(ipint_table_catch_allref_entry, macro()
@@ -72,12 +91,12 @@
      ipintCatchCommon()
  
      # push only the ref
-@@ -1543,7 +1543,7 @@ defineWasmBuiltinTrampoline(jsstring, co
+@@ -2085,7 +2085,7 @@ _pinballHandlerRejectFunction:
  # 5. Instruction implementation #
  #################################
  
 -if JSVALUE64 and (ARM64 or ARM64E or X86_64)
 +if JSVALUE64 and (ARM64 or ARM64E or X86_64 or RISCV64)
      include InPlaceInterpreter64
- elsif ARMv7
-     include InPlaceInterpreter32_64
+ else
+ # For unimplemented architectures: make sure that the assertions can still find the labels

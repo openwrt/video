@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpewebkit
-PKG_VERSION:=2.52.3
+PKG_VERSION:=2.54.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=b51b1db1e6ee99d1771f4a358c128fde27a77984df20ee6cb59858e520662d0b
+PKG_HASH:=efa9bcc3cb891c2d88f50eec710d9ccee71cbdf1040420361eb98c17355eb452
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later BSD-2-Clause
@@ -38,6 +38,7 @@ CMAKE_OPTIONS += \
 	-DENABLE_WEB_CRYPTO=ON \
 	-DENABLE_JOURNALD_LOG=OFF \
 	-DENABLE_MINIBROWSER=$(if $(CONFIG_PACKAGE_wpewebkit-minibrowser),ON,OFF) \
+	-DENABLE_WPE_LEGACY_API=OFF \
 	-DENABLE_WPE_PLATFORM=ON \
 	-DENABLE_WPE_PLATFORM_WAYLAND=ON \
 	-DENABLE_WPE_PLATFORM_DRM=ON \
@@ -66,19 +67,19 @@ define Package/libwpewebkit
   TITLE:=WPEWebKit Library
   URL:=https://wpewebkit.org
   DEPENDS:=+bubblewrap +glib2 +gst1-mod-autodetect +gst1-mod-opengl \
-	   +harfbuzz +icu-full-data \
-	   +libepoxy +libgcrypt +libgst1allocators +libgst1app +libgst1audio \
-	   +libgst1fft +libgst1gl +libgst1pbutils +libgst1tag \
-	   +libgst1transcoder +libgst1video +libinput +libmanette +libjpeg \
-	   +libpng +libseccomp +libsoup3 +libsqlite3 +libtasn1 +libudev \
-	   +libwayland +libwebp +libwpe +libxml2 +libxslt +zlib \
+	   +harfbuzz +icu-full-data +libatomic +libepoxy +libgcrypt \
+	   +libgst1allocators +libgst1app +libgst1audio +libgst1fft \
+	   +libgst1gl +libgst1pbutils +libgst1tag +libgst1transcoder \
+	   +libgst1video +libinput +libmanette +libjpeg +libpng +libseccomp \
+	   +libsoup3 +libsqlite3 +libstdcpp +libtasn1 +libudev +libwayland \
+	   +libwebp +libxkbcommon +libxml2 +libxslt +zlib \
 	   @(arm_v7||i386||i686||ARCH_64BIT)
 endef
 
 define Package/libwpewebkit/description
- WebKitGTK is a full-featured port of the WebKit rendering engine,
- suitable for projects requiring any kind of web integration, from
- hybrid HTML/CSS applications to full-fledged web browsers.
+  WPE WebKit is the WebKit port for embedded and low-resource devices,
+  suitable for projects requiring any kind of web integration, from
+  hybrid HTML/CSS applications to full-fledged web browsers.
 endef
 
 define Package/wpewebkit-driver
@@ -90,15 +91,15 @@ define Package/wpewebkit-driver
 endef
 
 define Package/wpewebkit-driver/description
- WebDriver is an automation API to control a web browser. It allows the
- user to create automated tests for web applications independently of the
- browser and platform.
+  WebDriver is an automation API to control a web browser. It allows the
+  user to create automated tests for web applications independently of the
+  browser and platform.
 
- The WebKitWebDriver binary provides the WebDriver service implementation
- for WebKitGTK. It works as a server, processing client requests to spawn
- and control the web browser. This driver is not tied to any specific
- browser and can be used with any WebKitGTK-based browser, but it uses
- MiniBrowser as the default.
+  The WPEWebDriver binary provides the WebDriver service implementation
+  for WPE WebKit. It works as a server, processing client requests to spawn
+  and control the web browser. This driver is not tied to any specific
+  browser and can be used with any WPE WebKit based browser, but it uses
+  MiniBrowser as the default.
 endef
 
 define Package/wpewebkit-minibrowser
@@ -106,11 +107,11 @@ define Package/wpewebkit-minibrowser
   CATEGORY:=Libraries
   TITLE:=WPE WebKit Mini Browser
   URL:=https://wpewebkit.org/
-  DEPENDS:=+libwpewebkit +wpebackend-fdo
+  DEPENDS:=+libwpewebkit
 endef
 
 define Package/wpewebkit-minibrowser/description
- Minimalistic Web browser based on WPE WebKit.
+  Minimalistic Web browser based on WPE WebKit.
 endef
 
 define Build/InstallDev

@@ -1,5 +1,8 @@
+From c2c0b285cf2e299d726cf5d25d17f1b17931671b Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: make WasmTypeDefinition::toB3Type available whenever B3 is
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: make WasmTypeDefinition::toB3Type available
+ whenever B3 is
 
 The inline helper Wasm::toB3Type() was only declared when one of the
 WebAssembly B3-based JIT tiers (OMGJIT or BBQJIT) was enabled, and the
@@ -18,6 +21,10 @@ in any TU that needs it. B3Type.h itself is guarded by ENABLE(B3_JIT)
 is set.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/wasm/WasmTypeDefinition.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/wasm/WasmTypeDefinition.h
 +++ b/Source/JavaScriptCore/wasm/WasmTypeDefinition.h
 @@ -29,6 +29,7 @@
@@ -28,7 +35,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include <JavaScriptCore/JITCompilation.h>
  #include <JavaScriptCore/SIMDInfo.h>
  #include <JavaScriptCore/WasmLimits.h>
-@@ -284,7 +285,7 @@ ALWAYS_INLINE Width Type::width() const
+@@ -296,7 +297,7 @@ ALWAYS_INLINE Width Type::width() const
      RELEASE_ASSERT_NOT_REACHED();
  }
  
