@@ -1,0 +1,65 @@
+From 05143d73ccd03604f5a17f6f053978da966c95ff Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 29 Sep 2026 00:23:38 +0100
+Subject: [PATCH] JavaScriptCore: add two missing RISCV64 MacroAssembler forms
+
+DFGSpeculativeJIT calls two forms the RISCV64 MacroAssembler does not
+define, so the file fails with "no matching function for call to".
+
+store64(TrustedImm32, BaseIndex) exists for an Address destination and
+for a TrustedImm64 with a BaseIndex, but not for this combination.
+Compose the two: zero-extend the immediate as the Address form does, and
+resolve the BaseIndex as the TrustedImm64 form does.
+
+moveConditionally32 exists with a register true value but not with an
+immediate one. The sibling forms hand-compute their branch displacements,
+which cannot work here because materialising an immediate takes a
+variable number of instructions, so use a linked branch and jump as the
+rest of the file does elsewhere. The condition is inverted to skip the
+true case, matching the siblings.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../assembler/MacroAssemblerRISCV64.h         | 24 +++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+--- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
++++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
+@@ -1523,6 +1523,20 @@ public:
+             store64(TrustedImm32(int32_t(value)), address);
+     }
+ 
++    void store64(TrustedImm32 imm, BaseIndex address)
++    {
++        auto temp = temps<Data, Memory>();
++        RegisterID immRegister = RISCV64Registers::zero;
++        if (!!imm.m_value) {
++            loadImmediate(imm, temp.data());
++            m_assembler.maskRegister<32>(temp.data());
++            immRegister = temp.data();
++        }
++
++        auto resolution = resolveAddress(address, temp.memory());
++        m_assembler.sdInsn(resolution.base, immRegister, Imm::S(resolution.offset));
++    }
++
+     void store64(TrustedImm64 imm, BaseIndex address)
+     {
+         auto temp = temps<Data, Memory>();
+@@ -4550,6 +4564,16 @@ public:
+         m_assembler.addiInsn(dest, falseSrc, Imm::I<0>());
+     }
+ 
++    void moveConditionally32(RelationalCondition cond, RegisterID lhs, TrustedImm32 imm, TrustedImm32 trueImm, RegisterID falseSrc, RegisterID dest)
++    {
++        Jump falseCase = branch32(invert(cond), lhs, imm);
++        move(trueImm, dest);
++        Jump end = jump();
++        falseCase.link(this);
++        move(falseSrc, dest);
++        end.link(this);
++    }
++
+     void moveConditionally64(RelationalCondition cond, RegisterID lhs, RegisterID rhs, RegisterID src, RegisterID dest)
+     {
+         branchForMoveConditionally(invert(cond), lhs, rhs, Imm::B<8>());

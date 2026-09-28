@@ -1,4 +1,6 @@
+From 15c550e283e3d170585fc7d36cbc3a771fe3d61e Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] JavaScriptCore: handle Carry in RISCV64 testFinalize switch
 
 testFinalize() switches on ResultCondition but does not list the Carry
@@ -15,6 +17,10 @@ RELEASE_ASSERT_NOT_REACHED(). Add the missing case so testFinalize
 matches that convention and the warning disappears.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h | 1 +
+ 1 file changed, 1 insertion(+)
+
 --- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 +++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 @@ -4770,6 +4770,7 @@ private:

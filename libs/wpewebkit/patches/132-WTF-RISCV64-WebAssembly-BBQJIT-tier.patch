@@ -1,4 +1,6 @@
+From 59e9a607a7a87c241e0f3a40984efd4c63c5e87a Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] WTF: enable WebAssembly and BBQJIT on RISCV64
 
 RISCV64 previously had ENABLE_WEBASSEMBLY=1 but ENABLE_WEBASSEMBLY_BBQJIT=0
@@ -22,9 +24,13 @@ The companion changes that make this safe at build- and run-time:
    and their stubs are unreachable.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WTF/wtf/PlatformEnable.h | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
 --- a/Source/WTF/wtf/PlatformEnable.h
 +++ b/Source/WTF/wtf/PlatformEnable.h
-@@ -738,12 +738,28 @@
+@@ -731,12 +731,28 @@
  #endif
  
  #if CPU(RISCV64)

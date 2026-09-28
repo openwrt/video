@@ -1,4 +1,6 @@
+From f4f43fbf77be72b98400f81ecec956b5d08b5dba Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] JavaScriptCore: do not force useBBQJIT() off on RISCV64
 
 Options.cpp force-disables a number of JIT-tier and wasm options on any
@@ -19,9 +21,13 @@ on RISCV64 is:
   useOMGJIT           = false  (no OMGJIT port)
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/runtime/Options.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/runtime/Options.cpp
 +++ b/Source/JavaScriptCore/runtime/Options.cpp
-@@ -796,7 +796,10 @@ void Options::notifyOptionsChanged()
+@@ -841,7 +841,10 @@ void Options::notifyOptionsChanged()
      Options::forceUnlinkedDFG() = false;
      Options::useWasmSIMD() = false;
      Options::useWasmIPInt() = false;

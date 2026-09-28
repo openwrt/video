@@ -1,0 +1,83 @@
+From 119f932c1b989753d4b229e7c4a494e77aaa5abd Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 26 Sep 2026 10:41:13 +0100
+Subject: [PATCH] bmalloc: build libpas where there is no 128-bit integer
+
+pas_pair is a two-word structure under Clang and on 32-bit ARM, and a
+__uint128_t everywhere else. GCC provides no 128-bit integer type on
+32-bit x86, so pas_utils.h fails to compile there with "unknown type
+name '__uint128_t'", even though libpas itself is only enabled on
+64-bit.
+
+Select the structure form whenever the compiler defines no
+__SIZEOF_INT128__, which covers every target lacking the type rather
+than enumerating them one architecture at a time.
+
+The pair atomics need the same treatment. pas_compare_and_swap_pair_weak
+and its four siblings pass pas_pair to __atomic_*_n, which takes a
+scalar, so they do not compile once pas_pair is a structure. 32-bit ARM
+already answers this with an unreachable stub; extend those branches on
+the same condition. Nothing calls them on such a target, because
+BENABLE_LIBPAS requires BCPU(ADDRESS64).
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/bmalloc/libpas/src/libpas/pas_utils.h | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+--- a/Source/bmalloc/libpas/src/libpas/pas_utils.h
++++ b/Source/bmalloc/libpas/src/libpas/pas_utils.h
+@@ -920,7 +920,7 @@ static PAS_ALWAYS_INLINE uintptr_t pas_o
+     return value;
+ }
+ 
+-#if PAS_COMPILER(CLANG) || PAS_ARM32
++#if PAS_COMPILER(CLANG) || PAS_ARM32 || !defined(__SIZEOF_INT128__)
+ 
+ struct pas_pair;
+ typedef struct pas_pair pas_pair;
+@@ -1011,7 +1011,7 @@ PAS_IGNORE_WARNINGS_BEGIN("atomic-alignm
+ #endif
+     return __c11_atomic_compare_exchange_weak((_Atomic pas_pair*)raw_ptr, &old_value, new_value, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+ PAS_IGNORE_WARNINGS_END
+-#elif PAS_ARM32
++#elif PAS_ARM32 || !defined(__SIZEOF_INT128__)
+     PAS_ASSERT_IF(true, !"Should not be reached");
+     PAS_UNUSED_PARAM(raw_ptr);
+     PAS_UNUSED_PARAM(old_value);
+@@ -1061,7 +1061,7 @@ PAS_IGNORE_WARNINGS_BEGIN("atomic-alignm
+     __c11_atomic_compare_exchange_strong((_Atomic pas_pair*)raw_ptr, &old_value, new_value, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+ PAS_IGNORE_WARNINGS_END
+     return old_value;
+-#elif PAS_ARM32
++#elif PAS_ARM32 || !defined(__SIZEOF_INT128__)
+     PAS_ASSERT_IF(true, !"Should not be reached");
+     PAS_UNUSED_PARAM(raw_ptr);
+     PAS_UNUSED_PARAM(new_value);
+@@ -1089,7 +1089,7 @@ static inline pas_pair pas_atomic_load_p
+ PAS_IGNORE_WARNINGS_BEGIN("atomic-alignment")
+     return __c11_atomic_load((_Atomic pas_pair*)raw_ptr, __ATOMIC_RELAXED);
+ PAS_IGNORE_WARNINGS_END
+-#elif PAS_ARM32
++#elif PAS_ARM32 || !defined(__SIZEOF_INT128__)
+     PAS_ASSERT_IF(true, !"Should not be reached");
+     PAS_UNUSED_PARAM(raw_ptr);
+     return *(pas_pair*)raw_ptr;
+@@ -1118,7 +1118,7 @@ static inline void pas_atomic_store_pair
+ PAS_IGNORE_WARNINGS_BEGIN("atomic-alignment")
+     __c11_atomic_store((_Atomic pas_pair*)raw_ptr, value, __ATOMIC_SEQ_CST);
+ PAS_IGNORE_WARNINGS_END
+-#elif PAS_ARM32
++#elif PAS_ARM32 || !defined(__SIZEOF_INT128__)
+     PAS_ASSERT_IF(true, !"Should not be reached");
+     PAS_UNUSED_PARAM(raw_ptr);
+     PAS_UNUSED_PARAM(value);
+@@ -1134,7 +1134,7 @@ static inline void pas_atomic_store_pair
+ PAS_IGNORE_WARNINGS_BEGIN("atomic-alignment")
+     __c11_atomic_store((_Atomic pas_pair*)raw_ptr, value, __ATOMIC_RELAXED);
+ PAS_IGNORE_WARNINGS_END
+-#elif PAS_ARM32
++#elif PAS_ARM32 || !defined(__SIZEOF_INT128__)
+     PAS_ASSERT_IF(true, !"Should not be reached");
+     PAS_UNUSED_PARAM(raw_ptr);
+     PAS_UNUSED_PARAM(value);

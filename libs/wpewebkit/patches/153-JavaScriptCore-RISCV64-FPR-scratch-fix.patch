@@ -1,5 +1,8 @@
+From 263d7aecb08f96a70a2004c6b1af906fd02f53ea Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: RISCV64: fix nonPreservedNonArgumentFPR0 aliasing argumentFPR1
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64: fix nonPreservedNonArgumentFPR0
+ aliasing argumentFPR1
 
 On RISCV64, FPRInfo declared
 
@@ -28,6 +31,9 @@ X86_64 (xmm8).
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/jit/FPRInfo.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/jit/FPRInfo.h
 +++ b/Source/JavaScriptCore/jit/FPRInfo.h
 @@ -366,7 +366,7 @@ public:

@@ -1,3 +1,26 @@
+From 51cc64f7905fe1d5c541f49ca5a62a30f60e6635 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: map offlineasm ft0..ft7 to the RISCV64 FP
+ args
+
+The LLInt convention assumes ft0..ft7 are also the platform's
+floating-point argument registers, which holds on X86 and ARM64 where the
+temp and argument FPRs coincide. The RISC-V ABI separates them: ft0..ft7
+are f0..f7 and are temps, while the argument registers are fa0..fa7,
+f10..f17.
+
+Map offlineasm's ft0..ft7 onto f10..f17 so the LLInt wfa* aliases, which
+chain wfa0 to fa0 to ft0, resolve to the wasm argument FPRs. Physical
+f0..f7 become unreachable from offlineasm; JSC's C++ FPRInfo still uses
+them as fpRegT8..fpRegT15, and the JIT and offlineasm do not share
+register state across call boundaries.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/offlineasm/riscv64.rb | 26 ++++++++++++++-------
+ 1 file changed, 18 insertions(+), 8 deletions(-)
+
 --- a/Source/JavaScriptCore/offlineasm/riscv64.rb
 +++ b/Source/JavaScriptCore/offlineasm/riscv64.rb
 @@ -217,22 +217,32 @@ end

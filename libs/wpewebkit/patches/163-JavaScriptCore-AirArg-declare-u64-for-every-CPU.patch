@@ -1,0 +1,42 @@
+From 65fab1c3672e2a653fd8329741a868280f52dba0 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 28 Sep 2026 11:21:59 +0100
+Subject: [PATCH] JavaScriptCore: declare u64 for every CPU in
+ isValidFPImm64Form
+
+isValidFPImm64Form declares u64 inside its CPU(ARM64) and CPU(X86_64)
+branches, then reads it after the #endif to compare the two halves of the
+value. On any other architecture neither branch is compiled and the file
+fails with "'u64' was not declared in this scope". The guard above is a
+runtime test, so it does not keep the trailing code from being compiled.
+
+Hoist the declaration above the conditional, which both branches then
+share.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/b3/air/AirArg.h | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+--- a/Source/JavaScriptCore/b3/air/AirArg.h
++++ b/Source/JavaScriptCore/b3/air/AirArg.h
+@@ -1476,17 +1476,16 @@ public:
+         if (!isARM64() && !isX86_64())
+             return false;
+ 
++        uint64_t u64 = static_cast<uint64_t>(value);
++
+ #if CPU(ARM64)
+         if (ARM64Assembler::canEncodeFPImm<64>(value))
+             return true;
+ 
+-        uint64_t u64 = static_cast<uint64_t>(value);
+         if (ARM64FPImmediate::create64(u64).isValid())
+             return true;
+ 
+ #elif CPU(X86_64)
+-        uint64_t u64 = static_cast<uint64_t>(value);
+-
+         if (u64 == 0xFFFFFFFFFFFFFFFFULL)
+             return true;
+ 

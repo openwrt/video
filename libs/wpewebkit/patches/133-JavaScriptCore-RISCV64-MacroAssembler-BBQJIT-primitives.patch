@@ -1,5 +1,8 @@
+From 1181395c8a3a4b6e126c7884b1bfce29c8661ba5 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: add RISCV64 MacroAssembler primitives required by BBQJIT
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: add RISCV64 MacroAssembler primitives
+ required by BBQJIT
 
 Enabling BBQJIT on RISCV64 exposes a set of MacroAssembler primitives that
 WasmBBQJIT.cpp / WasmBBQJIT64.cpp / WasmBBQJIT32_64.cpp call but that
@@ -61,6 +64,10 @@ SIMD) are intentionally flagged in their comments so they are easy to
 find when implementing the real codegen in follow-up work.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../assembler/MacroAssemblerRISCV64.h         | 324 ++++++++++++++++++
+ 1 file changed, 324 insertions(+)
+
 --- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 +++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 @@ -36,6 +36,16 @@

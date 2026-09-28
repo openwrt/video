@@ -1,5 +1,8 @@
+From ad3c8413d73fbafbd886a3b05ab801b387659b4b Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: LLInt asm: iterate all 8 wasm GPR args on RISCV64
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: LLInt asm: iterate all 8 wasm GPR args on
+ RISCV64
 
 The forEachWasmArgumentGPR macro in InPlaceInterpreter.asm (used by
 js_to_wasm_wrapper_entry, the LLInt counterpart of the C++ JIT shared
@@ -17,9 +20,12 @@ branch (storeq/loadq) already handles 64-bit GPRs correctly.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/llint/InPlaceInterpreter.asm | 5 +++++
+ 1 file changed, 5 insertions(+)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
-@@ -534,6 +534,11 @@ macro forEachWasmArgumentGPR(fn)
+@@ -637,6 +637,11 @@ macro forEachWasmArgumentGPR(fn)
          fn(2, wa2, wa3)
          fn(4, wa4, wa5)
          fn(6, wa6, wa7)

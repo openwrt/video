@@ -1,5 +1,8 @@
+From e0bf5646026c2c5f440a7110c6560884bde75964 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: JSToWasm: load/store all 8 wasm GPR args on RISCV64
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: JSToWasm: load/store all 8 wasm GPR args on
+ RISCV64
 
 The JS-to-wasm trampoline in JSToWasm.cpp handles register-arg shuffling
 across three architectures. ARM64 (8 GPR args) and X86_64 (6 GPR args)
@@ -20,9 +23,12 @@ branch covering all 8 FPRs, so no change needed there.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
+ Source/JavaScriptCore/wasm/js/JSToWasm.cpp | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
 --- a/Source/JavaScriptCore/wasm/js/JSToWasm.cpp
 +++ b/Source/JavaScriptCore/wasm/js/JSToWasm.cpp
-@@ -320,6 +320,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
+@@ -324,6 +324,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
          jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8), GPRInfo::regWA0, GPRInfo::regWA1);
          jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8), GPRInfo::regWA2, GPRInfo::regWA3);
          jit.loadPair64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8), GPRInfo::regWA4, GPRInfo::regWA5);
@@ -38,7 +44,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #elif USE(JSVALUE64)
          jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8), GPRInfo::regWA0);
          jit.load64(CCallHelpers::Address(CCallHelpers::stackPointerRegister, 1 * 8), GPRInfo::regWA1);
-@@ -415,6 +424,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
+@@ -410,6 +419,15 @@ MacroAssemblerCodeRef<JITThunkPtrTag> cr
          jit.storePair64(GPRInfo::regWA0, GPRInfo::regWA1, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 0 * 8));
          jit.storePair64(GPRInfo::regWA2, GPRInfo::regWA3, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 2 * 8));
          jit.storePair64(GPRInfo::regWA4, GPRInfo::regWA5, CCallHelpers::Address(CCallHelpers::stackPointerRegister, 4 * 8));

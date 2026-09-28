@@ -1,26 +1,37 @@
---- a/Source/JavaScriptCore/llint/InPlaceInterpreter.h
-+++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.h
-@@ -784,7 +784,7 @@ extern "C" void SYSV_ABI ipint_entry();
-     m(0x11, uint_stack_vector) \
-     m(0x12, uint_ret) \
- 
--#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64)) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
-+#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64)) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
- FOR_EACH_IPINT_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);
- FOR_EACH_IPINT_GC_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);
- FOR_EACH_IPINT_CONVERSION_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);
+From dbcd5544fb81262c7135f68b5e44dcccd602d847 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: enable IPInt opcode validation on RISCV64
+
+IPInt::initialize() and verifyInitialization() only build their opcode
+dispatch tables for ARM64, X86_64 and ARMv7, and abort on anything else.
+With the IPInt RISCV64 port the offlineasm entry points do exist, so add
+CPU(RISCV64) to the three guards.
+
+Replace the RELEASE_ASSERT_NOT_REACHED() in the fallback branch with a
+plain return. LLInt::initialize() calls initialize() unconditionally, and
+on an architecture without the dispatch table there is simply nothing to
+validate; Options::useWasmIPInt is forced false there, so the
+uninitialised base pointers are never read at run time.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/llint/InPlaceInterpreter.cpp | 12 +++++++++---
+ Source/JavaScriptCore/llint/InPlaceInterpreter.h   |  2 +-
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter.cpp
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.cpp
-@@ -69,7 +69,7 @@ do { \
+@@ -77,7 +77,7 @@ do { \
  
  void initialize()
  {
--#if !ENABLE(C_LOOP) && ((CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64))) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
-+#if !ENABLE(C_LOOP) && ((CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64))) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
+-#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64)))
++#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64)))
  
  #define INIT_IPINT_BASE_POINTER(basePointerName, targetAddress) \
      g_opcodeConfig.basePointerName = removeCodePtrTag(reinterpret_cast<void*>(targetAddress));
-@@ -88,13 +88,19 @@ void initialize()
+@@ -95,13 +95,19 @@ void initialize()
      FOR_EACH_IPINT_MINT_RETURN_OPCODE(VALIDATE_IPINT_MINT_RETURN_OPCODE);
      FOR_EACH_IPINT_UINT_OPCODE(VALIDATE_IPINT_UINT_OPCODE);
  #else
@@ -37,8 +48,19 @@
  
  void verifyInitialization()
  {
--#if !ENABLE(C_LOOP) && ((CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64))) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
-+#if !ENABLE(C_LOOP) && ((CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64))) || (CPU(ADDRESS32) && CPU(ARM_THUMB2)))
+-#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64)))
++#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64)))
  
  #define VERIFY_IPINT_BASE_POINTER(basePointerName, targetAddress) \
      RELEASE_ASSERT(g_opcodeConfig.basePointerName == removeCodePtrTag(reinterpret_cast<void*>(targetAddress)));
+--- a/Source/JavaScriptCore/llint/InPlaceInterpreter.h
++++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.h
+@@ -783,7 +783,7 @@ extern "C" void SYSV_ABI ipint_entry();
+     m(0x11, uint_stack_vector) \
+     m(0x12, uint_ret) \
+ 
+-#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64)))
++#if !ENABLE(C_LOOP) && (CPU(ADDRESS64) && (CPU(ARM64) || CPU(X86_64) || CPU(RISCV64)))
+ FOR_EACH_IPINT_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);
+ FOR_EACH_IPINT_GC_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);
+ FOR_EACH_IPINT_CONVERSION_OPCODE(IPINT_VALIDATE_DEFINE_FUNCTION);

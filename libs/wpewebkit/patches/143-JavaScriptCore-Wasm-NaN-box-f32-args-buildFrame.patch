@@ -1,6 +1,25 @@
+From 27e268b65cbf4498e2971ac9f51849c336ac6dce Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: NaN-box f32 register arguments in buildFrame
+
+operationJSToWasmEntryWrapperBuildFrame() packs an f32 register argument
+as a bare zero-extended 32-bit value. The shared trampoline then loads
+the slot with loadDouble, so on an architecture that enforces NaN-boxing
+for single-precision operations, such as RV64GC, the wasm body's flw/fsw
+on that FPR reads the canonical NaN rather than the value passed in.
+
+Set the upper 32 bits to all ones so the slot holds a properly NaN-boxed
+single. i32 arguments keep the plain zero-extended form.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/wasm/WasmOperations.cpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
 --- a/Source/JavaScriptCore/wasm/WasmOperations.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmOperations.cpp
-@@ -135,8 +135,17 @@ JSC_DEFINE_JIT_OPERATION(operationJSToWa
+@@ -133,8 +133,17 @@ JSC_DEFINE_JIT_OPERATION(operationJSToWa
  
              dataLogLnIf(WasmOperationsInternal::verbose, "* Register Arg ", i, " ", dst);
  

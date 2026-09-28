@@ -1,4 +1,6 @@
+From e0fa9d1a90afad8bd6fae08039864b1bd3e7eafa Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
 Subject: [PATCH] JavaScriptCore: add missing RISCV64 MacroAssembler methods
 
 The RISCV64 MacroAssembler is missing five primitives that JSC's
@@ -27,6 +29,10 @@ and the implementations mirror the patterns already used in this file:
    registers via fmv.x.d / add or sub / fmv.d.x.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../assembler/MacroAssemblerRISCV64.h         | 62 +++++++++++++++++++
+ 1 file changed, 62 insertions(+)
+
 --- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 +++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 @@ -199,6 +199,25 @@ public:

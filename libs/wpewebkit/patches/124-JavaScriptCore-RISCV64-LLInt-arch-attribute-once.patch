@@ -1,5 +1,8 @@
+From afd3de668f477485f996f4581cec8c723390da14 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: emit the RISCV64 LLInt arch attribute only once
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: emit the RISCV64 LLInt arch attribute only
+ once
 
 The RISCV64 variant of OFFLINE_ASM_GLOBAL_LABEL_IMPL emits a
 '.attribute arch, "rv64gc"' directive for every global label in the
@@ -18,9 +21,13 @@ special case so the generic OFFLINE_ASM_GLOBAL_LABEL_IMPL is used,
 which does not emit the redundant per-label directive.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/llint/LowLevelInterpreter.cpp | 9 ---------
+ 1 file changed, 9 deletions(-)
+
 --- a/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
 +++ b/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
-@@ -569,15 +569,6 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+@@ -573,15 +573,6 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
      ".thumb\n"                                   \
      ".thumb_func " THUMB_FUNC_PARAM(label) "\n"  \
      SYMBOL_STRING(label) ":\n"

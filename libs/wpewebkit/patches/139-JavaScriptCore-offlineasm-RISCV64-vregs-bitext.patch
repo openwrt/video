@@ -1,3 +1,30 @@
+From 231002d8577ee6707d455f762f7cd25afa6debd7 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64 offlineasm vector regs and bit
+ extension
+
+The IPInt interpreter stores every wasm operand-stack value in a 16-byte
+slot and addresses it through offlineasm's v0..v7 pseudo-vector registers
+and the pushv/popv/loadv/storev opcodes. The RISCV64 backend has none of
+that, and the baseline rv64gc has neither a V extension nor a 128-bit
+register, so those opcodes lowered to ebreak placeholders.
+
+Alias each v-reg to a single 64-bit FPR, holding the low half of the
+slot, and lower the four opcodes to fld/fsd against 16-byte slots. Only
+the low 8 bytes carry payload; the upper 8 are padding, which is safe
+because wasm SIMD is disabled at run time on this architecture.
+
+Also rework emitBitExtensionOperation(). It handled only sign extension
+to :i/:q plus the one zero-extension-to-pointer case, and raised on
+everything else. Treat :p as :q, and add the missing zero-extension forms
+for byte, halfword and word sources.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/offlineasm/riscv64.rb | 133 +++++++++++++++++---
+ 1 file changed, 118 insertions(+), 15 deletions(-)
+
 --- a/Source/JavaScriptCore/offlineasm/riscv64.rb
 +++ b/Source/JavaScriptCore/offlineasm/riscv64.rb
 @@ -122,6 +122,12 @@ def riscv64OperandTypes(operands)

@@ -1,6 +1,26 @@
+From 2cd8b35316e145e75b2329c0927dbee289c032e6 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: disable linker relaxation for the LLInt asm
+
+IPInt opcode handlers are padded to 256-byte aligned dispatch slots with
+.balignw. On RISC-V the linker relaxes auipc+jalr/addi pairs into single
+instructions, shrinking each handler by 4 bytes, and the padding is not
+recomputed afterwards. Consecutive ipint_*_validate labels then sit 252
+bytes apart and IPInt::initialize()'s VALIDATE_IPINT_OPCODE assertions
+fire.
+
+Wrap the LLInt asm block in .option norelax on RISCV64 so every dispatch
+slot keeps its alignment.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../llint/LowLevelInterpreter.cpp               | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
 --- a/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
 +++ b/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
-@@ -520,13 +520,30 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+@@ -524,13 +524,30 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
  // the jsc_llint_begin and jsc_llint_end labels help lldb_webkit.py find the
  // start and end of the llint instruction range quickly.
  

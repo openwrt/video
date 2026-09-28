@@ -1,5 +1,8 @@
+From d33291a0b0b43a644a31a771ceb64335204cb5b5 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
-Subject: [PATCH] JavaScriptCore: stub IPInt call trampoline labels on unsupported archs
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: stub IPInt call trampoline labels on
+ unsupported archs
 
 InPlaceInterpreter is the WebAssembly in-place interpreter (IPInt).
 Its real implementation in InPlaceInterpreter64.asm and
@@ -26,9 +29,13 @@ labels also exist when WEBASSEMBLY is on but the architecture has no
 IPInt - they trap if ever reached.
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../JavaScriptCore/llint/InPlaceInterpreter.asm  | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter.asm
-@@ -2177,5 +2177,21 @@ unimplementedInstruction(_i32_atomic_rmw
+@@ -2743,4 +2743,20 @@ unimplementedInstruction(_i32_atomic_rmw
  unimplementedInstruction(_i64_atomic_rmw8_cmpxchg_u)
  unimplementedInstruction(_i64_atomic_rmw16_cmpxchg_u)
  unimplementedInstruction(_i64_atomic_rmw32_cmpxchg_u)
@@ -49,4 +56,3 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +_wasm_ipint_call_return_location_wide32:
 +    crash()
  end
- 

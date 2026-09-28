@@ -1,3 +1,24 @@
+From 6b303bb60487a7f2256b92d0be7cb78442b0c17b Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: RISCV64 rotate and count-trailing-zeros
+
+countTrailingZeros32()/64() left-shifted the value and decremented the
+result until the value became zero. On a zero-extended 32-bit operand the
+set bits only fall off bit 63, so the counter ran past zero and any
+nonzero input returned a negative count. Scan upward from bit 0 with
+srli plus andi instead, which terminates within the operand width.
+
+rotateRight32()/64() were missing entirely. Baseline rv64gc has no rotate
+instruction, Zbb's rori is not guaranteed, and the wasm BBQ JIT lowers
+both rotr and rotl through rotateRight*, so their absence miscompiles
+both. Implement them from shifts and an or.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../assembler/MacroAssemblerRISCV64.h         | 111 +++++++++++++++---
+ 1 file changed, 95 insertions(+), 16 deletions(-)
+
 --- a/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 +++ b/Source/JavaScriptCore/assembler/MacroAssemblerRISCV64.h
 @@ -582,36 +582,51 @@ public:

@@ -1,15 +1,35 @@
+From d52c544b6421ac02bddf0c1896aaa3f71ab7ddce Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: port the IPInt 64-bit asm to RISCV64
+
+InPlaceInterpreter64.asm restricts the dispatch-table base constants and
+the argumINT dispatch to ARM64 and X86_64, and its atomic op macros raise
+an offlineasm "error" on any other architecture, which aborts the build
+rather than producing a runtime trap.
+
+Add RISCV64 to the two pcrtoaddr-based dispatch sites, and turn the
+unsupported-architecture "error" into "break" in the atomic macros so the
+file assembles. The RISCV64 implementations of those atomics are supplied
+separately.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../llint/InPlaceInterpreter64.asm            | 211 +++++++++---------
+ 1 file changed, 109 insertions(+), 102 deletions(-)
+
 --- a/Source/JavaScriptCore/llint/InPlaceInterpreter64.asm
 +++ b/Source/JavaScriptCore/llint/InPlaceInterpreter64.asm
 @@ -51,7 +51,7 @@ end
  
  # Dispatch target bases
  
--if ARM64 or ARM64E
-+if ARM64 or ARM64E or RISCV64
+-if ARM64 or ARM64E or X86_64
++if ARM64 or ARM64E or X86_64 or RISCV64
  const ipint_dispatch_base = _ipint_unreachable
- const ipint_gc_dispatch_base = _ipint_struct_new
- const ipint_conversion_dispatch_base = _ipint_i32_trunc_sat_f32_s
-@@ -74,8 +74,15 @@ elsif X86_64
+ end
+ 
+@@ -76,8 +76,15 @@ elsif X86_64
      lshiftq (constexpr (WTF::fastLog2(JSC::IPInt::alignIPInt))), t0
      addq t1, t0
      jmp t0
@@ -26,7 +46,7 @@
  end
  end
  
-@@ -85,7 +92,7 @@ end
+@@ -87,7 +94,7 @@ end
  macro pushQuad(reg)
      if ARM64 or ARM64E
          push reg, reg
@@ -35,7 +55,7 @@
          push reg, reg
      else
          break
-@@ -100,7 +107,7 @@ macro popQuad(reg)
+@@ -102,7 +109,7 @@ macro popQuad(reg)
      # FIXME: emit post-increment in offlineasm
      if ARM64 or ARM64E
          loadqinc [sp], reg, V128ISize
@@ -44,16 +64,16 @@
          loadq [sp], reg
          addq V128ISize, sp
      else
-@@ -198,7 +205,7 @@ macro argumINTDispatch()
+@@ -208,7 +215,7 @@ macro argumINTDispatch()
      addp 1, MC
      bbgteq argumINTTmp, (constexpr IPInt::ArgumINTBytecode::NumOpcodes), _ipint_argument_dispatch_err
      lshiftp (constexpr (WTF::fastLog2(JSC::IPInt::alignArgumInt))), argumINTTmp
--if ARM64 or ARM64E
-+if ARM64 or ARM64E or RISCV64
+-if ARM64 or ARM64E or X86_64
++if ARM64 or ARM64E or X86_64 or RISCV64
      pcrtoaddr _argumINT_begin, argumINTDsp
      addp argumINTTmp, argumINTDsp
      jmp argumINTDsp
-@@ -221,7 +228,7 @@ macro argumINTInitializeDefaultLocals()
+@@ -227,7 +234,7 @@ macro argumINTInitializeDefaultLocals()
  if ARM64 or ARM64E
      # offlineasm doesn't have xzr so emit it
      emit "stp x19, xzr, [x9]"
@@ -62,7 +82,7 @@
      storep argumINTTmp, [argumINTDst]
      storep 0, 8[argumINTDst]
  end
-@@ -531,7 +538,7 @@ end
+@@ -508,7 +515,7 @@ end
      jmp .ipint_end_ret
  end)
  
@@ -71,7 +91,7 @@
      const IPIntCallCallee = sc1
      const IPIntCallFunctionSlot = sc0
  elsif X86_64
-@@ -1834,7 +1841,7 @@ ipintOp(_i32_div_s, macro()
+@@ -1777,7 +1784,7 @@ ipintOp(_i32_div_s, macro()
      elsif ARM64 or ARM64E or RISCV64
          divis t1, t0
      else
@@ -80,7 +100,7 @@
      end
      pushInt32(t0)
      advancePC(1)
-@@ -1859,7 +1866,7 @@ ipintOp(_i32_div_u, macro()
+@@ -1796,7 +1803,7 @@ ipintOp(_i32_div_u, macro()
      elsif ARM64 or ARM64E or RISCV64
          divi t1, t0
      else
@@ -89,7 +109,7 @@
      end
      pushInt32(t0)
      advancePC(1)
-@@ -1895,7 +1902,7 @@ ipintOp(_i32_rem_s, macro()
+@@ -1829,7 +1836,7 @@ ipintOp(_i32_rem_s, macro()
      elsif RISCV64
          remis t0, t1, t2
      else
@@ -98,7 +118,7 @@
      end
  
  .ipint_i32_rem_s_return:
-@@ -1923,7 +1930,7 @@ ipintOp(_i32_rem_u, macro()
+@@ -1854,7 +1861,7 @@ ipintOp(_i32_rem_u, macro()
      elsif RISCV64
          remi t0, t1, t2
      else
@@ -107,7 +127,7 @@
      end
      pushInt32(t2)
      advancePC(1)
-@@ -2106,7 +2113,7 @@ ipintOp(_i64_div_s, macro()
+@@ -2034,7 +2041,7 @@ ipintOp(_i64_div_s, macro()
      elsif ARM64 or ARM64E or RISCV64
          divqs t1, t0
      else
@@ -116,7 +136,7 @@
      end
      pushInt64(t0)
      advancePC(1)
-@@ -2131,7 +2138,7 @@ ipintOp(_i64_div_u, macro()
+@@ -2053,7 +2060,7 @@ ipintOp(_i64_div_u, macro()
      elsif ARM64 or ARM64E or RISCV64
          divq t1, t0
      else
@@ -125,7 +145,7 @@
      end
      pushInt64(t0)
      advancePC(1)
-@@ -2167,7 +2174,7 @@ ipintOp(_i64_rem_s, macro()
+@@ -2086,7 +2093,7 @@ ipintOp(_i64_rem_s, macro()
      elsif RISCV64
          remqs t0, t1, t2
      else
@@ -134,7 +154,7 @@
      end
  
  .ipint_i64_rem_s_return:
-@@ -2195,7 +2202,7 @@ ipintOp(_i64_rem_u, macro()
+@@ -2111,7 +2118,7 @@ ipintOp(_i64_rem_u, macro()
      elsif RISCV64
          remq t0, t1, t2
      else
@@ -143,511 +163,574 @@
      end
      pushInt64(t2)
      advancePC(1)
-@@ -9204,7 +9211,7 @@ ipintOp(_i32_atomic_load, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadi [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt32(scratch)
-     end)
-@@ -9215,7 +9222,7 @@ ipintOp(_i64_atomic_load, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadq [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt64(scratch)
-     end)
-@@ -9226,7 +9233,7 @@ ipintOp(_i32_atomic_load8_u, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadb [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt32(scratch)
-     end)
-@@ -9237,7 +9244,7 @@ ipintOp(_i32_atomic_load16_u, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadh [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt32(scratch)
-     end)
-@@ -9248,7 +9255,7 @@ ipintOp(_i64_atomic_load8_u, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadb [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt64(scratch)
-     end)
-@@ -9259,7 +9266,7 @@ ipintOp(_i64_atomic_load16_u, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadh [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt64(scratch)
-     end)
-@@ -9270,7 +9277,7 @@ ipintOp(_i64_atomic_load32_u, macro()
-         if ARM64 or ARM64E or X86_64
-             atomicloadi [mem], scratch
-         else
--            error
-+            break
-         end
-         pushInt64(scratch)
-     end)
-@@ -9374,7 +9381,7 @@ ipintOp(_i32_atomic_store, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9390,7 +9397,7 @@ ipintOp(_i64_atomic_store, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9406,7 +9413,7 @@ ipintOp(_i32_atomic_store8_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9422,7 +9429,7 @@ ipintOp(_i32_atomic_store16_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9438,7 +9445,7 @@ ipintOp(_i64_atomic_store8_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9454,7 +9461,7 @@ ipintOp(_i64_atomic_store16_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9470,7 +9477,7 @@ ipintOp(_i64_atomic_store32_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-     end)
- end)
-@@ -9506,7 +9513,7 @@ ipintOp(_i32_atomic_rmw_add, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9524,7 +9531,7 @@ ipintOp(_i64_atomic_rmw_add, macro()
-                 addq value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9543,7 +9550,7 @@ ipintOp(_i32_atomic_rmw8_add_u, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9562,7 +9569,7 @@ ipintOp(_i32_atomic_rmw16_add_u, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9581,7 +9588,7 @@ ipintOp(_i64_atomic_rmw8_add_u, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9600,7 +9607,7 @@ ipintOp(_i64_atomic_rmw16_add_u, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9619,7 +9626,7 @@ ipintOp(_i64_atomic_rmw32_add_u, macro()
-                 addi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9639,7 +9646,7 @@ ipintOp(_i32_atomic_rmw_sub, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9659,7 +9666,7 @@ ipintOp(_i64_atomic_rmw_sub, macro()
-                 subq oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9680,7 +9687,7 @@ ipintOp(_i32_atomic_rmw8_sub_u, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9701,7 +9708,7 @@ ipintOp(_i32_atomic_rmw16_sub_u, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9722,7 +9729,7 @@ ipintOp(_i64_atomic_rmw8_sub_u, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9743,7 +9750,7 @@ ipintOp(_i64_atomic_rmw16_sub_u, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9764,7 +9771,7 @@ ipintOp(_i64_atomic_rmw32_sub_u, macro()
-                 subi oldValue, value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9784,7 +9791,7 @@ ipintOp(_i32_atomic_rmw_and, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9804,7 +9811,7 @@ ipintOp(_i64_atomic_rmw_and, macro()
-                 andq value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9824,7 +9831,7 @@ ipintOp(_i32_atomic_rmw8_and_u, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9844,7 +9851,7 @@ ipintOp(_i32_atomic_rmw16_and_u, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9864,7 +9871,7 @@ ipintOp(_i64_atomic_rmw8_and_u, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9884,7 +9891,7 @@ ipintOp(_i64_atomic_rmw16_and_u, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9904,7 +9911,7 @@ ipintOp(_i64_atomic_rmw32_and_u, macro()
-                 andi value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9923,7 +9930,7 @@ ipintOp(_i32_atomic_rmw_or, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9942,7 +9949,7 @@ ipintOp(_i64_atomic_rmw_or, macro()
-                 orq value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -9961,7 +9968,7 @@ ipintOp(_i32_atomic_rmw8_or_u, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9980,7 +9987,7 @@ ipintOp(_i32_atomic_rmw16_or_u, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -9999,7 +10006,7 @@ ipintOp(_i64_atomic_rmw8_or_u, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10018,7 +10025,7 @@ ipintOp(_i64_atomic_rmw16_or_u, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10037,7 +10044,7 @@ ipintOp(_i64_atomic_rmw32_or_u, macro()
-                 ori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10056,7 +10063,7 @@ ipintOp(_i32_atomic_rmw_xor, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10075,7 +10082,7 @@ ipintOp(_i64_atomic_rmw_xor, macro()
-                 xorq value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10094,7 +10101,7 @@ ipintOp(_i32_atomic_rmw8_xor_u, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10113,7 +10120,7 @@ ipintOp(_i32_atomic_rmw16_xor_u, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10132,7 +10139,7 @@ ipintOp(_i64_atomic_rmw8_xor_u, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10151,7 +10158,7 @@ ipintOp(_i64_atomic_rmw16_xor_u, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10170,7 +10177,7 @@ ipintOp(_i64_atomic_rmw32_xor_u, macro()
-                 xori value, oldValue, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10189,7 +10196,7 @@ ipintOp(_i32_atomic_rmw_xchg, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10208,7 +10215,7 @@ ipintOp(_i64_atomic_rmw_xchg, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10227,7 +10234,7 @@ ipintOp(_i32_atomic_rmw8_xchg_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10246,7 +10253,7 @@ ipintOp(_i32_atomic_rmw16_xchg_u, macro(
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt32(scratch1)
-     end)
-@@ -10265,7 +10272,7 @@ ipintOp(_i64_atomic_rmw8_xchg_u, macro()
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10284,7 +10291,7 @@ ipintOp(_i64_atomic_rmw16_xchg_u, macro(
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10303,7 +10310,7 @@ ipintOp(_i64_atomic_rmw32_xchg_u, macro(
-                 move value, newValue
-             end)
-         else
--            error
-+            break
-         end
-         pushInt64(scratch1)
-     end)
-@@ -10346,7 +10353,7 @@ macro weakCASExchangeByte(mem, value, ex
+@@ -9036,7 +9043,7 @@ macro doI32AtomicLoad(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadi [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9045,7 +9052,7 @@ macro doI64AtomicLoad(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadq [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9054,7 +9061,7 @@ macro doI32AtomicLoad8(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadb [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9063,7 +9070,7 @@ macro doI32AtomicLoad16(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadh [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9072,7 +9079,7 @@ macro doI64AtomicLoad8(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadb [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9081,7 +9088,7 @@ macro doI64AtomicLoad16(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadh [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9090,7 +9097,7 @@ macro doI64AtomicLoad32(mem, dst)
+     if ARM64 or ARM64E or X86_64
+         atomicloadi [mem], dst
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9106,7 +9113,7 @@ macro doI32AtomicStore(mem, val, memCopy
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9122,7 +9129,7 @@ macro doI64AtomicStore(mem, val, memCopy
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9138,7 +9145,7 @@ macro doI32AtomicStore8(mem, val, memCop
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9154,7 +9161,7 @@ macro doI32AtomicStore16(mem, val, memCo
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9170,7 +9177,7 @@ macro doI64AtomicStore8(mem, val, memCop
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9186,7 +9193,7 @@ macro doI64AtomicStore16(mem, val, memCo
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9202,7 +9209,7 @@ macro doI64AtomicStore32(mem, val, memCo
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9219,7 +9226,7 @@ macro doI32AtomicRmwAdd(mem, val, memCop
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9236,7 +9243,7 @@ macro doI64AtomicRmwAdd(mem, val, memCop
+             addq value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9254,7 +9261,7 @@ macro doI32AtomicRmwAdd8(mem, val, memCo
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9272,7 +9279,7 @@ macro doI32AtomicRmwAdd16(mem, val, memC
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9290,7 +9297,7 @@ macro doI64AtomicRmwAdd8(mem, val, memCo
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9308,7 +9315,7 @@ macro doI64AtomicRmwAdd16(mem, val, memC
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9326,7 +9333,7 @@ macro doI64AtomicRmwAdd32(mem, val, memC
+             addi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9345,7 +9352,7 @@ macro doI32AtomicRmwSub(mem, val, memCop
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9364,7 +9371,7 @@ macro doI64AtomicRmwSub(mem, val, memCop
+             subq oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9384,7 +9391,7 @@ macro doI32AtomicRmwSub8(mem, val, memCo
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9404,7 +9411,7 @@ macro doI32AtomicRmwSub16(mem, val, memC
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9424,7 +9431,7 @@ macro doI64AtomicRmwSub8(mem, val, memCo
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9444,7 +9451,7 @@ macro doI64AtomicRmwSub16(mem, val, memC
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9464,7 +9471,7 @@ macro doI64AtomicRmwSub32(mem, val, memC
+             subi oldValue, value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9483,7 +9490,7 @@ macro doI32AtomicRmwAnd(mem, val, memCop
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9502,7 +9509,7 @@ macro doI64AtomicRmwAnd(mem, val, memCop
+             andq value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9521,7 +9528,7 @@ macro doI32AtomicRmwAnd8(mem, val, memCo
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9540,7 +9547,7 @@ macro doI32AtomicRmwAnd16(mem, val, memC
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9559,7 +9566,7 @@ macro doI64AtomicRmwAnd8(mem, val, memCo
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9578,7 +9585,7 @@ macro doI64AtomicRmwAnd16(mem, val, memC
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9597,7 +9604,7 @@ macro doI64AtomicRmwAnd32(mem, val, memC
+             andi value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9615,7 +9622,7 @@ macro doI32AtomicRmwOr(mem, val, memCopy
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9633,7 +9640,7 @@ macro doI64AtomicRmwOr(mem, val, memCopy
+             orq value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9651,7 +9658,7 @@ macro doI32AtomicRmwOr8(mem, val, memCop
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9669,7 +9676,7 @@ macro doI32AtomicRmwOr16(mem, val, memCo
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9687,7 +9694,7 @@ macro doI64AtomicRmwOr8(mem, val, memCop
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9705,7 +9712,7 @@ macro doI64AtomicRmwOr16(mem, val, memCo
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9723,7 +9730,7 @@ macro doI64AtomicRmwOr32(mem, val, memCo
+             ori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9741,7 +9748,7 @@ macro doI32AtomicRmwXor(mem, val, memCop
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9759,7 +9766,7 @@ macro doI64AtomicRmwXor(mem, val, memCop
+             xorq value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9777,7 +9784,7 @@ macro doI32AtomicRmwXor8(mem, val, memCo
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9795,7 +9802,7 @@ macro doI32AtomicRmwXor16(mem, val, memC
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9813,7 +9820,7 @@ macro doI64AtomicRmwXor8(mem, val, memCo
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9831,7 +9838,7 @@ macro doI64AtomicRmwXor16(mem, val, memC
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9849,7 +9856,7 @@ macro doI64AtomicRmwXor32(mem, val, memC
+             xori value, oldValue, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9867,7 +9874,7 @@ macro doI32AtomicRmwXchg(mem, val, memCo
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9885,7 +9892,7 @@ macro doI64AtomicRmwXchg(mem, val, memCo
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9903,7 +9910,7 @@ macro doI32AtomicRmwXchg8(mem, val, memC
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9921,7 +9928,7 @@ macro doI32AtomicRmwXchg16(mem, val, mem
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9939,7 +9946,7 @@ macro doI64AtomicRmwXchg8(mem, val, memC
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9957,7 +9964,7 @@ macro doI64AtomicRmwXchg16(mem, val, mem
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9975,7 +9982,7 @@ macro doI64AtomicRmwXchg32(mem, val, mem
+             move value, newValue
+         end)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -9989,7 +9996,7 @@ macro doI32AtomicCmpxchg(mem, expected,
+     elsif ARM64
+         weakCASExchangeInt(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10002,7 +10009,7 @@ macro doI64AtomicCmpxchg(mem, expected,
+     elsif ARM64
+         weakCASExchangeQuad(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10016,7 +10023,7 @@ macro doI32AtomicCmpxchg8(mem, expected,
+     elsif ARM64
+         weakCASExchangeByte(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10030,7 +10037,7 @@ macro doI32AtomicCmpxchg16(mem, expected
+     elsif ARM64
+         weakCASExchangeHalf(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10044,7 +10051,7 @@ macro doI64AtomicCmpxchg8(mem, expected,
+     elsif ARM64
+         weakCASExchangeByte(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10058,7 +10065,7 @@ macro doI64AtomicCmpxchg16(mem, expected
+     elsif ARM64
+         weakCASExchangeHalf(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10072,7 +10079,7 @@ macro doI64AtomicCmpxchg32(mem, expected
+     elsif ARM64
+         weakCASExchangeInt(memCopy, newVal, mem, scratch, expected)
+     else
+-        error
++        break
+     end
+ end
+ 
+@@ -10744,7 +10751,7 @@ macro weakCASExchangeByte(mem, value, ex
      .done:
          move scratch2, expected
      else
@@ -656,7 +739,7 @@
      end
  end
  
-@@ -10366,7 +10373,7 @@ macro weakCASExchangeHalf(mem, value, ex
+@@ -10764,7 +10771,7 @@ macro weakCASExchangeHalf(mem, value, ex
      .done:
          move scratch2, expected
      else
@@ -665,7 +748,7 @@
      end
  end
  
-@@ -10386,7 +10393,7 @@ macro weakCASExchangeInt(mem, value, exp
+@@ -10784,7 +10791,7 @@ macro weakCASExchangeInt(mem, value, exp
      .done:
          move scratch2, expected
      else
@@ -674,7 +757,7 @@
      end
  end
  
-@@ -10406,7 +10413,7 @@ macro weakCASExchangeQuad(mem, value, ex
+@@ -10804,7 +10811,7 @@ macro weakCASExchangeQuad(mem, value, ex
      .done:
          move scratch2, expected
      else
@@ -683,70 +766,7 @@
      end
  end
  
-@@ -10418,7 +10425,7 @@ ipintOp(_i32_atomic_rmw_cmpxchg, macro()
-         elsif ARM64
-             weakCASExchangeInt(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt32(expected)
-     end)
-@@ -10431,7 +10438,7 @@ ipintOp(_i64_atomic_rmw_cmpxchg, macro()
-         elsif ARM64
-             weakCASExchangeQuad(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt64(expected)
-     end)
-@@ -10445,7 +10452,7 @@ ipintOp(_i32_atomic_rmw8_cmpxchg_u, macr
-         elsif ARM64
-             weakCASExchangeByte(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt32(expected)
-     end)
-@@ -10459,7 +10466,7 @@ ipintOp(_i32_atomic_rmw16_cmpxchg_u, mac
-         elsif ARM64
-             weakCASExchangeHalf(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt32(expected)
-     end)
-@@ -10473,7 +10480,7 @@ ipintOp(_i64_atomic_rmw8_cmpxchg_u, macr
-         elsif ARM64
-             weakCASExchangeByte(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt64(expected)
-     end)
-@@ -10487,7 +10494,7 @@ ipintOp(_i64_atomic_rmw16_cmpxchg_u, mac
-         elsif ARM64
-             weakCASExchangeHalf(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt64(expected)
-     end)
-@@ -10501,7 +10508,7 @@ ipintOp(_i64_atomic_rmw32_cmpxchg_u, mac
-         elsif ARM64
-             weakCASExchangeInt(mem, value, expected, scratch, scratch2)
-         else
--            error
-+            break
-         end
-         pushInt64(expected)
-     end)
-@@ -10812,7 +10819,7 @@ mintAlign(_a1)
+@@ -12125,7 +12132,7 @@ mintAlign(_a1)
      mintArgDispatch()
  
  mintAlign(_a2)
@@ -755,7 +775,7 @@
      mintPop(a2)
      mintArgDispatch()
  else
-@@ -10820,7 +10827,7 @@ else
+@@ -12133,7 +12140,7 @@ else
  end
  
  mintAlign(_a3)
@@ -764,7 +784,7 @@
      mintPop(a3)
      mintArgDispatch()
  else
-@@ -10828,7 +10835,7 @@ else
+@@ -12141,7 +12148,7 @@ else
  end
  
  mintAlign(_a4)
@@ -773,7 +793,7 @@
      mintPop(a4)
      mintArgDispatch()
  else
-@@ -10836,7 +10843,7 @@ else
+@@ -12149,7 +12156,7 @@ else
  end
  
  mintAlign(_a5)
@@ -782,7 +802,7 @@
      mintPop(a5)
      mintArgDispatch()
  else
-@@ -10844,7 +10851,7 @@ else
+@@ -12157,7 +12164,7 @@ else
  end
  
  mintAlign(_a6)
@@ -791,7 +811,7 @@
      mintPop(a6)
      mintArgDispatch()
  else
-@@ -10852,7 +10859,7 @@ else
+@@ -12165,7 +12172,7 @@ else
  end
  
  mintAlign(_a7)
@@ -800,7 +820,7 @@
      mintPop(a7)
      mintArgDispatch()
  else
-@@ -11072,7 +11079,7 @@ mintAlign(_r1)
+@@ -12359,7 +12366,7 @@ mintAlign(_r1)
      mintRetDispatch()
  
  mintAlign(_r2)
@@ -809,7 +829,7 @@
      subp StackValueSize, mintRetDst
      storeq wa2, [mintRetDst]
      mintRetDispatch()
-@@ -11081,7 +11088,7 @@ else
+@@ -12368,7 +12375,7 @@ else
  end
  
  mintAlign(_r3)
@@ -818,7 +838,7 @@
      subp StackValueSize, mintRetDst
      storeq wa3, [mintRetDst]
      mintRetDispatch()
-@@ -11090,7 +11097,7 @@ else
+@@ -12377,7 +12384,7 @@ else
  end
  
  mintAlign(_r4)
@@ -827,7 +847,7 @@
      subp StackValueSize, mintRetDst
      storeq wa4, [mintRetDst]
      mintRetDispatch()
-@@ -11099,7 +11106,7 @@ else
+@@ -12386,7 +12393,7 @@ else
  end
  
  mintAlign(_r5)
@@ -836,7 +856,7 @@
      subp StackValueSize, mintRetDst
      storeq wa5, [mintRetDst]
      mintRetDispatch()
-@@ -11108,7 +11115,7 @@ else
+@@ -12395,7 +12402,7 @@ else
  end
  
  mintAlign(_r6)
@@ -845,7 +865,7 @@
      subp StackValueSize, mintRetDst
      storeq wa6, [mintRetDst]
      mintRetDispatch()
-@@ -11117,7 +11124,7 @@ else
+@@ -12404,7 +12411,7 @@ else
  end
  
  mintAlign(_r7)
@@ -854,7 +874,7 @@
      subp StackValueSize, mintRetDst
      storeq wa7, [mintRetDst]
      mintRetDispatch()
-@@ -11392,7 +11399,7 @@ uintAlign(_r5)
+@@ -12703,7 +12710,7 @@ uintAlign(_r5)
      uintDispatch()
  
  uintAlign(_r6)
@@ -863,7 +883,7 @@
      popQuad(wa6)
      uintDispatch()
  else
-@@ -11400,7 +11407,7 @@ else
+@@ -12711,7 +12718,7 @@ else
  end
  
  uintAlign(_r7)
@@ -872,57 +892,57 @@
      popQuad(wa7)
      uintDispatch()
  else
-@@ -11481,7 +11488,7 @@ argumINTAlign(_a1)
+@@ -12792,7 +12799,7 @@ argumINTAlign(_a1)
      argumINTDispatch()
  
  argumINTAlign(_a2)
 -if ARM64 or ARM64E or X86_64
 +if ARM64 or ARM64E or X86_64 or RISCV64
      storeq wa2, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
-@@ -11491,7 +11498,7 @@ end
+@@ -12802,7 +12809,7 @@ end
  
  
  argumINTAlign(_a3)
 -if ARM64 or ARM64E or X86_64
 +if ARM64 or ARM64E or X86_64 or RISCV64
      storeq wa3, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
-@@ -11500,7 +11507,7 @@ else
+@@ -12811,7 +12818,7 @@ else
  end
  
  argumINTAlign(_a4)
 -if ARM64 or ARM64E or X86_64
 +if ARM64 or ARM64E or X86_64 or RISCV64
      storeq wa4, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
-@@ -11509,7 +11516,7 @@ else
+@@ -12820,7 +12827,7 @@ else
  end
  
  argumINTAlign(_a5)
 -if ARM64 or ARM64E or X86_64
 +if ARM64 or ARM64E or X86_64 or RISCV64
      storeq wa5, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
-@@ -11518,7 +11525,7 @@ else
+@@ -12829,7 +12836,7 @@ else
  end
  
  argumINTAlign(_a6)
 -if ARM64 or ARM64E
 +if ARM64 or ARM64E or RISCV64
      storeq wa6, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
-@@ -11527,7 +11534,7 @@ else
+@@ -12838,7 +12845,7 @@ else
  end
  
  argumINTAlign(_a7)
 -if ARM64 or ARM64E
 +if ARM64 or ARM64E or RISCV64
      storeq wa7, [argumINTDst]
-     addp LocalSize, argumINTDst
+     subp LocalSize, argumINTDst
      argumINTDispatch()
