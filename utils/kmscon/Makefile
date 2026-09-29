@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=kmscon
 PKG_VERSION:=10.0.3
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/kmscon/kmscon/tar.gz/v$(PKG_VERSION)?
@@ -47,7 +47,7 @@ define Package/kmscon
   CATEGORY:=Utilities
   TITLE:=Terminal emulator on a KMS device
   URL:=https://github.com/kmscon/kmscon
-  DEPENDS:=+libtsm +libxkbcommon +libudev +libdrm +zlib \
+  DEPENDS:=input-support +libtsm +libxkbcommon +libudev +libdrm +zlib \
 	+xkeyboard-config +libseat +seatd
 endef
 
