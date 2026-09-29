@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
 PKG_VERSION:=26.2.2
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
@@ -105,7 +105,7 @@ endef
 define Package/libmesa-amd
 $(call Package/libmesa/Default)
   TITLE+= (AMD)
-  DEPENDS+=+libdrm-amdgpu +libdrm-radeon +libelf @MESA_USE_LLVM
+  DEPENDS+=accel-support +libdrm-amdgpu +libdrm-radeon +libelf @MESA_USE_LLVM
   VARIANT:=amd
 endef
 
@@ -129,7 +129,7 @@ endef
 
 define Package/libmesa-intel
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-intel @(i386||i686||x86_64) @MESA_USE_LLVM
+  DEPENDS+=accel-support +libdrm-intel @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= (Intel)
   VARIANT:=intel
 endef
@@ -157,7 +157,7 @@ endef
 
 define Package/libmesa-tegra
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-tegra @(aarch64||arm) @MESA_USE_LLVM
+  DEPENDS+=accel-support +libdrm-tegra @(aarch64||arm) @MESA_USE_LLVM
   TITLE+= (NVIDIA Tegra)
   VARIANT:=tegra
 endef
@@ -171,7 +171,7 @@ endef
 
 define Package/libmesa-etnaviv
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-etnaviv @(aarch64||arm||mips||mips64||mipsel||mips64el||riscv64)
+  DEPENDS+=accel-support +libdrm-etnaviv @(aarch64||arm||mips||mips64||mipsel||mips64el||riscv64)
   TITLE+= (Vivante)
   VARIANT:=etnaviv
 endef
@@ -185,7 +185,7 @@ endef
 
 define Package/libmesa-nouveau
 $(call Package/libmesa/Default)
-  DEPENDS+=+libdrm-nouveau @MESA_USE_LLVM
+  DEPENDS+=accel-support +libdrm-nouveau @MESA_USE_LLVM
   TITLE+= (NVIDIA)
   VARIANT:=nouveau
 endef
@@ -202,7 +202,7 @@ define Package/libmesa-broadcom
 $(call Package/libmesa/Default)
   TITLE+= (Broadcom)
   VARIANT:=broadcom
-  DEPENDS+=+libarchive @(aarch64||arm) @HAS_FPU
+  DEPENDS+=accel-support +libarchive @(aarch64||arm) @HAS_FPU
 endef
 
 define Package/libmesa-broadcom/description
@@ -224,7 +224,7 @@ define Package/libmesa-lima
 $(call Package/libmesa/Default)
   TITLE+= (ARM Mali Utgard)
   VARIANT:=lima
-  DEPENDS+=@(aarch64||arm)
+  DEPENDS+=accel-support @(aarch64||arm)
 endef
 
 define Package/libmesa-lima/description
@@ -247,7 +247,7 @@ define Package/libmesa-panfrost
 $(call Package/libmesa/Default)
   TITLE+= (ARM Mali Midgard and later)
   VARIANT:=panfrost
-  DEPENDS+=@(aarch64||arm) @MESA_USE_LLVM
+  DEPENDS+=accel-support @(aarch64||arm) @MESA_USE_LLVM
 endef
 
 define Package/libmesa-panfrost/description
@@ -272,6 +272,7 @@ define Package/libmesa-virgl
 $(call Package/libmesa/Default)
   TITLE+= (VirtIO GL)
   VARIANT:=virgl
+  DEPENDS+=accel-support
 endef
 
 define Package/libmesa-virgl/description
@@ -286,7 +287,7 @@ define Package/libmesa-zink
 $(call Package/libmesa/Default)
   TITLE+= (Zink GL via Vulkan)
   VARIANT:=vulkan
-  DEPENDS+=@MESA_USE_LLVM
+  DEPENDS+=accel-support @MESA_USE_LLVM
 endef
 
 define Package/libmesa-zink/description
@@ -328,7 +329,7 @@ endef
 
 define Package/libvulkan-broadcom
 $(call Package/mesa/Default)
-  DEPENDS+=+libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=accel-support +libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(arm||aarch64) @HAS_FPU
   TITLE+= Broadcom Vulkan driver
   VARIANT:=vulkan
@@ -341,7 +342,7 @@ endef
 
 define Package/libvulkan-imagination
 $(call Package/mesa/Default)
-  DEPENDS+=+libatomic +libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd \
+  DEPENDS+=accel-support +libatomic +libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd \
 	   +zlib @(aarch64||arm||mips||mips64||mipsel||mips64el||riscv64)
   TITLE+= Imagination PowerVR driver (EXPERIMENTAL)
   VARIANT:=vulkan
@@ -365,7 +366,7 @@ endef
 
 define Package/libvulkan-intel
 $(call Package/mesa/Default)
-  DEPENDS+=+libdisplay-info +libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=accel-support +libdisplay-info +libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= Intel Gen9+ Vulkan driver
   VARIANT:=vulkan
@@ -378,7 +379,7 @@ endef
 
 define Package/libvulkan-intel-hasvk
 $(call Package/mesa/Default)
-  DEPENDS+=+libdisplay-info +libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=accel-support +libdisplay-info +libdrm-intel +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(i386||i686||x86_64) @MESA_USE_LLVM
   TITLE+= Intel Gen7/Gen8 Vulkan driver
   VARIANT:=vulkan
@@ -404,7 +405,7 @@ endef
 define Package/libvulkan-nouveau
 $(call Package/mesa/Default)
   TITLE+= nouveau Vulkan driver for nVidia GPUs
-  DEPENDS+=$(RUST_ARCH_DEPENDS) @MESA_USE_LLVM @BROKEN
+  DEPENDS+=accel-support $(RUST_ARCH_DEPENDS) @MESA_USE_LLVM @BROKEN
   VARIANT:=vulkan
 # needs rust-bindgen which currently can't be built
 endef
@@ -420,7 +421,7 @@ endef
 
 define Package/libvulkan-panfrost
 $(call Package/mesa/Default)
-  DEPENDS+=+libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
+  DEPENDS+=accel-support +libdisplay-info +libdrm +libexpat +libstdcpp +libudev +libwayland +libzstd +zlib \
 	   @(arm||aarch64) @MESA_USE_LLVM
   TITLE+= ARM Mali Midgard/Bifrost/Valhall Vulkan driver
   VARIANT:=vulkan
@@ -434,7 +435,7 @@ endef
 define Package/libvulkan-radeon
 $(call Package/mesa/Default)
   TITLE+= AMD Radeon Vulkan driver
-  DEPENDS+=+libdisplay-info +libdrm-amdgpu +libelf +libexpat +libstdcpp +libudev +libwayland \
+  DEPENDS+=accel-support +libdisplay-info +libdrm-amdgpu +libelf +libexpat +libstdcpp +libudev +libwayland \
 	   +libzstd +zlib @MESA_USE_LLVM
   VARIANT:=vulkan
 endef
@@ -446,7 +447,7 @@ endef
 define Package/libvulkan-virtio
 $(call Package/mesa/Default)
   TITLE+= virtio-gpu Vulkan driver (venus)
-  DEPENDS+=+libdisplay-info +libdrm +libstdcpp +libudev +libwayland +libzstd +zlib
+  DEPENDS+=accel-support +libdisplay-info +libdrm +libstdcpp +libudev +libwayland +libzstd +zlib
   VARIANT:=vulkan
 endef
 
