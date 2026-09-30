@@ -8,6 +8,7 @@ PROG=/usr/bin/seatd
 
 start_service() {
 	procd_open_instance
+	[ ! -e /dev/tty0 ] && procd_append_param env SEATD_VTBOUND=0
 	procd_set_param command "$PROG" -g video
 	procd_close_instance
 }
