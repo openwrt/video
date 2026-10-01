@@ -565,6 +565,7 @@ on_draw (void *user_data, ply_pixel_buffer_t *pixel_buffer, int x, int y,
 	ply_rectangle_t size;
 	uc_value_t *args[5];
 	uint32_t *data;
+	int scale;
 
 	if (!plugin->vm_ready)
 		return;
@@ -575,10 +576,12 @@ on_draw (void *user_data, ply_pixel_buffer_t *pixel_buffer, int x, int y,
 		return;
 
 	ply_pixel_buffer_get_size (pixel_buffer, &size);
+	scale = ply_pixel_buffer_get_device_scale (pixel_buffer);
 
 	surface = plutovg_surface_create_for_data ((unsigned char *)data,
-						   size.width, size.height,
-						   size.width * 4);
+						   size.width * scale,
+						   size.height * scale,
+						   size.width * scale * 4);
 
 	if (!surface)
 		return;
@@ -589,6 +592,7 @@ on_draw (void *user_data, ply_pixel_buffer_t *pixel_buffer, int x, int y,
 	if (!canvas)
 		return;
 
+	plutovg_canvas_scale (canvas, scale, scale);
 	plutovg_canvas_rect (canvas, x, y, width, height);
 	plutovg_canvas_clip (canvas);
 
@@ -608,10 +612,10 @@ on_draw (void *user_data, ply_pixel_buffer_t *pixel_buffer, int x, int y,
 
 	/* drawing through the raw ARGB pointer bypasses the helpers that
 	 * record what changed, so plymouth would upload nothing */
-	painted.x = x;
-	painted.y = y;
-	painted.width = width;
-	painted.height = height;
+	painted.x = x * scale;
+	painted.y = y * scale;
+	painted.width = width * scale;
+	painted.height = height * scale;
 	ply_region_add_rectangle (ply_pixel_buffer_get_updated_areas (pixel_buffer),
 				  &painted);
 }
