@@ -1,0 +1,96 @@
+From f4ac793e014740f24db7414a9c6374196f096ac5 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 1 Oct 2026 14:50:44 +0100
+Subject: [PATCH] vt_libseat: dispatch libseat events queued during open
+
+seatd answers CLIENT_OPEN_SEAT by buffering the response and the enable
+event together, so both reach libseat in one read and nothing is left on
+the socket for the event loop to report. Watching the libseat fd for
+readability therefore never activates the seat: seat_go_awake() is never
+reached, no video device is initialised and nothing is drawn.
+
+Dispatch libseat once from an idle callback, which runs after the loop
+has started, as the real VT backend reports activation from. The seat is
+also enabled while libseat_open_seat() is still running, before
+uterm_vt_allocate() has installed the callbacks an activation needs, so
+hold such an enable and replay it from the same callback.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/uterm/vt_libseat.c | 37 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+--- a/src/uterm/vt_libseat.c
++++ b/src/uterm/vt_libseat.c
+@@ -44,6 +44,7 @@ struct uterm_vt_libseat {
+ 
+ 	struct libseat *libseat;
+ 	struct ev_fd *libseat_efd;
++	bool enable_pending;
+ 	int tty_fd;
+ 	int tty_num;
+ 	int saved_kbmode;
+@@ -135,6 +136,16 @@ static void vt_libseat_enable(struct lib
+ 	log_debug("libseat: seat enabled");
+ 
+ 	tty_activate(vt);
++
++	/*
++	 * seatd enables the seat while we are still opening it, which is before
++	 * uterm_vt_allocate() has installed the callbacks an activation needs.
++	 */
++	if (!vt->base.cb.activate) {
++		vt->enable_pending = true;
++		return;
++	}
++
+ 	vt_cb_activate(&vt->base);
+ }
+ 
+@@ -156,6 +167,25 @@ static void vt_libseat_event(struct ev_f
+ 		log_warning("libseat dispatch failed: %m");
+ }
+ 
++/*
++ * seatd flushes the enable event together with the response to opening the
++ * seat, so it can already be buffered inside libseat with nothing left on the
++ * socket to make the eloop report our fd readable. Drain it once the loop is
++ * running, which is also where the real VT backend reports activation from.
++ */
++static void vt_libseat_idle(struct ev_eloop *eloop, void *unused, void *data)
++{
++	struct uterm_vt_libseat *vt = data;
++
++	if (libseat_dispatch(vt->libseat, 0) < 0)
++		log_warning("initial libseat dispatch failed: %m");
++
++	if (vt->enable_pending) {
++		vt->enable_pending = false;
++		vt_cb_activate(&vt->base);
++	}
++}
++
+ static const struct libseat_seat_listener libseat_listener = {
+ 	.enable_seat = vt_libseat_enable,
+ 	.disable_seat = vt_libseat_disable,
+@@ -166,6 +196,7 @@ static void vt_libseat_destroy(struct ut
+ 	struct uterm_vt_libseat *vt = to_libseat(base);
+ 
+ 	close_tty(vt);
++	ev_eloop_unregister_idle_cb(vt->base.eloop, vt_libseat_idle, vt, EV_ONESHOT);
+ 	ev_eloop_rm_fd(vt->libseat_efd);
+ 	libseat_close_seat(vt->libseat);
+ }
+@@ -379,6 +410,12 @@ struct uterm_vt *uterm_vt_libseat_new(st
+ 	if (ret)
+ 		goto err_libseat_fd;
+ 
++	ret = ev_eloop_register_idle_cb(vt->base.eloop, vt_libseat_idle, vt, EV_ONESHOT);
++	if (ret) {
++		log_error("cannot register libseat idle callback: %d", ret);
++		goto err_libseat_fd;
++	}
++
+ 	return &vt->base;
+ 
+ err_libseat_fd:
