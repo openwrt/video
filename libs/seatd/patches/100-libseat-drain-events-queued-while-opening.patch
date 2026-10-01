@@ -1,0 +1,40 @@
+From 4c8c6046a8dba6dd5ab4b60a62cb5abe3aefa5d2 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 1 Oct 2026 14:49:22 +0100
+Subject: [PATCH] libseat/seatd: drain events queued while opening the seat
+
+seatd answers CLIENT_OPEN_SEAT by buffering SERVER_SEAT_OPENED and then
+calling seat_open_client(), which buffers SERVER_ENABLE_SEAT, so both
+messages reach the client in a single read. read_and_queue() stops at
+the first non-event header, restores it and returns, which leaves the
+enable event unparsed in the connection buffer. _open_seat() consumes
+only the response and then calls execute_events() on an empty queue.
+
+Nothing is left on the socket at that point, so a client that dispatches
+when its fd becomes readable, as the documented contract invites, never
+sees the event and never activates its seat. Read and queue once more
+before executing, so an event delivered alongside the response is
+handled during open.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ libseat/backend/seatd.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/libseat/backend/seatd.c
++++ b/libseat/backend/seatd.c
+@@ -432,6 +432,14 @@ static struct libseat *_open_seat(const
+ 		goto backend_error;
+ 	}
+ 
++	// The server flushes the enable event together with the open response,
++	// so it is likely already sitting in our connection buffer with
++	// nothing left on the socket to wake a poll on our fd.
++	if (read_and_queue(backend, NULL) == -1) {
++		res = -errno;
++		goto backend_error;
++	}
++
+ 	execute_events(backend);
+ 	return &backend->base;
+ 
