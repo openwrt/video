@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=plymouth-theme-openwrt-demo
 PKG_VERSION:=1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=GPL-2.0-or-later
@@ -40,7 +40,7 @@ endef
 
 define Package/plymouth-theme-openwrt-demo/install
 	$(INSTALL_DIR) $(1)/usr/share/plymouth/themes/openwrt-demo
-	$(INSTALL_DATA) ./files/openwrt.plymouth \
+	$(INSTALL_DATA) ./files/openwrt-demo.plymouth \
 		$(1)/usr/share/plymouth/themes/openwrt-demo/
 	$(INSTALL_DATA) ./files/openwrt.uc \
 		$(1)/usr/share/plymouth/themes/openwrt-demo/
