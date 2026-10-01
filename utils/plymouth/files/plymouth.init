@@ -19,14 +19,11 @@ start() {
 	ls /dev/dri/card* >/dev/null 2>&1 || return 0
 	running && return 0
 
-	# plymouth only draws a graphical splash when the kernel was asked
-	# for one, and requiring that of every board's boot script would put
-	# a plymouth-ism in front of everyone. Ask for it here instead.
-	# Where the console is a serial port plymouth drops to text on it
-	# and never opens a renderer, so leave those alone.
+	# --graphical-boot asks for the themed splash without a "splash"
+	# kernel argument and keeps plymouth away from the console, which on
+	# a board without a VT would otherwise be its serial port.
 	/usr/sbin/plymouthd --mode=boot --pid-file="$PIDFILE" \
-		--ignore-serial-consoles --attach-to-session \
-		--kernel-command-line="$(cat /proc/cmdline) splash" || return 1
+		--graphical-boot || return 1
 	/usr/bin/plymouth show-splash
 }
 
@@ -59,8 +56,7 @@ shutdown() {
 	fi
 
 	/usr/sbin/plymouthd --mode=shutdown --pid-file="$PIDFILE" \
-		--ignore-serial-consoles \
-		--kernel-command-line="$(cat /proc/cmdline) splash" || return 0
+		--graphical-boot || return 0
 	/usr/bin/plymouth show-splash
 }
 
