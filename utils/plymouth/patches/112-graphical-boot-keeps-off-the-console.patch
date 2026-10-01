@@ -1,0 +1,129 @@
+From 7154d2de9c8a21994c5f60926126ad64fb4cc74d Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 1 Oct 2026 12:46:03 +0100
+Subject: [PATCH] Keep off the console when a graphical splash is forced
+
+--graphical-boot asks for a graphical splash on a system whose kernel
+console is not a VT, yet plymouth still insists on a terminal. Where
+BOOT_TTY is absent, find_fallback_tty() hands it the system console,
+which on an embedded board is a serial port: plymouth opens it O_RDWR,
+watches it for input, puts it in raw mode and locks every termios bit
+with TIOCSLCKTRMIOS, so a shell on that console loses its line
+discipline and its keystrokes. The text and details splashes reachable
+on such a board switch console printk off through klogctl() and only
+switch it back on when they are hidden, and they have no text console
+to draw on in the first place.
+
+Leave default_tty unset in that case so no console terminal is created,
+skip console management and the non-graphical device path when there is
+none, end the splash cascade before the text and built-in splashes, and
+let an explicit request for a graphical splash settle the choice before
+the command line is consulted. A board without a VT then draws on KMS
+and leaves its console alone.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/libply-splash-core/ply-device-manager.c | 14 ++++++++++--
+ src/main.c                                  | 25 ++++++++++++---------
+ 2 files changed, 26 insertions(+), 13 deletions(-)
+
+--- a/src/libply-splash-core/ply-device-manager.c
++++ b/src/libply-splash-core/ply-device-manager.c
+@@ -874,8 +874,10 @@ ply_device_manager_new (const char
+         manager->terminals = ply_hashtable_new (ply_hashtable_string_hash, ply_hashtable_string_compare);
+         manager->renderers = ply_hashtable_new (ply_hashtable_string_hash, ply_hashtable_string_compare);
+ 
+-        manager->local_console_terminal = ply_terminal_new (default_tty, manager->keymap);
+-        ply_terminal_open (manager->local_console_terminal);
++        if (default_tty != NULL) {
++                manager->local_console_terminal = ply_terminal_new (default_tty, manager->keymap);
++                ply_terminal_open (manager->local_console_terminal);
++        }
+ 
+         manager->input_devices = ply_hashtable_new (ply_hashtable_string_hash, ply_hashtable_string_compare);
+         manager->keyboards = ply_list_new ();
+@@ -1207,6 +1209,11 @@ create_devices_from_terminals (ply_devic
+ 
+         ply_trace ("checking for consoles");
+ 
++        if (manager->local_console_terminal == NULL) {
++                ply_trace ("no console terminal, so not managing any console");
++                return false;
++        }
++
+         if (manager->flags & PLY_DEVICE_MANAGER_FLAGS_IGNORE_SERIAL_CONSOLES) {
+                 has_serial_consoles = false;
+                 ply_trace ("ignoring all consoles but default console because explicitly told to.");
+@@ -1231,6 +1238,9 @@ create_devices_from_terminals (ply_devic
+ static void
+ create_non_graphical_devices (ply_device_manager_t *manager)
+ {
++        if (manager->local_console_terminal == NULL)
++                return;
++
+         create_devices_for_terminal_and_renderer_type (manager,
+                                                        NULL,
+                                                        manager->local_console_terminal,
+--- a/src/main.c
++++ b/src/main.c
+@@ -507,13 +507,13 @@ show_default_splash (state_t *state)
+                 state->boot_splash = show_theme (state, PLYMOUTH_THEME_PATH "default.plymouth");
+         }
+ 
+-        if (state->boot_splash == NULL) {
++        if (state->boot_splash == NULL && !state->should_force_default_splash) {
+                 ply_trace ("Could not start default splash screen,"
+                            "showing text splash screen");
+                 state->boot_splash = show_theme (state, PLYMOUTH_THEME_PATH "text/text.plymouth");
+         }
+ 
+-        if (state->boot_splash == NULL) {
++        if (state->boot_splash == NULL && !state->should_force_default_splash) {
+                 ply_trace ("Could not start text splash screen,"
+                            "showing built-in splash screen");
+                 state->boot_splash = show_theme (state, NULL);
+@@ -938,6 +938,11 @@ plymouth_should_show_default_splash (sta
+         };
+         int i;
+ 
++        if (state->should_force_default_splash) {
++                ply_trace ("using default splash because forced by \"plymouth.graphical\" or no active kernel console");
++                return true;
++        }
++
+         if (state->should_force_details)
+                 return false;
+ 
+@@ -968,11 +973,6 @@ plymouth_should_show_default_splash (sta
+                 return true;
+         }
+ 
+-        if (state->should_force_default_splash) {
+-                ply_trace ("using default splash because forced by \"plymouth.graphical\" or no active kernel console");
+-                return true;
+-        }
+-
+         ply_trace ("no default splash because kernel command line lacks \"splash\" or \"rhgb\"");
+         return false;
+ }
+@@ -2210,13 +2210,16 @@ initialize_environment (state_t *state)
+ 
+                 ply_trace ("checking if '%s' exists", state->default_tty);
+                 if (!ply_character_device_exists (state->default_tty)) {
+-                        if (!state->should_force_default_splash) {
++                        if (state->should_force_default_splash) {
++                                ply_trace ("nope, but a graphical splash was asked for, so going without a terminal");
++                                state->default_tty = NULL;
++                        } else {
+                                 ply_trace ("nope, forcing details mode");
+                                 state->should_force_details = true;
+-                        }
+ 
+-                        state->default_tty = find_fallback_tty (state);
+-                        ply_trace ("going to go with '%s'", state->default_tty);
++                                state->default_tty = find_fallback_tty (state);
++                                ply_trace ("going to go with '%s'", state->default_tty);
++                        }
+                 }
+         }
+ 
