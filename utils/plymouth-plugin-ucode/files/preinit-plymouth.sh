@@ -32,8 +32,7 @@ plymouth_preinit_start() {
 
 	[ -n "$found" ] || return 0
 
-	/usr/sbin/plymouthd --mode=boot --ignore-serial-consoles \
-		--kernel-command-line="$(cat /proc/cmdline) splash" || return 0
+	/usr/sbin/plymouthd --mode=boot --graphical-boot || return 0
 
 	/usr/bin/plymouth show-splash
 }
