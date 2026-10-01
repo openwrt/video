@@ -1,0 +1,46 @@
+From 656b03669312e0c317d379ff3c8591613dbde608 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 1 Oct 2026 14:50:15 +0100
+Subject: [PATCH 1/2] vt_libseat: mark an unopened tty as -1
+
+The libseat backend leaves tty_fd at 0 when no VT was named, while
+tty_activate() and tty_deactivate() test it with < 0 and so issue
+KDSETMODE and KDSKBMODE on file descriptor 0. close_tty() and
+vt_libseat_bell() test with <= 0 instead, which disagrees about whether
+0 is a usable descriptor.
+
+Set tty_fd to -1 when there is no tty and test for that everywhere.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/uterm/vt_libseat.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/src/uterm/vt_libseat.c
++++ b/src/uterm/vt_libseat.c
+@@ -91,7 +91,7 @@ static int open_tty(struct uterm_vt_libs
+ 
+ static void close_tty(struct uterm_vt_libseat *vt)
+ {
+-	if (vt->tty_fd <= 0)
++	if (vt->tty_fd < 0)
+ 		return;
+ 
+ 	ioctl(vt->tty_fd, KDSKBMODE, vt->saved_kbmode);
+@@ -190,7 +190,7 @@ static void vt_libseat_bell(struct uterm
+ {
+ 	struct uterm_vt_libseat *vt = to_libseat(base);
+ 
+-	if (vt->tty_fd <= 0)
++	if (vt->tty_fd < 0)
+ 		return;
+ 
+ 	if (write(vt->tty_fd, "\a", 1) != 1)
+@@ -329,6 +329,7 @@ struct uterm_vt *uterm_vt_libseat_new(st
+ 	if (!vt)
+ 		return NULL;
+ 	memset(vt, 0, sizeof(*vt));
++	vt->tty_fd = -1;
+ 	vt->base.eloop = eloop;
+ 	vt->base.input = input;
+ 	vt->base.ops = &vt_libseat_ops;
