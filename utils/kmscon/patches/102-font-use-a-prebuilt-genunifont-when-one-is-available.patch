@@ -1,0 +1,59 @@
+From 7d58b8fc435ea3595e34bbabdee8c01310df73f6 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 5 Oct 2026 17:06:35 +0100
+Subject: [PATCH] font: use a prebuilt genunifont when one is available
+
+A cross build compiles genunifont for the build machine, so it needs a
+native zlib that the build system's pkg-config has to resolve for the
+build machine rather than the target. Build systems that provide their
+own host tools have no way to hand over a genunifont they already built.
+
+Look genunifont up with find_program() first, which honours PATH and
+the binaries section of a machine file, and build it only when none is
+found. The native zlib dependency moves with it, so it is only looked
+up when the generator is actually built.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ meson.build          |  1 -
+ src/font/meson.build | 17 +++++++++++------
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+--- a/meson.build
++++ b/meson.build
+@@ -56,7 +56,6 @@ libudev_deps = dependency('libudev', ver
+ dl_deps = dependency('dl')
+ threads_deps = dependency('threads')
+ zlib_deps = dependency('zlib')
+-zlib_deps_native = dependency('zlib', native: true)
+ 
+ python = find_program('python3')
+ 
+--- a/src/font/meson.build
++++ b/src/font/meson.build
+@@ -19,14 +19,19 @@ font_deps = declare_dependency(
+ #
+ # Unifont Generator
+ # This generates the unifont sources from raw hex-encoded font data.
++# A cross build can provide a prebuilt one in PATH or in its machine file.
+ #
+ if enable_font_unifont
+-    genunifont = executable(
+-        'genunifont',
+-        'genunifont.c',
+-        dependencies: [zlib_deps_native],
+-        native: true,
+-    )
++    genunifont = find_program('genunifont', native: true, required: false)
++
++    if not genunifont.found()
++        genunifont = executable(
++            'genunifont',
++            'genunifont.c',
++            dependencies: [dependency('zlib', native: true)],
++            native: true,
++        )
++    endif
+ 
+     unifont_bin = custom_target(
+         'unifont-bin',
