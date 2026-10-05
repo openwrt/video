@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=plymouth-plugin-ucode
 PKG_VERSION:=1
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=GPL-2.0-or-later
@@ -31,6 +31,7 @@ TARGET_CFLAGS += \
 	-DUCODE_SONAME=\"$(UCODE_SONAME)\" \
 	-I$(STAGING_DIR)/usr/include/plymouth-1/ply \
 	-I$(STAGING_DIR)/usr/include/plymouth-1/ply-splash-core \
+	-I$(STAGING_DIR)/usr/include/plymouth-1/ply-boot-client \
 	-std=gnu99 -Wall -Wextra -Wno-unused-parameter
 
 define Build/Compile
@@ -64,6 +65,9 @@ define Package/plymouth-plugin-ucode/install
 	$(INSTALL_DIR) $(1)/lib/preinit
 	$(INSTALL_DATA) ./files/preinit-plymouth.sh \
 		$(1)/lib/preinit/03_plymouth
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/input
+	$(INSTALL_DATA) ./files/hotplug-plymouth.sh \
+		$(1)/etc/hotplug.d/input/50-plymouth
 endef
 
 $(eval $(call BuildPackage,plymouth-plugin-ucode))
