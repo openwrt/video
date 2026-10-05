@@ -1,0 +1,81 @@
+From e9ec5b3d7d81a4454c7b6db4ee5d850e32a22468 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 5 Oct 2026 17:51:36 +0100
+Subject: [PATCH] boot-splash: Stop flushing displays while deactivated
+
+A shown splash flushes its pixel displays from a timer at
+FRAMES_PER_SECOND, and the timer keeps running after plymouthd has been
+deactivated. The renderers are inactive by then, so every flush is
+dropped, yet the daemon still wakes up for each one, for as long as a
+deactivated splash stays loaded behind whatever took over the display.
+
+Stop the frame timer when the splash is deactivated and restart it on
+reactivation, which also flushes whatever was drawn in between.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ src/libply-splash-core/ply-boot-splash.c | 21 +++++++++++++++++++++
+ src/libply-splash-core/ply-boot-splash.h |  2 ++
+ src/main.c                               |  6 ++++++
+ 3 files changed, 29 insertions(+)
+
+--- a/src/libply-splash-core/ply-boot-splash.c
++++ b/src/libply-splash-core/ply-boot-splash.c
+@@ -825,3 +825,24 @@ ply_boot_splash_uses_pixel_displays (ply
+         return splash->plugin_interface->add_pixel_display != NULL;
+ }
+ 
++void
++ply_boot_splash_stop_frames (ply_boot_splash_t *splash)
++{
++        if (splash->loop == NULL || !splash->is_shown)
++                return;
++
++        ply_event_loop_stop_watching_for_timeout (splash->loop,
++                                                  (ply_event_loop_timeout_handler_t)
++                                                  on_new_frame, splash);
++}
++
++void
++ply_boot_splash_start_frames (ply_boot_splash_t *splash)
++{
++        if (splash->loop == NULL || !splash->is_shown)
++                return;
++
++        ply_boot_splash_stop_frames (splash);
++        on_new_frame (splash);
++}
++
+--- a/src/libply-splash-core/ply-boot-splash.h
++++ b/src/libply-splash-core/ply-boot-splash.h
+@@ -97,6 +97,8 @@ void ply_boot_splash_become_idle (ply_bo
+                                   ply_boot_splash_on_idle_handler_t idle_handler,
+                                   void                             *user_data);
+ bool ply_boot_splash_uses_pixel_displays (ply_boot_splash_t *splash);
++void ply_boot_splash_stop_frames (ply_boot_splash_t *splash);
++void ply_boot_splash_start_frames (ply_boot_splash_t *splash);
+ 
+ 
+ #endif
+--- a/src/main.c
++++ b/src/main.c
+@@ -1350,6 +1350,9 @@ deactivate_splash (state_t *state)
+         if (state->boot_splash && ply_boot_splash_uses_pixel_displays (state->boot_splash))
+                 ply_device_manager_deactivate_renderers (state->device_manager);
+ 
++        if (state->boot_splash)
++                ply_boot_splash_stop_frames (state->boot_splash);
++
+         deactivate_console (state);
+ 
+         state->is_inactive = true;
+@@ -1450,6 +1453,9 @@ on_reactivate (state_t *state)
+ 
+         state->is_inactive = false;
+ 
++        if (state->boot_splash)
++                ply_boot_splash_start_frames (state->boot_splash);
++
+         update_display (state);
+ }
+ 

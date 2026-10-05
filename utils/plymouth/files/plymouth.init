@@ -48,9 +48,15 @@ shutdown() {
 	ls /dev/dri/card* >/dev/null 2>&1 || return 0
 	[ -x /usr/sbin/plymouthd ] || return 0
 
+	# Waiting for a display client to finish its own shutdown is the
+	# point here, so rcS cancelling a slow K script must not cut it short.
+	trap '' TERM
+	/usr/sbin/plymouth-evict
+
+	# reactivating first would flush a frame of the boot splash
 	if running; then
-		/usr/bin/plymouth reactivate
 		/usr/bin/plymouth change-mode --shutdown
+		/usr/bin/plymouth reactivate
 		/usr/bin/plymouth show-splash
 		return 0
 	fi
