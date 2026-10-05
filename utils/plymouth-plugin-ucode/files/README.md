@@ -65,12 +65,12 @@ handful of boxes that actually changed. Damage tightly.
 `event(name, detail)`:
 
     setup-time      mode passed to setup() instead
-    progress        { duration, fraction } from plymouth
     status          a status line
     output          console output during boot
     message         a message plymouth wants shown
     system-update   an integer percentage, during sysupgrade
-    idle            plymouth is handing the display over
+    idle            plymouth is handing the display over; frame() stops
+                    until it takes the display back
     ubus-connected  the splash reached ubus
     ubus            { type, data, path, present }
 
@@ -82,6 +82,37 @@ object exist before preinit runs.
 
 `data` is the raw JSON of the event. For `ubus.object.add` the `path`
 field is provided directly, so a theme does not have to parse it.
+
+## Input
+
+While a boot splash is up, the plugin watches every `/dev/input/event*`
+node. Those present when the splash starts are opened at once; procd
+announces later ones through `/etc/hotplug.d/input`, which hands them to
+the plugin as `plymouth update --status=input:eventN`, since procd
+replaces `/dev` after preinit and a watch on it would see none of them.
+Such updates are not passed on to the theme. The first key, button or touch
+press asks plymouthd to deactivate, the same as `plymouth deactivate`:
+the splash stays loaded and the display goes to whoever is waiting for
+it, a console on a system that runs nothing else. Pointer motion does not
+count, and no other mode reacts to input.
+
+## Handing the display over
+
+`ubus call plymouth status` answers `{ "display": true }` while the
+splash holds the display. Whenever it lets go, by input, `plymouth
+deactivate` or quitting, the plugin hands procd a `plymouth.release`
+service event, so a display client that should only start once the
+splash is gone waits for it like kmscon does:
+
+    start_service() {
+        [ "$(ubus -S call plymouth status 2>/dev/null | \
+            jsonfilter -e '@.display')" = true ] && return 0
+        ...
+    }
+
+    service_triggers() {
+        procd_add_raw_trigger plymouth.release 0 /etc/init.d/<name> start
+    }
 
 ## Pictograms
 

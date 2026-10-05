@@ -1,11 +1,16 @@
+#include <dirent.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/inotify.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <linux/input.h>
 
 #include <libubox/blobmsg_json.h>
 #include <libubus.h>
@@ -17,6 +22,7 @@
 #include <ucode/source.h>
 #include <ucode/vm.h>
 
+#include "ply-boot-protocol.h"
 #include "ply-boot-splash-plugin.h"
 #include "ply-event-loop.h"
 #include "ply-key-file.h"
@@ -27,6 +33,7 @@
 #include "ply-region.h"
 #include "ply-rectangle.h"
 #include "ply-trigger.h"
+#include "ply-utils.h"
 
 #define DEFAULT_FRAME_RATE 30.0
 
@@ -35,18 +42,33 @@ typedef struct
 	ply_pixel_display_t *display;
 } view_t;
 
+typedef struct
+{
+	ply_boot_splash_plugin_t *plugin;
+	ply_fd_watch_t *watch;
+	char *name;
+	int fd;
+} input_t;
+
 #define UBUS_SOCKET_DIR "/var/run/ubus"
+#define INPUT_DIR "/dev/input"
+#define INPUT_STATUS "input:"
 
 struct _ply_boot_splash_plugin
 {
 	struct ubus_event_handler ubus_listener;
+	struct ubus_object ubus_object;
+	struct ubus_request release_req;
 	ply_boot_splash_mode_t mode;
 	struct ubus_context *ubus;
 	ply_fd_watch_t *ubus_watch;
 	ply_fd_watch_t *wait_watch;
+	ply_fd_watch_t *release_watch;
 	ply_event_loop_t *loop;
 	ply_list_t *views;
+	ply_list_t *inputs;
 	int wait_fd;
+	int release_fd;
 	uc_parse_config_t config;
 	uc_program_t *program;
 	uc_source_t *source;
@@ -55,8 +77,10 @@ struct _ply_boot_splash_plugin
 	char *theme_dir;
 	double frame_interval;
 	double started_at;
+	double frame_due;
 	bool vm_ready;
 	bool animating;
+	bool inputs_active;
 };
 
 static ply_boot_splash_plugin_t *plugin_instance;
@@ -318,21 +342,93 @@ on_ubus_readable (void *user_data, int fd)
 		ubus_handle_event (plugin->ubus);
 }
 
-static bool
+static int
+on_status_request (struct ubus_context *ctx, struct ubus_object *obj,
+		   struct ubus_request_data *req, const char *method,
+		   struct blob_attr *msg)
+{
+	ply_boot_splash_plugin_t *plugin;
+	struct blob_buf b = {};
+
+	plugin = container_of (obj, ply_boot_splash_plugin_t, ubus_object);
+
+	blob_buf_init (&b, 0);
+	blobmsg_add_u8 (&b, "display", plugin->animating);
+	ubus_send_reply (ctx, req, b.head);
+	blob_buf_free (&b);
+
+	return 0;
+}
+
+static const struct ubus_method plymouth_methods[] = {
+	UBUS_METHOD_NOARG ("status", on_status_request),
+};
+
+static struct ubus_object_type plymouth_object_type =
+	UBUS_OBJECT_TYPE ("plymouth", plymouth_methods);
+
+/* procd runs service triggers for events it is handed, not for broadcasts */
+static void
+release_announce (ply_boot_splash_plugin_t *plugin)
+{
+	struct blob_buf b = {};
+	uint32_t id;
+	void *data;
+
+	if (!plugin->ubus || ubus_lookup_id (plugin->ubus, "service", &id))
+		return;
+
+	blob_buf_init (&b, 0);
+	blobmsg_add_string (&b, "type", "plymouth.release");
+	data = blobmsg_open_table (&b, "data");
+	blobmsg_close_table (&b, data);
+	ubus_abort_request (plugin->ubus, &plugin->release_req);
+
+	if (!ubus_invoke_async (plugin->ubus, id, "event", b.head,
+				&plugin->release_req))
+		ubus_complete_request_async (plugin->ubus, &plugin->release_req);
+
+	blob_buf_free (&b);
+}
+
+static void
+on_ubus_hangup (void *user_data, int fd)
+{
+	ply_boot_splash_plugin_t *plugin = user_data;
+
+	ply_event_loop_stop_watching_fd (plugin->loop, plugin->ubus_watch);
+	plugin->ubus_watch = NULL;
+	ubus_abort_request (plugin->ubus, &plugin->release_req);
+	ubus_free (plugin->ubus);
+	plugin->ubus = NULL;
+}
+
+static void
 ubus_setup (ply_boot_splash_plugin_t *plugin)
 {
 	plugin->ubus = ubus_connect (NULL);
 
 	if (!plugin->ubus)
-		return false;
+		return;
+
+	/* libubus caches ids from the previous ubusd in both */
+	memset (&plugin->ubus_listener, 0, sizeof(plugin->ubus_listener));
+	plymouth_object_type.id = 0;
 
 	plugin->ubus_listener.cb = on_ubus_event;
 	ubus_register_event_handler (plugin->ubus, &plugin->ubus_listener, "*");
 
+	memset (&plugin->ubus_object, 0, sizeof(plugin->ubus_object));
+	plugin->ubus_object.name = "plymouth";
+	plugin->ubus_object.type = &plymouth_object_type;
+	plugin->ubus_object.methods = plymouth_methods;
+	plugin->ubus_object.n_methods = ARRAY_SIZE (plymouth_methods);
+	ubus_add_object (plugin->ubus, &plugin->ubus_object);
+
 	plugin->ubus_watch = ply_event_loop_watch_fd (plugin->loop,
 						      plugin->ubus->sock.fd,
 						      PLY_EVENT_LOOP_FD_STATUS_HAS_DATA,
-						      on_ubus_readable, NULL,
+						      on_ubus_readable, on_ubus_hangup,
 						      plugin);
 
 	event_emit (plugin, "ubus-connected", NULL);
@@ -340,8 +436,6 @@ ubus_setup (ply_boot_splash_plugin_t *plugin)
 	/* objects that registered before the splash connected are state,
 	 * not events, and would otherwise never be seen */
 	ubus_lookup (plugin->ubus, NULL, on_ubus_object, plugin);
-
-	return true;
 }
 
 static void
@@ -359,8 +453,8 @@ wait_stop (ply_boot_splash_plugin_t *plugin)
 	}
 }
 
-/* ubusd creates the socket directory itself, well after the splash starts.
- */
+/* ubusd creates its socket well after the splash starts, and again each time
+ * it restarts */
 static bool
 wait_arm (ply_boot_splash_plugin_t *plugin)
 {
@@ -393,8 +487,8 @@ on_ubus_appeared (void *user_data, int fd)
 
 	wait_arm (plugin);
 
-	if (ubus_setup (plugin))
-		wait_stop (plugin);
+	if (!plugin->ubus)
+		ubus_setup (plugin);
 }
 
 static void
@@ -430,9 +524,188 @@ ubus_teardown (ply_boot_splash_plugin_t *plugin)
 	}
 
 	if (plugin->ubus) {
+		ubus_abort_request (plugin->ubus, &plugin->release_req);
+		/* a successor connection reuses the name before ubusd sees this one go */
+		ubus_remove_object (plugin->ubus, &plugin->ubus_object);
 		ubus_free (plugin->ubus);
 		plugin->ubus = NULL;
 	}
+}
+
+static void
+input_free (input_t *input)
+{
+	ply_boot_splash_plugin_t *plugin = input->plugin;
+
+	ply_event_loop_stop_watching_fd (plugin->loop, input->watch);
+	close (input->fd);
+	ply_list_remove_data (plugin->inputs, input);
+	free (input->name);
+	free (input);
+}
+
+static void
+inputs_stop (ply_boot_splash_plugin_t *plugin)
+{
+	ply_list_node_t *node;
+
+	plugin->inputs_active = false;
+
+	while ((node = ply_list_get_first_node (plugin->inputs)) != NULL)
+		input_free (ply_list_node_get_data (node));
+}
+
+static void
+release_stop (ply_boot_splash_plugin_t *plugin)
+{
+	if (plugin->release_watch) {
+		ply_event_loop_stop_watching_fd (plugin->loop,
+						 plugin->release_watch);
+		plugin->release_watch = NULL;
+	}
+
+	if (plugin->release_fd >= 0) {
+		close (plugin->release_fd);
+		plugin->release_fd = -1;
+	}
+}
+
+static void
+on_release_reply (void *user_data, int fd)
+{
+	ply_boot_splash_plugin_t *plugin = user_data;
+	char reply;
+
+	if (read (fd, &reply, sizeof(reply)) == sizeof(reply) &&
+	    reply != *PLY_BOOT_PROTOCOL_RESPONSE_TYPE_ACK)
+		ply_error ("ucode splash: deactivate refused");
+
+	release_stop (plugin);
+}
+
+/* the deactivate path lives in the daemon, behind its own socket */
+static void
+display_release (ply_boot_splash_plugin_t *plugin)
+{
+	inputs_stop (plugin);
+
+	if (plugin->release_fd >= 0)
+		return;
+
+	plugin->release_fd =
+		ply_connect_to_unix_socket (PLY_BOOT_PROTOCOL_TRIMMED_ABSTRACT_SOCKET_PATH,
+					    PLY_UNIX_SOCKET_TYPE_TRIMMED_ABSTRACT);
+
+	if (plugin->release_fd < 0) {
+		ply_error ("ucode splash: cannot reach the daemon: %m");
+		return;
+	}
+
+	if (!ply_write (plugin->release_fd,
+			PLY_BOOT_PROTOCOL_REQUEST_TYPE_DEACTIVATE,
+			sizeof(PLY_BOOT_PROTOCOL_REQUEST_TYPE_DEACTIVATE))) {
+		ply_error ("ucode splash: cannot request deactivation: %m");
+		release_stop (plugin);
+		return;
+	}
+
+	plugin->release_watch = ply_event_loop_watch_fd (plugin->loop,
+							 plugin->release_fd,
+							 PLY_EVENT_LOOP_FD_STATUS_HAS_DATA,
+							 on_release_reply,
+							 on_release_reply,
+							 plugin);
+}
+
+static void
+on_input_gone (void *user_data, int fd)
+{
+	input_free (user_data);
+}
+
+static void
+on_input_readable (void *user_data, int fd)
+{
+	struct input_event events[16];
+	input_t *input = user_data;
+	bool pressed = false;
+	ssize_t len;
+	size_t i;
+
+	while ((len = read (fd, events, sizeof(events))) > 0)
+		for (i = 0; i < len / sizeof(events[0]); i++)
+			if (events[i].type == EV_KEY && events[i].value == 1)
+				pressed = true;
+
+	if (pressed)
+		display_release (input->plugin);
+}
+
+static void
+input_open (ply_boot_splash_plugin_t *plugin, const char *name)
+{
+	ply_list_node_t *node;
+	char path[PATH_MAX];
+	input_t *input;
+	int fd;
+
+	if (strncmp (name, "event", strlen ("event")) || strchr (name, '/'))
+		return;
+
+	for (node = ply_list_get_first_node (plugin->inputs); node;
+	     node = ply_list_get_next_node (plugin->inputs, node)) {
+		input = ply_list_node_get_data (node);
+
+		if (!strcmp (input->name, name))
+			return;
+	}
+
+	snprintf (path, sizeof(path), INPUT_DIR "/%s", name);
+	fd = open (path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+
+	if (fd < 0)
+		return;
+
+	input = calloc (1, sizeof(*input));
+
+	if (!input) {
+		close (fd);
+		return;
+	}
+
+	input->plugin = plugin;
+	input->name = strdup (name);
+	input->fd = fd;
+	input->watch = ply_event_loop_watch_fd (plugin->loop, fd,
+						PLY_EVENT_LOOP_FD_STATUS_HAS_DATA,
+						on_input_readable, on_input_gone,
+						input);
+	ply_list_append_data (plugin->inputs, input);
+}
+
+static void
+inputs_scan (ply_boot_splash_plugin_t *plugin)
+{
+	struct dirent *entry;
+	DIR *dir;
+
+	dir = opendir (INPUT_DIR);
+
+	if (!dir)
+		return;
+
+	while ((entry = readdir (dir)) != NULL)
+		input_open (plugin, entry->d_name);
+
+	closedir (dir);
+}
+
+/* nodes probed later are announced by /etc/hotplug.d/input */
+static void
+inputs_start (ply_boot_splash_plugin_t *plugin)
+{
+	plugin->inputs_active = true;
+	inputs_scan (plugin);
 }
 
 static void
@@ -441,7 +714,9 @@ vm_teardown (ply_boot_splash_plugin_t *plugin)
 	if (!plugin->vm_ready)
 		return;
 
+	/* uc_vm_init() leaves the registry pointer of a freed VM in place */
 	uc_vm_free (&plugin->vm);
+	memset (&plugin->vm, 0, sizeof(plugin->vm));
 	plugin->vm_ready = false;
 
 	if (plugin->program) {
@@ -625,6 +900,7 @@ on_frame (void *user_data, ply_event_loop_t *loop)
 {
 	ply_boot_splash_plugin_t *plugin = user_data;
 	uc_value_t *args[1];
+	double now;
 
 	if (!plugin->animating)
 		return;
@@ -632,8 +908,34 @@ on_frame (void *user_data, ply_event_loop_t *loop)
 	args[0] = ucv_double_new (now_seconds () - plugin->started_at);
 	script_call (plugin, "frame", args, 1);
 
+	now = now_seconds ();
+
+	do
+		plugin->frame_due += plugin->frame_interval;
+	while (plugin->frame_due <= now);
+
+	ply_event_loop_watch_for_timeout (plugin->loop,
+					  plugin->frame_due - now,
+					  on_frame, plugin);
+}
+
+static void
+animation_start (ply_boot_splash_plugin_t *plugin)
+{
+	plugin->animating = true;
+	plugin->frame_due = now_seconds () + plugin->frame_interval;
 	ply_event_loop_watch_for_timeout (plugin->loop, plugin->frame_interval,
 					  on_frame, plugin);
+}
+
+static void
+animation_stop (ply_boot_splash_plugin_t *plugin)
+{
+	plugin->animating = false;
+
+	if (plugin->loop)
+		ply_event_loop_stop_watching_for_timeout (plugin->loop,
+							  on_frame, plugin);
 }
 
 static ply_boot_splash_plugin_t *
@@ -650,7 +952,10 @@ create_plugin (ply_key_file_t *key_file)
 		return NULL;
 
 	plugin->views = ply_list_new ();
+	plugin->inputs = ply_list_new ();
+	INIT_LIST_HEAD (&plugin->release_req.list);
 	plugin->wait_fd = -1;
+	plugin->release_fd = -1;
 	plugin->frame_interval = 1.0 / DEFAULT_FRAME_RATE;
 
 	val = ply_key_file_get_value (key_file, "ucode", "ScriptFile");
@@ -695,6 +1000,7 @@ destroy_plugin (ply_boot_splash_plugin_t *plugin)
 	}
 
 	ply_list_free (plugin->views);
+	ply_list_free (plugin->inputs);
 
 	free (plugin->script_path);
 	free (plugin->theme_dir);
@@ -790,12 +1096,13 @@ show_splash_screen (ply_boot_splash_plugin_t *plugin, ply_event_loop_t *loop,
 	args[0] = ucv_string_new (mode_name (mode));
 	script_call (plugin, "setup", args, 1);
 
-	plugin->animating = true;
-	ply_event_loop_watch_for_timeout (plugin->loop, plugin->frame_interval,
-					  on_frame, plugin);
+	animation_start (plugin);
 
-	if (!ubus_setup (plugin))
-		ubus_wait (plugin);
+	ubus_wait (plugin);
+	ubus_setup (plugin);
+
+	if (mode == PLY_BOOT_SPLASH_MODE_BOOT_UP)
+		inputs_start (plugin);
 
 	return true;
 }
@@ -803,6 +1110,15 @@ show_splash_screen (ply_boot_splash_plugin_t *plugin, ply_event_loop_t *loop,
 static void
 update_status (ply_boot_splash_plugin_t *plugin, const char *status)
 {
+	size_t len = strlen (INPUT_STATUS);
+
+	if (status && !strncmp (status, INPUT_STATUS, len)) {
+		if (plugin->inputs_active)
+			input_open (plugin, status + len);
+
+		return;
+	}
+
 	event_emit (plugin, "status", ucv_string_new (status ? status : ""));
 }
 
@@ -811,19 +1127,6 @@ on_boot_output (ply_boot_splash_plugin_t *plugin, const char *output,
 		size_t size)
 {
 	event_emit (plugin, "output", ucv_string_new_length (output, size));
-}
-
-static void
-on_boot_progress (ply_boot_splash_plugin_t *plugin, double duration,
-		  double fraction_done)
-{
-	uc_value_t *detail;
-
-	detail = ucv_object_new (&plugin->vm);
-	ucv_object_add (detail, "duration", ucv_double_new (duration));
-	ucv_object_add (detail, "fraction", ucv_double_new (fraction_done));
-
-	event_emit (plugin, "progress", detail);
 }
 
 static void
@@ -851,9 +1154,13 @@ hide_message (ply_boot_splash_plugin_t *plugin, const char *message)
 		    ucv_string_new (message ? message : ""));
 }
 
+/* plymouth tells a plugin nothing when it reactivates, but redraws it */
 static void
 display_normal (ply_boot_splash_plugin_t *plugin)
 {
+	if (!plugin->animating && plugin->vm_ready && plugin->loop)
+		animation_start (plugin);
+
 	event_emit (plugin, "normal", NULL);
 }
 
@@ -874,8 +1181,11 @@ display_question (ply_boot_splash_plugin_t *plugin, const char *prompt,
 static void
 become_idle (ply_boot_splash_plugin_t *plugin, ply_trigger_t *idle_trigger)
 {
+	animation_stop (plugin);
 	event_emit (plugin, "idle", NULL);
+	release_announce (plugin);
 
+	/* quitting frees the plugin before this returns */
 	ply_trigger_pull (idle_trigger, NULL);
 }
 
@@ -885,11 +1195,7 @@ hide_splash_screen (ply_boot_splash_plugin_t *plugin, ply_event_loop_t *loop)
 	ply_list_node_t *node;
 	view_t *view;
 
-	plugin->animating = false;
-
-	if (plugin->loop)
-		ply_event_loop_stop_watching_for_timeout (plugin->loop,
-							  on_frame, plugin);
+	animation_stop (plugin);
 
 	node = ply_list_get_first_node (plugin->views);
 
@@ -900,6 +1206,8 @@ hide_splash_screen (ply_boot_splash_plugin_t *plugin, ply_event_loop_t *loop)
 	}
 
 	event_emit (plugin, "hide", NULL);
+	inputs_stop (plugin);
+	release_stop (plugin);
 	ubus_teardown (plugin);
 	vm_teardown (plugin);
 
@@ -920,7 +1228,6 @@ ply_boot_splash_plugin_get_interface (void)
 		.system_update = system_update,
 		.update_status = update_status,
 		.on_boot_output = on_boot_output,
-		.on_boot_progress = on_boot_progress,
 		.on_root_mounted = on_root_mounted,
 		.hide_splash_screen = hide_splash_screen,
 		.display_message = display_message,

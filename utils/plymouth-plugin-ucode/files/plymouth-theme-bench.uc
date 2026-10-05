@@ -141,8 +141,6 @@ for (let f = 0; f < frames; f++) {
 	if (type(theme.event) == 'function' && f % EVENT_EVERY == 0) {
 		theme.event('ubus', { type: 'ubus.object.add',
 				      data: '{"path":"hostapd.phy0"}' });
-		theme.event('progress', { duration: 20.0,
-					  fraction: f / (frames * 1.0) });
 	}
 
 	t0 = now();
