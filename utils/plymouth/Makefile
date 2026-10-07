@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=plymouth
 PKG_VERSION:=26.134.222
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/plymouth/plymouth/-/archive/$(PKG_VERSION)
@@ -42,7 +42,8 @@ endef
 define Package/plymouth
 $(call Package/plymouth/Default)
   TITLE:=Graphical boot splash on a KMS device
-  DEPENDS:=+libpng +libdrm +libudev +libevdev +libxkbcommon +xkeyboard-config
+  DEPENDS:=+libpng +libdrm +libudev +libevdev +libxkbcommon +xkeyboard-config \
+	   +ucode +ucode-mod-fs +ucode-mod-ubus +ucode-mod-uloop
 endef
 
 define Package/plymouth/description
@@ -67,12 +68,18 @@ endef
 define Package/plymouth/install
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libply*.so* $(1)/usr/lib/
-	$(INSTALL_DIR) $(1)/usr/lib/plymouth
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/plymouth/* $(1)/usr/lib/plymouth/
+	$(INSTALL_DIR) $(1)/usr/lib/plymouth/renderers
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/plymouth/*.so $(1)/usr/lib/plymouth/
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/plymouth/renderers/drm.so \
+		$(1)/usr/lib/plymouth/renderers/
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/plymouth $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/sbin/plymouthd $(1)/usr/sbin/
+	$(INSTALL_BIN) ./files/plymouth-evict.uc $(1)/usr/sbin/plymouth-evict
+	$(INSTALL_DIR) $(1)/usr/libexec/plymouth
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/libexec/plymouth/plymouthd-fd-escrow \
+		$(1)/usr/libexec/plymouth/
 	$(INSTALL_DIR) $(1)/usr/share/plymouth
 	$(CP) $(PKG_INSTALL_DIR)/usr/share/plymouth/plymouthd.defaults \
 		$(1)/usr/share/plymouth/

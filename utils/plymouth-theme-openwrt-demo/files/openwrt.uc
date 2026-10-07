@@ -1,6 +1,6 @@
 import * as pvg from 'plutovg';
 import * as psvg from 'plutosvg';
-import { open, lsdir } from 'fs';
+import { open, lsdir, glob, readfile, writefile, stat } from 'fs';
 
 const PI = 3.14159265358979;
 
@@ -38,23 +38,43 @@ const LAUNCH_BACK = 0.055;
 const LAUNCH_HOLD = 0.18;
 const LAUNCH_CRUISE = 0.50;
 const FLOW_GAP = 18;
-const FLOW_CAP = 22;
+const FLOW_CAP = 8;
 const TRAIL = 3;
 
 const LOGO_HEIGHT = 0.26;
 const BAND_TOP = 0.58;
-const ROW_Y = 0.965;
+
+const UNITS = 90.0;
+const ICON_UNITS = 2.5;
+const ICON_MIN = 12.0;
+const ICON_HALO = 0.72;
+const STAGE_PITCH = 1.68;
+const ROW_CLEAR = 1.26;
 
 const PULSE_LIFE = 22.0;
 const PULSE_MAX = 14;
+
+const BACKLIGHT_LEVEL = 0.80;
+const FADE_TIME = 1.5;
+
+const SPIN_MODES = [ 'system-upgrade', 'firmware-upgrade', 'updates' ];
+const SPIN_FRAMES = 36.0;
+const SPIN_SWEEP = 0.6 * PI;
+const SPIN_RING = 0.5;
 const ICON_DIM = { r: 0.34, g: 0.48, b: 0.60, a: 1.0 };
 const ADDON_DIR = '/usr/share/plymouth/pictograms';
 const RC_DIR = '/etc/rc.d';
 const REVEAL_SPACING = 1.15;
+const HIDE_SPACING = 0.25;
 
 let screen;
 let backdrop;
+let backdrop_matrix;
+let device_scale = 1;
 let unit = 1.0;
+let scene_h = 1.0;
+let row_y = 0.0;
+let icon_max = 1.0;
 let icon_size = 1.0;
 let packet_radius = 1.0;
 let glow_radius = 1.0;
@@ -73,6 +93,9 @@ let endpoints = {};
 let next_endpoint = 0;
 let on_bus = false;
 let dismantle = false;
+let spinning = false;
+let staging = false;
+let spin_turn = 0.0;
 let logo_box;
 
 let packets = [];
@@ -81,8 +104,11 @@ let stage_list = [];
 let stage_boxes = [];
 let icons = {};
 let flow_timer = 0;
+let dirty;
 let primed = false;
 let rng_state = 1;
+let backlight;
+let fade_from;
 
 function seed_pick() {
 	let fh = open('/dev/urandom', 'r');
@@ -188,9 +214,9 @@ function peer_link() {
 }
 
 function branch_grow(angle) {
-	let ring = screen.height * RING_R *
+	let ring = scene_h * RING_R *
 		   (1.0 - RING_VARY * 0.5 + RING_VARY * rnd());
-	let fan = screen.height * FAN_R;
+	let fan = scene_h * FAN_R;
 	let bx = nodes[core].x + ring * ASPECT * fcos(angle);
 	let by = nodes[core].y + ring * fsin(angle);
 	let hub = node_add(bx, by, unit * R_HUB, 'hub', core);
@@ -215,7 +241,7 @@ function branch_grow(angle) {
 
 function topo_build() {
 	let w = screen.width;
-	let h = screen.height;
+	let h = scene_h;
 	let count = rnd_int(BRANCH_MIN, BRANCH_MAX);
 
 	nodes = [];
@@ -318,11 +344,22 @@ function path_between(a, b) {
 	return (length(path) > 1) ? path : null;
 }
 
+function packet_tints(c) {
+	let tints = [ { r: c.r, g: c.g, b: c.b, a: 0.28 } ];
+
+	for (let k = 1; k <= TRAIL; k++)
+		push(tints, { r: c.r, g: c.g, b: c.b,
+			      a: 0.32 * (1.0 - k / (TRAIL + 1.0)) });
+
+	return tints;
+}
+
 function packet_add(path, kind, delay, colour) {
 	push(packets, {
 		path: path,
 		kind: kind,
 		colour: colour,
+		tints: packet_tints(colour),
 		hop: 0,
 		age: -delay,
 		dwell: 0.0,
@@ -433,14 +470,11 @@ function packet_at(p, back) {
 	};
 }
 
-function packet_box(p) {
-	let head = packet_at(p, 0);
-	let tail = packet_at(p, TRAIL);
-	let pad = glow_radius + 3.0;
-	let x0 = ((head.x < tail.x) ? head.x : tail.x) - pad;
-	let y0 = ((head.y < tail.y) ? head.y : tail.y) - pad;
-	let x1 = ((head.x > tail.x) ? head.x : tail.x) + pad;
-	let y1 = ((head.y > tail.y) ? head.y : tail.y) + pad;
+function span_box(ax, ay, bx, by, pad) {
+	let x0 = ((ax < bx) ? ax : bx) - pad;
+	let y0 = ((ay < by) ? ay : by) - pad;
+	let x1 = ((ax > bx) ? ax : bx) + pad;
+	let y1 = ((ay > by) ? ay : by) + pad;
 
 	return {
 		x: int(x0),
@@ -448,6 +482,37 @@ function packet_box(p) {
 		w: int(x1 - x0) + 1,
 		h: int(y1 - y0) + 1
 	};
+}
+
+/* Every paint() call walks all packets and pulses, so a frame costs far
+ * more in calls than in pixels: hand plymouth one box per frame.
+ */
+function damage_add(x, y, w, h) {
+	if (!dirty) {
+		dirty = { x0: x, y0: y, x1: x + w, y1: y + h };
+		return;
+	}
+
+	dirty.x0 = min(dirty.x0, x);
+	dirty.y0 = min(dirty.y0, y);
+	dirty.x1 = max(dirty.x1, x + w);
+	dirty.y1 = max(dirty.y1, y + h);
+}
+
+function damage_flush() {
+	if (!dirty)
+		return;
+
+	plymouth.damage(dirty.x0, dirty.y0, dirty.x1 - dirty.x0,
+			dirty.y1 - dirty.y0);
+	dirty = null;
+}
+
+function packet_box(pts) {
+	let head = pts[0];
+	let tail = pts[TRAIL];
+
+	return span_box(head.x, head.y, tail.x, tail.y, glow_radius + 3.0);
 }
 
 function packet_reply(p) {
@@ -521,25 +586,28 @@ function stage_index(key) {
 }
 
 function stage_layout() {
-	let pitch = unit * 4.2;
-	let x0 = screen.width * 0.5 - pitch * length(stage_list) * 0.5;
+	let count = length(stage_list) || 1;
+	let pitch, x0;
+
+	icon_size = min(icon_max, screen.width / (count * STAGE_PITCH));
+	pitch = icon_size * STAGE_PITCH;
+	x0 = screen.width * 0.5 - pitch * length(stage_list) * 0.5;
 
 	stage_boxes = [];
 
 	for (let i = 0; i < length(stage_list); i++)
-		push(stage_boxes, { x: x0 + pitch * (i + 0.5),
-				    y: screen.height * ROW_Y });
+		push(stage_boxes, { x: x0 + pitch * (i + 0.5), y: row_y });
 }
 
 function stage_row_damage() {
-	plymouth.damage(0, int(screen.height * ROW_Y - icon_size),
-			screen.width, int(icon_size * 2.0));
+	damage_add(0, int(row_y - icon_max),
+			screen.width, int(icon_max * 2.0) + 1);
 }
 
 function stage_reach(key) {
 	let i;
 
-	if (!key_safe(key))
+	if (!staging || !key_safe(key))
 		return;
 
 	i = stage_index(key);
@@ -584,7 +652,7 @@ function stages_init() {
 function services_scan() {
 	let entries, found, m;
 
-	if (dismantle)
+	if (!staging)
 		return;
 
 	entries = lsdir(RC_DIR) ?? [];
@@ -645,28 +713,22 @@ function step_shown(step) {
 	return false;
 }
 
-function span_box(ax, ay, bx, by, pad) {
-	let x0 = ((ax < bx) ? ax : bx) - pad;
-	let y0 = ((ay < by) ? ay : by) - pad;
-	let x1 = ((ax > bx) ? ax : bx) + pad;
-	let y1 = ((ay > by) ? ay : by) + pad;
+function backdrop_canvas() {
+	let cv = pvg.canvas(backdrop);
 
-	return {
-		x: int(x0),
-		y: int(y0),
-		w: int(x1 - x0) + 1,
-		h: int(y1 - y0) + 1
-	};
+	cv.scale(device_scale, device_scale);
+
+	return cv;
 }
 
 function span_damage(ax, ay, bx, by, pad) {
 	let box = span_box(ax, ay, bx, by, pad);
 
-	plymouth.damage(box.x, box.y, box.w, box.h);
+	damage_add(box.x, box.y, box.w, box.h);
 }
 
 function reveal_peer(idx) {
-	let cv = pvg.canvas(backdrop);
+	let cv = backdrop_canvas();
 	let l = peers[idx];
 
 	link_draw(cv, l);
@@ -675,7 +737,7 @@ function reveal_peer(idx) {
 }
 
 function reveal_node(idx) {
-	let cv = pvg.canvas(backdrop);
+	let cv = backdrop_canvas();
 	let n = nodes[idx];
 	let p = (n.parent != null) ? nodes[n.parent] : n;
 
@@ -711,12 +773,12 @@ function logo_draw(cv) {
 		return;
 	}
 
-	lh = screen.height * LOGO_HEIGHT;
+	lh = scene_h * LOGO_HEIGHT;
 	scale = lh / doc.height();
 	lw = doc.width() * scale;
 	logo_box = {
 		x: (screen.width - lw) / 2.0,
-		y: screen.height * BAND_TOP - lh - screen.height * 0.04,
+		y: scene_h * BAND_TOP - lh - scene_h * 0.04,
 		w: lw,
 		h: lh
 	};
@@ -739,7 +801,7 @@ function ground_draw(cv) {
 }
 
 function backdrop_draw() {
-	let cv = pvg.canvas(backdrop);
+	let cv = backdrop_canvas();
 
 	ground_draw(cv);
 	logo_draw(cv);
@@ -756,7 +818,7 @@ function overlaps(box, x, y, w, h) {
 /* Taking a node off the backdrop means putting back what was under it.
  */
 function backdrop_patch(x, y, w, h) {
-	let cv = pvg.canvas(backdrop);
+	let cv = backdrop_canvas();
 	let n;
 
 	cv.save();
@@ -784,29 +846,169 @@ function backdrop_patch(x, y, w, h) {
 	cv.restore();
 }
 
-function hide_step() {
-	let step, n, p, box;
+/* a peer link joins two hubs and goes with them */
+function step_level(step) {
+	if (step < 0)
+		return 1;
+	if (step == core)
+		return 0;
+
+	return (nodes[step].kind == 'leaf') ? 2 : 1;
+}
+
+function step_box(step) {
+	let n, p;
+
+	if (step < 0) {
+		p = peers[-1 - step];
+
+		return span_box(nodes[p.a].x, nodes[p.a].y,
+				nodes[p.b].x, nodes[p.b].y, unit * 4.0);
+	}
+
+	n = nodes[step];
+	p = (n.parent != null) ? nodes[n.parent] : n;
+
+	return span_box(n.x, n.y, p.x, p.y, n.r * 3.0 + unit);
+}
+
+function box_union(a, b) {
+	let x, y;
+
+	if (!a)
+		return b;
+
+	x = min(a.x, b.x);
+	y = min(a.y, b.y);
+
+	return {
+		x: x,
+		y: y,
+		w: max(a.x + a.w, b.x + b.w) - x,
+		h: max(a.y + a.h, b.y + b.h) - y
+	};
+}
+
+function hide_level() {
+	let level, step, box;
 
 	if (revealed <= 0)
 		return;
 
-	step = reveal[--revealed];
+	level = step_level(reveal[revealed - 1]);
 
-	if (step < 0) {
-		p = peers[-1 - step];
-		box = span_box(nodes[p.a].x, nodes[p.a].y,
-			       nodes[p.b].x, nodes[p.b].y, unit * 4.0);
-	} else {
-		n = nodes[step];
-		p = (n.parent != null) ? nodes[n.parent] : n;
-		box = span_box(n.x, n.y, p.x, p.y, n.r * 3.0 + unit);
+	while (revealed > 0 && step_level(reveal[revealed - 1]) == level) {
+		step = reveal[--revealed];
+		box = box_union(box, step_box(step));
+
+		if (step >= 0)
+			pulse_spawn(step);
 	}
 
 	backdrop_patch(box.x, box.y, box.w, box.h);
-	plymouth.damage(box.x, box.y, box.w, box.h);
+	damage_add(box.x, box.y, box.w, box.h);
+}
 
-	if (step >= 0)
-		pulse_spawn(step);
+/* A pictogram row grown past its share of the screen takes the room out
+ * of the scene above it, so the graph never runs into the row.
+ */
+function layout_set() {
+	let h = screen.height;
+	let base = h / UNITS * ICON_UNITS;
+	let span = ROW_CLEAR + ICON_HALO;
+
+	unit = h / UNITS;
+	icon_max = min(max(base, ICON_MIN), screen.width / STAGE_PITCH);
+	icon_size = icon_max;
+	row_y = h - icon_max * ROW_CLEAR;
+	scene_h = min(h, h * (h - icon_max * span) / (h - base * span));
+}
+
+function backlight_linked(phandle) {
+	let path;
+
+	for (let bl in glob('/sys/class/backlight/*')) {
+		if (readfile(bl + '/device/of_node/phandle') != phandle)
+			continue;
+
+		path = bl;
+		break;
+	}
+
+	if (!path)
+		return null;
+
+	return {
+		path: path,
+		max: int(readfile(path + '/max_brightness')),
+		perceptual: trim(readfile(path + '/scale') ?? '') == 'non-linear',
+		level: -1
+	};
+}
+
+/* A panel the bootloader brought up already shows its picture, and only
+ * a dark one is ours to fade in.
+ */
+function backlight_find() {
+	let phandle;
+
+	for (let node in glob('/sys/class/drm/card*/device/of_node')) {
+		phandle = readfile(node + '/backlight');
+
+		if (!phandle)
+			continue;
+
+		if (stat(node + '/bootloader-initialized'))
+			return null;
+
+		return backlight_linked(phandle);
+	}
+
+	return null;
+}
+
+/* CIE 1931 lightness to luminance, as pwm_bl builds its own table.
+ */
+function lightness_luminance(l) {
+	let f;
+
+	if (l <= 0.08)
+		return l / 9.033;
+
+	f = (l + 0.16) / 1.16;
+
+	return f * f * f;
+}
+
+function backlight_set(p) {
+	let y = backlight.perceptual ? p : lightness_luminance(p);
+	let level = int(backlight.max * BACKLIGHT_LEVEL * y + 0.5);
+
+	if (level == backlight.level)
+		return;
+
+	backlight.level = level;
+	writefile(backlight.path + '/brightness', sprintf('%d\n', level));
+}
+
+function backlight_finish() {
+	backlight_set(1.0);
+	backlight = null;
+}
+
+function backlight_step(t) {
+	let p;
+
+	if (!backlight)
+		return;
+
+	fade_from ??= t;
+	p = (t - fade_from) / FADE_TIME;
+
+	if (p >= 1.0)
+		return backlight_finish();
+
+	backlight_set(p * p * (3.0 - 2.0 * p));
 }
 
 function setup(mode) {
@@ -820,33 +1022,49 @@ function setup(mode) {
 	screen = list[0];
 	rng_state = seed_pick();
 
-	unit = screen.height / 90.0;
-	icon_size = unit * 2.5;
+	backlight = (mode == 'boot-up') ? backlight_find() : null;
+
+	if (backlight)
+		backlight_set(0.0);
+
+	layout_set();
 	packet_radius = unit * 0.27;
 	glow_radius = unit * 0.67;
 	pulse_r0 = unit * 0.45;
 	pulse_r1 = unit * 2.70;
 
-	dismantle = (mode != 'boot-up');
+	/* nothing reports how far an upgrade has got, so it gets no progress */
+	spinning = index(SPIN_MODES, mode) >= 0;
+	dismantle = (mode != 'boot-up' && !spinning);
+	staging = (mode == 'boot-up');
 
-	backdrop = pvg.surface(screen.width, screen.height);
+	device_scale = screen.scale;
+	backdrop = pvg.surface(screen.width * device_scale,
+			       screen.height * device_scale);
+	backdrop_matrix = pvg.matrix_init_scale(1.0 / device_scale,
+						1.0 / device_scale);
 	topo_build();
 	stages_init();
 	backdrop_draw();
 
-	if (dismantle)
+	if (dismantle || spinning)
 		while (revealed < length(reveal))
 			reveal_step();
+
+	if (dismantle) {
+		sort(reveal, (a, b) => step_level(a) - step_level(b));
+		reveal_at = HIDE_SPACING;
+	}
 
 	plymouth.damage(0, 0, screen.width, screen.height);
 }
 
 function packets_step() {
-	let p, was, now, x0, y0, x1, y1;
+	let p, was;
 
 	for (let i = length(packets) - 1; i >= 0; i--) {
 		p = packets[i];
-		was = p.box ?? packet_box(p);
+		was = p.box;
 
 		if (p.dwell > 0.0) {
 			p.dwell -= 1.0;
@@ -861,7 +1079,9 @@ function packets_step() {
 		}
 
 		if (p.hop > length(p.path) - 2) {
-			plymouth.damage(was.x, was.y, was.w, was.h);
+			if (was)
+				damage_add(was.x, was.y, was.w, was.h);
+
 			pulse_spawn(p.path[length(p.path) - 1]);
 
 			if (p.kind == 'request')
@@ -871,22 +1091,60 @@ function packets_step() {
 			continue;
 		}
 
-		now = packet_box(p);
-		p.box = now;
 		p.pts = [];
 
 		for (let k = 0; k <= TRAIL; k++)
 			push(p.pts, packet_at(p, k));
 
-		x0 = (was.x < now.x) ? was.x : now.x;
-		y0 = (was.y < now.y) ? was.y : now.y;
-		x1 = (was.x + was.w > now.x + now.w) ? was.x + was.w
-						     : now.x + now.w;
-		y1 = (was.y + was.h > now.y + now.h) ? was.y + was.h
-						     : now.y + now.h;
+		p.box = packet_box(p.pts);
+		damage_add(p.box.x, p.box.y, p.box.w, p.box.h);
 
-		plymouth.damage(x0, y0, x1 - x0, y1 - y0);
+		if (was)
+			damage_add(was.x, was.y, was.w, was.h);
 	}
+}
+
+function spinner_radius() {
+	return scene_h * RING_R * SPIN_RING;
+}
+
+function spinner_box() {
+	let r = spinner_radius() + unit;
+	let n = nodes[core];
+
+	return span_box(n.x - r, n.y - r, n.x + r, n.y + r, 1.0);
+}
+
+function spinner_step() {
+	let box;
+
+	if (!spinning)
+		return;
+
+	spin_turn += 1.0 / SPIN_FRAMES;
+
+	if (spin_turn >= 1.0)
+		spin_turn -= 1.0;
+
+	box = spinner_box();
+	damage_add(box.x, box.y, box.w, box.h);
+}
+
+function spinner_paint(cv, x, y, w, h) {
+	let b = spinner_box();
+	let n = nodes[core];
+	let a = 2.0 * PI * spin_turn;
+
+	if (b.x + b.w < x || b.x > x + w || b.y + b.h < y || b.y > y + h)
+		return;
+
+	cv.save();
+	cv.set_line_width(unit * 0.35);
+	cv.set_line_cap('round');
+	cv.set_color({ r: CYAN.r, g: CYAN.g, b: CYAN.b, a: 0.9 });
+	cv.arc(n.x, n.y, spinner_radius(), a, a + SPIN_SWEEP, false);
+	cv.stroke();
+	cv.restore();
 }
 
 function frame(t) {
@@ -897,15 +1155,17 @@ function frame(t) {
 
 	if (!primed) {
 		primed = true;
-		plymouth.damage(0, 0, screen.width, screen.height);
+		damage_add(0, 0, screen.width, screen.height);
 	}
 
+	backlight_step(t);
 	packets_step();
+	spinner_step();
 
 	if (dismantle) {
 		if (t >= reveal_at) {
-			reveal_at = t + REVEAL_SPACING;
-			hide_step();
+			reveal_at = t + HIDE_SPACING;
+			hide_level();
 		}
 	} else if (revealed < length(reveal)) {
 		if (t >= reveal_at) {
@@ -919,16 +1179,24 @@ function frame(t) {
 
 	for (let i = length(pulses) - 1; i >= 0; i--) {
 		now = pulse_box(pulses[i]);
-		plymouth.damage(now.x, now.y, now.w, now.h);
+		damage_add(now.x, now.y, now.w, now.h);
 		pulses[i].age += 1.0;
 
 		if (pulses[i].age > PULSE_LIFE)
 			splice(pulses, i, 1);
 	}
+
+	damage_flush();
 }
 
+/* A ring filled as an annulus is cheaper to draw than a stroked circle.
+ */
 function pulses_paint(cv, x, y, w, h) {
+	let half = unit * 0.075;
 	let n, f, r;
+
+	cv.save();
+	cv.set_fill_rule('evenodd');
 
 	for (let i = 0; i < length(pulses); i++) {
 		n = nodes[pulses[i].n];
@@ -942,40 +1210,33 @@ function pulses_paint(cv, x, y, w, h) {
 
 		cv.set_color({ r: CYAN.r, g: CYAN.g, b: CYAN.b,
 			       a: 0.55 * (1.0 - f) });
-		cv.set_line_width(unit * 0.15);
-		cv.circle(n.x, n.y, r);
-		cv.stroke();
+		cv.circle(n.x, n.y, r + half);
+		cv.circle(n.x, n.y, r - half);
+		cv.fill();
 	}
+
+	cv.restore();
 }
 
-function packet_paint(cv, p, x, y, w, h) {
-	let c = p.colour;
-	let pt, f;
+function packet_paint(cv, p) {
+	let pt;
 
-	for (let k = TRAIL; k >= 0; k--) {
+	for (let k = TRAIL; k > 0; k--) {
 		pt = p.pts[k];
-
-		if (pt.x + glow_radius < x || pt.x - glow_radius > x + w)
-			continue;
-		if (pt.y + glow_radius < y || pt.y - glow_radius > y + h)
-			continue;
-
-		if (k > 0) {
-			f = 1.0 - k / (TRAIL + 1.0);
-			cv.set_color({ r: c.r, g: c.g, b: c.b, a: 0.32 * f });
-			cv.circle(pt.x, pt.y, packet_radius * f);
-			cv.fill();
-			continue;
-		}
-
-		cv.set_color({ r: c.r, g: c.g, b: c.b, a: 0.28 });
-		cv.circle(pt.x, pt.y, glow_radius);
-		cv.fill();
-		cv.set_color(c);
-		cv.circle(pt.x, pt.y, (p.kind == 'stream')
-			  ? packet_radius * 0.7 : packet_radius);
+		cv.set_color(p.tints[k]);
+		cv.circle(pt.x, pt.y,
+			  packet_radius * (1.0 - k / (TRAIL + 1.0)));
 		cv.fill();
 	}
+
+	pt = p.pts[0];
+	cv.set_color(p.tints[0]);
+	cv.circle(pt.x, pt.y, glow_radius);
+	cv.fill();
+	cv.set_color(p.colour);
+	cv.circle(pt.x, pt.y, (p.kind == 'stream')
+		  ? packet_radius * 0.7 : packet_radius);
+	cv.fill();
 }
 
 function stages_paint(cv, x, y, w, h) {
@@ -993,7 +1254,7 @@ function stages_paint(cv, x, y, w, h) {
 		if (on) {
 			cv.set_color({ r: CYAN.r, g: CYAN.g, b: CYAN.b,
 				       a: 0.85 });
-			cv.circle(b.x, b.y, icon_size * 0.72);
+			cv.circle(b.x, b.y, icon_size * ICON_HALO);
 			cv.fill();
 		}
 
@@ -1010,7 +1271,7 @@ function paint(cv, x, y, w, h) {
 	if (!backdrop)
 		return;
 
-	cv.set_texture(backdrop, 'plain', 1.0);
+	cv.set_texture(backdrop, 'plain', 1.0, backdrop_matrix);
 	cv.fill_rect(x, y, w, h);
 
 	pulses_paint(cv, x, y, w, h);
@@ -1018,15 +1279,18 @@ function paint(cv, x, y, w, h) {
 	for (let i = 0; i < length(packets); i++) {
 		b = packets[i].box;
 
-		if (!packets[i].pts || !b)
+		if (!b)
 			continue;
 		if (b.x + b.w < x || b.x > x + w)
 			continue;
 		if (b.y + b.h < y || b.y > y + h)
 			continue;
 
-		packet_paint(cv, packets[i], x, y, w, h);
+		packet_paint(cv, packets[i]);
 	}
+
+	if (spinning)
+		spinner_paint(cv, x, y, w, h);
 
 	stages_paint(cv, x, y, w, h);
 }
@@ -1075,6 +1339,9 @@ function flow_endpoint(path) {
 	if (idx == null || revealed < length(reveal))
 		return;
 
+	if (length(packets) > FLOW_CAP)
+		return;
+
 	p = path_between(idx, core);
 
 	if (p)
@@ -1107,6 +1374,9 @@ function ubus_event(detail) {
 }
 
 function event(name, detail) {
+	if (name == 'hide' && backlight)
+		return backlight_finish();
+
 	if (name == 'ubus-connected') {
 		on_bus = true;
 
