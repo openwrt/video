@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
 PKG_VERSION:=26.2.2
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
@@ -13,10 +13,13 @@ PKG_LICENSE:=BSD-3-Clause
 
 PKG_INSTALL:=1
 
-PKG_BUILD_DEPENDS:=glslang/host python3/host libva vulkan-headers \
+MESA_PYTHON_BUILD_DEPENDS:=python3/host python-mako/host python-packaging/host \
+			   python-pycparser/host python-yaml/host
+
+PKG_BUILD_DEPENDS:=$(MESA_PYTHON_BUILD_DEPENDS) glslang/host libva vulkan-headers \
 		   MESA_USE_LLVM:llvm MESA_USE_LLVM:mesa/host
 
-HOST_BUILD_DEPENDS:=python3/host spirv-tools/host MESA_USE_LLVM:llvm
+HOST_BUILD_DEPENDS:=$(MESA_PYTHON_BUILD_DEPENDS) spirv-tools/host MESA_USE_LLVM:llvm
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_libmesa-amd \
@@ -45,14 +48,12 @@ PKG_CONFIG_DEPENDS:= \
 
 TARGET_CPPFLAGS+=-Wno-format -Wno-format-security
 
-PYTHON3_PKG_BUILD:=0
 MESON_USE_STAGING_PYTHON:=1
-HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
 
 include $(TOPDIR)/feeds/packages/lang/rust/rust-values.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
-include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-host.mk
 include $(INCLUDE_DIR)/meson.mk
 
 MESON_HOST_VARS += PYTHONPATH="$(HOST_PYTHON3PATH)"
@@ -698,7 +699,6 @@ endef
 endif
 
 define Host/Configure
-	$(call Py3Build/InstallBuildDepends)
 	$(call Host/Configure/LLVMMesa)
 	$(call Host/Configure/Meson)
 endef
@@ -730,7 +730,6 @@ endif
 
 define Build/Configure
 	$(call Build/Configure/LLVMMesa)
-	$(call Py3Build/InstallBuildDepends)
 	$(call Build/Configure/Meson)
 endef
 
