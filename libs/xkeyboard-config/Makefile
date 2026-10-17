@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xkeyboard-config
 PKG_VERSION:=2.45
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=http://www.x.org/releases/individual/data/$(PKG_NAME)/
@@ -17,12 +17,10 @@ PKG_BUILD_PARALLEL:=1
 
 PKG_BUILD_DEPENDS:=libxslt/host perl-xml-parser/host python3/host
 
-PYTHON3_PKG_BUILD:=0
 MESON_USE_STAGING_PYTHON:=1
-HOST_PYTHON3_PACKAGE_BUILD_DEPENDS:=./host-pip-requirements.txt
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-host.mk
 include $(INCLUDE_DIR)/meson.mk
 
 MESON_VARS += PYTHONPATH="$(HOST_PYTHON3PATH)"
