@@ -1,0 +1,353 @@
+From 28ccaac65c4f875ffb72e1c3be5a5ba1cd70d5f2 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 22 Oct 2026 04:05:40 +0300
+Subject: [PATCH] GStreamer: multiplanar YUV no picture on unaligned plane
+ stride
+
+A hardware-decoded multiplanar YUV frame delivered as a DMABuf shows no
+picture on panfrost/Mali even though decoding succeeds. importYUV()
+splits the frame into one single-plane EGLImage per plane, each built
+with that plane's own byte stride. A plane imported on its own is held to
+the GPU's stricter standalone row alignment, 64 bytes on Mali arch >= 7,
+whereas a true multiplanar image needs only 16. When a plane's stride is
+a multiple of 16 but not of 64, an rk3588 AV1 luma stride of 592 at width
+586 for example, the standalone import is rejected, importYUV() returns
+null and nothing is painted. Widths that are multiples of 64 play. The
+fault is a property of the plane byte stride, so it reaches every
+multiplanar YUV format importYUV() handles, 10-bit P010 included.
+
+Keep the per-plane path and WebKit's own YUV conversion as the single
+colour path for every frame. When a plane's zero-copy import is rejected,
+repack that plane into an aligned-stride single-plane GBM buffer object of
+the same per-plane format, read through a GstVideoFrame map so the dma-buf
+cache is synchronised, then import the repacked plane through the existing
+path and combine it with the zero-copy planes. The colour result is
+byte-identical to the per-plane render used today; the per-frame
+difference is a copy of the misaligned plane, and 64-byte-aligned strides
+keep the zero-copy import. The first rejected {format, modifier, plane,
+stride} is cached so later frames of the stream repack directly and the
+GPU logs its alignment error once.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../CoordinatedPlatformLayerBufferDMABuf.cpp  | 186 ++++++++++++++++--
+ .../CoordinatedPlatformLayerBufferDMABuf.h    |  14 +-
+ .../CoordinatedPlatformLayerBufferVideo.cpp   |  12 +-
+ .../CoordinatedPlatformLayerBufferVideo.h     |   1 +
+ 4 files changed, 198 insertions(+), 15 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+@@ -31,13 +31,23 @@
+ #include "CoordinatedPlatformLayerBufferRGB.h"
+ #include "CoordinatedPlatformLayerBufferYUV.h"
+ #include "DMABufBuffer.h"
++#include "DRMDeviceManager.h"
++#include "GBMDevice.h"
++#include "GBMVersioning.h"
+ #include "PlatformDisplay.h"
+ #include "TextureMapper.h"
++#include <cerrno>
+ #include <drm_fourcc.h>
+ #include <epoxy/egl.h>
+ #include <epoxy/gl.h>
++#include <linux/dma-buf.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
+ #include <wtf/HashMap.h>
++#include <wtf/Lock.h>
+ #include <wtf/NeverDestroyed.h>
++#include <wtf/StdLibExtras.h>
++#include <wtf/Vector.h>
+ 
+ namespace WebCore {
+ 
+@@ -180,8 +190,122 @@ static CoordinatedPlatformLayerBufferYUV
+     RELEASE_ASSERT_NOT_REACHED();
+ }
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importYUV() const
++static unsigned bytesPerSampleForPlaneFourcc(uint32_t fourcc)
+ {
++    switch (fourcc) {
++    case DRM_FORMAT_R8:
++        return 1;
++    case DRM_FORMAT_GR88:
++    case DRM_FORMAT_R16:
++        return 2;
++    case DRM_FORMAT_GR1616:
++    case DRM_FORMAT_ABGR8888:
++        return 4;
++    }
++    return 0;
++}
++
++// A plane whose byte stride is a multiple of 16 but not of the GPU's stricter standalone
++// alignment is rejected when imported on its own, while the decoder keeps exporting that
++// stride for the stream. Remember the rejected {format, modifier, plane, stride} so later
++// frames skip the doomed import and repack straight away, and the GPU error is logged once.
++struct YUVPlaneImportFailure {
++    uint32_t fourcc;
++    uint64_t modifier;
++    unsigned planeIndex;
++    uint32_t stride;
++
++    friend bool operator==(const YUVPlaneImportFailure&, const YUVPlaneImportFailure&) = default;
++};
++
++static Lock s_yuvPlaneImportFailuresLock;
++static Vector<YUVPlaneImportFailure>& yuvPlaneImportFailures() WTF_REQUIRES_LOCK(s_yuvPlaneImportFailuresLock)
++{
++    static NeverDestroyed<Vector<YUVPlaneImportFailure>> failures;
++    return failures;
++}
++
++static bool yuvPlaneImportKnownToFail(const YUVPlaneImportFailure& key)
++{
++    Locker locker { s_yuvPlaneImportFailuresLock };
++    return yuvPlaneImportFailures().contains(key);
++}
++
++static void markYUVPlaneImportFailed(const YUVPlaneImportFailure& key)
++{
++    Locker locker { s_yuvPlaneImportFailuresLock };
++    if (!yuvPlaneImportFailures().contains(key))
++        yuvPlaneImportFailures().append(key);
++}
++
++static RefPtr<BitmapTexture> importRepackedPlane(const IntSize& textureSize, const IntSize& planeSize, uint32_t planeFourcc, std::span<const uint8_t> sourceData, unsigned sourceStride, OptionSet<BitmapTexture::Flags> textureFlags)
++{
++    unsigned bytesPerSample = bytesPerSampleForPlaneFourcc(planeFourcc);
++    if (!bytesPerSample || planeSize.isEmpty() || !sourceStride || sourceData.empty())
++        return nullptr;
++
++    RefPtr gbmDevice = DRMDeviceManager::singleton().mainGBMDevice(DRMDeviceManager::NodeType::Render);
++    if (!gbmDevice || !gbmDevice->device())
++        return nullptr;
++
++    auto* bo = gbm_bo_create(gbmDevice->device(), planeSize.width(), planeSize.height(), planeFourcc, GBM_BO_USE_LINEAR | GBM_BO_USE_RENDERING);
++    if (!bo)
++        return nullptr;
++
++    auto attributes = DMABufBufferAttributes::fromGBMBufferObject(bo);
++    if (!attributes || attributes->fds.isEmpty() || attributes->strides.isEmpty()) {
++        gbm_bo_destroy(bo);
++        return nullptr;
++    }
++
++    // The buffer object is allocated at the plane's visible dimensions but its row stride is
++    // padded to the GPU's alignment. Import it with the visible width and height so the sampler
++    // reads the picture, not the padding; the padded stride stays the pitch only.
++    attributes->size = planeSize;
++
++    uint32_t mappedStride = 0;
++    void* mapData = nullptr;
++    void* mapped = gbm_bo_map(bo, 0, 0, planeSize.width(), planeSize.height(), GBM_BO_TRANSFER_WRITE, &mappedStride, &mapData);
++    if (!mapped || mapped == MAP_FAILED) {
++        gbm_bo_destroy(bo);
++        return nullptr;
++    }
++
++    int syncFD = attributes->fds[0].value();
++    auto dmaBufSync = [&](uint64_t flags) {
++        struct dma_buf_sync sync;
++        zeroBytes(sync);
++        sync.flags = flags;
++        unsigned counter = 0;
++        int result;
++        do {
++            result = ioctl(syncFD, DMA_BUF_IOCTL_SYNC, &sync);
++        } while (result == -1 && (errno == EAGAIN || errno == EINTR) && counter++ < 10);
++    };
++
++    // Copy the full visible plane height. The source span reported by GStreamer can describe
++    // fewer rows than the plane holds, so read directly from the plane base for the visible
++    // height: the decoded buffer always contains at least the visible rows, and leaving any
++    // trailing row unwritten renders as a green band.
++    const unsigned rows = planeSize.height();
++    const unsigned validBytesPerRow = std::min<unsigned>(planeSize.width() * bytesPerSample, std::min<unsigned>(sourceStride, mappedStride));
++    auto source = unsafeMakeSpan(sourceData.data(), static_cast<size_t>(rows) * sourceStride);
++
++    dmaBufSync(DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
++    auto dst = unsafeMakeSpan(static_cast<uint8_t*>(mapped), static_cast<size_t>(mappedStride) * rows);
++    for (unsigned row = 0; row < rows; ++row)
++        memcpySpan(dst.subspan(static_cast<size_t>(row) * mappedStride, validBytesPerRow), source.subspan(static_cast<size_t>(row) * sourceStride, validBytesPerRow));
++    dmaBufSync(DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
++    gbm_bo_unmap(bo, mapData);
++
++    auto texture = importToTexture(textureSize, *attributes, textureFlags);
++    gbm_bo_destroy(bo);
++    return texture;
++}
++
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importYUV(bool& containsCopy) const
++{
++    containsCopy = false;
+     OptionSet<BitmapTexture::Flags> textureFlags;
+     if (m_flags.contains(TextureMapperFlags::ShouldBlend))
+         textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
+@@ -199,11 +323,31 @@ std::unique_ptr<CoordinatedPlatformLayer
+     for (unsigned i = 0; i < planeInfo.size(); ++i) {
+         const auto& plane = planeInfo[i];
+         IntSize adjustedSize { attributes.size.width() / plane.subsampling.width(), attributes.size.height() / plane.subsampling.height() };
+-        auto planeFds = Vector<UnixFileDescriptor>::from(attributes.fds[i].borrow());
+-        DMABufBuffer::Attributes planeAttributes { adjustedSize, plane.fourcc, WTF::move(planeFds), { attributes.offsets[i] }, { attributes.strides[i] }, attributes.modifier };
+-        auto texture = importToTexture(attributes.size, planeAttributes, textureFlags);
++
++        YUVPlaneImportFailure failureKey { plane.fourcc, attributes.modifier, i, attributes.strides[i] };
++        bool knownToFail = yuvPlaneImportKnownToFail(failureKey);
++
++        RefPtr<BitmapTexture> texture;
++        if (!knownToFail) {
++            auto planeFds = Vector<UnixFileDescriptor>::from(attributes.fds[i].borrow());
++            DMABufBuffer::Attributes planeAttributes { adjustedSize, plane.fourcc, WTF::move(planeFds), { attributes.offsets[i] }, { attributes.strides[i] }, attributes.modifier };
++            texture = importToTexture(attributes.size, planeAttributes, textureFlags);
++            if (!texture)
++                markYUVPlaneImportFailed(failureKey);
++        }
++
++        if (!texture) {
++            if (!m_yuvPlaneSource)
++                return nullptr;
++            unsigned sourceStride = 0;
++            auto sourceData = m_yuvPlaneSource(i, sourceStride);
++            texture = importRepackedPlane(attributes.size, adjustedSize, plane.fourcc, sourceData, sourceStride, textureFlags);
++            if (texture)
++                containsCopy = true;
++        }
+         if (!texture)
+             return nullptr;
++
+         textures.append(WTF::move(texture));
+         yuvPlane[i] = plane.index;
+         yuvPlaneOffset[i] = plane.offset;
+@@ -244,11 +388,12 @@ std::unique_ptr<CoordinatedPlatformLayer
+     return CoordinatedPlatformLayerBufferYUV::create(format, numberOfPlanes, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, m_size, m_flags, nullptr);
+ }
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importDMABuf() const
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importDMABuf(bool& containsCopy) const
+ {
++    containsCopy = false;
+     const auto& attributes = m_dmabuf->attributes();
+     if (formatIsYUV(attributes.fourcc.value))
+-        return importYUV();
++        return importYUV(containsCopy);
+ 
+     OptionSet<BitmapTexture::Flags> textureFlags;
+     if (m_flags.contains(TextureMapperFlags::ShouldBlend))
+@@ -266,10 +411,21 @@ void CoordinatedPlatformLayerBufferDMABu
+             fence->serverWait();
+     }
+ 
+-    if (!m_dmabuf->buffer())
+-        m_dmabuf->setBuffer(importDMABuf());
++    // A zero-copy import aliases the dma-buf, so it is cached on the shared DMABufBuffer and
++    // re-sampled as the decoder rewrites the recurring pooled buffer. A copied import is a
++    // one-time snapshot of this frame's content, so it is held per layer buffer (one per
++    // GstSample) and never shared, otherwise the pool's buffers would replay stale frames.
++    if (!m_copiedBuffer && !m_dmabuf->buffer()) {
++        bool containsCopy = false;
++        auto buffer = importDMABuf(containsCopy);
++        if (containsCopy)
++            m_copiedBuffer = WTF::move(buffer);
++        else
++            m_dmabuf->setBuffer(WTF::move(buffer));
++    }
+ 
+-    if (auto* buffer = m_dmabuf->buffer())
++    auto* buffer = m_copiedBuffer ? m_copiedBuffer.get() : m_dmabuf->buffer();
++    if (buffer)
+         buffer->paintToTextureMapper(textureMapper, targetRect, modelViewMatrix, opacity);
+ }
+ 
+@@ -283,10 +439,16 @@ sk_sp<SkImage> CoordinatedPlatformLayerB
+             fence->serverWait();
+     }
+ 
+-    if (!m_dmabuf->buffer())
+-        m_dmabuf->setBuffer(importDMABuf());
++    if (!m_copiedBuffer && !m_dmabuf->buffer()) {
++        bool containsCopy = false;
++        auto buffer = importDMABuf(containsCopy);
++        if (containsCopy)
++            m_copiedBuffer = WTF::move(buffer);
++        else
++            m_dmabuf->setBuffer(WTF::move(buffer));
++    }
+ 
+-    if (auto* buffer = m_dmabuf->buffer())
++    if (auto* buffer = m_copiedBuffer ? m_copiedBuffer.get() : m_dmabuf->buffer())
+         return buffer->skiaImage();
+ 
+     return nullptr;
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
+@@ -27,6 +27,8 @@
+ 
+ #if USE(COORDINATED_GRAPHICS) && USE(GBM)
+ #include "CoordinatedPlatformLayerBuffer.h"
++#include <span>
++#include <wtf/Function.h>
+ #include <wtf/unix/UnixFileDescriptor.h>
+ 
+ namespace WebCore {
+@@ -42,6 +44,12 @@ public:
+     CoordinatedPlatformLayerBufferDMABuf(Ref<DMABufBuffer>&&, OptionSet<TextureMapperFlags>, WTF::UnixFileDescriptor&&);
+     virtual ~CoordinatedPlatformLayerBufferDMABuf();
+ 
++    // Provides CPU-readable rows for a YUV plane whose standalone DMABuf import the GPU
++    // rejected, so the plane can be repacked at an accepted stride. Set by the owner that
++    // has access to the source frame; invoked only when a plane's zero-copy import fails.
++    using YUVPlaneSourceFunction = Function<std::span<const uint8_t>(unsigned planeIndex, unsigned& stride)>;
++    void setYUVPlaneSource(YUVPlaneSourceFunction&& source) { m_yuvPlaneSource = WTF::move(source); }
++
+ private:
+     void paintToTextureMapper(TextureMapper&, const FloatRect&, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0) override;
+ 
+@@ -49,10 +57,12 @@ private:
+     sk_sp<SkImage> skiaImage() override;
+ #endif
+ 
+-    std::unique_ptr<CoordinatedPlatformLayerBuffer> importDMABuf() const;
+-    std::unique_ptr<CoordinatedPlatformLayerBuffer> importYUV() const;
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> importDMABuf(bool& containsCopy) const;
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> importYUV(bool& containsCopy) const;
+ 
+     const Ref<DMABufBuffer> m_dmabuf;
++    YUVPlaneSourceFunction m_yuvPlaneSource;
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> m_copiedBuffer;
+     WTF::UnixFileDescriptor m_fenceFD;
+ };
+ 
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
+@@ -165,7 +165,17 @@ std::unique_ptr<CoordinatedPlatformLayer
+ 
+     auto dmabuf = m_videoFrame->getDMABuf();
+     RELEASE_ASSERT(dmabuf);
+-    return CoordinatedPlatformLayerBufferDMABuf::create(dmabuf.releaseNonNull(), m_flags, nullptr);
++    auto buffer = CoordinatedPlatformLayerBufferDMABuf::create(dmabuf.releaseNonNull(), m_flags, nullptr);
++    buffer->setYUVPlaneSource([this](unsigned planeIndex, unsigned& stride) -> std::span<const uint8_t> {
++        if (!m_repackMappedFrame)
++            m_repackMappedFrame.emplace(GstMappedFrame(m_videoFrame->sample(), GST_MAP_READ));
++        if (!*m_repackMappedFrame)
++            return { };
++        stride = m_repackMappedFrame->planeStride(planeIndex);
++        auto data = m_repackMappedFrame->planeData(planeIndex);
++        return { data.data(), data.size() };
++    });
++    return buffer;
+ }
+ #endif // USE(GBM) && GST_CHECK_VERSION(1, 24, 0)
+ 
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h
+@@ -60,6 +60,7 @@ private:
+ 
+     Ref<VideoFrameGStreamer> m_videoFrame;
+     std::optional<GstMappedFrame> m_mappedVideoFrame;
++    std::optional<GstMappedFrame> m_repackMappedFrame;
+     std::optional<GstVideoDecoderPlatform> m_videoDecoderPlatform;
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> m_buffer;
+ };
