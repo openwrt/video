@@ -1,0 +1,41 @@
+From 3387a4289cc4366f7a76b58fb130cbd237f140c4 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 21 Oct 2026 17:49:59 +0300
+Subject: [PATCH] WPE: size the WebProcess default stack for musl
+
+An external CDM module is built against glibc and assumes its 8 MiB
+default thread stack. Its decrypt entry allocates a large frame (the
+Widevine CDM uses about 246 KiB) on a GStreamer streaming thread, not on
+the main thread. Under musl a new thread gets a 128 KiB stack by default,
+so the first store into that frame lands below the guard page and the web
+process takes SIGSEGV once decryption starts.
+
+musl derives the default pthread stack size from the main executable's
+PT_GNU_STACK size, capped at 8 MiB. Link the web process with
+-z,stack-size=8388608 so its streaming threads get a glibc-sized stack.
+glibc ignores the PT_GNU_STACK size, so the option is inert there, and
+the guard is confined to ELF Unix ports to keep Apple and Windows builds
+unchanged.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+
+--- a/Source/WebKit/CMakeLists.txt
++++ b/Source/WebKit/CMakeLists.txt
+@@ -1492,6 +1492,17 @@ list(APPEND WebProcess_PRIVATE_INCLUDE_D
+ WEBKIT_EXECUTABLE(WebProcess)
+ WEBKIT_REUSE_PREFIX_HEADER(WebProcess WebKit WebKitPrefix.h PREFIX_LANGUAGES CXX)
+ 
++if (UNIX AND NOT APPLE)
++    # musl takes the default pthread stack size from the main executable's
++    # PT_GNU_STACK size and otherwise gives new threads a 128 KiB stack.
++    # External CDM modules are built against glibc and assume its 8 MiB
++    # default; their decrypt path runs on a GStreamer streaming thread and
++    # overflows the smaller stack. Size the segment to 8 MiB so those
++    # threads get a glibc-sized stack. glibc does not honour the size, so
++    # the option has no effect there.
++    target_link_options(WebProcess PRIVATE "LINKER:-z,stack-size=8388608")
++endif ()
++
+ list(APPEND NetworkProcess_PRIVATE_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:WebKit,INCLUDE_DIRECTORIES>)
+ WEBKIT_EXECUTABLE(NetworkProcess)
+ WEBKIT_REUSE_PREFIX_HEADER(NetworkProcess WebKit WebKitPrefix.h PREFIX_LANGUAGES CXX)

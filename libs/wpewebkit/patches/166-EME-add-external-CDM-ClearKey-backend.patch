@@ -1,0 +1,1319 @@
+From e8049a78b10d6468551a75676f2c4c7032b5decb Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Fri, 9 Oct 2026 14:23:20 +0300
+Subject: [PATCH] [EME] Add an external W3C CDM backend for the GStreamer port
+
+WPE builds the GStreamer EME framework but, with Thunder off, registers
+no CDMFactory or CDMProxyFactory for GStreamer and ships no decryptor
+element, so Encrypted Media Extensions do not work. The cross-platform
+ClearKey CDM is compiled yet never registered on this port.
+
+Add ENABLE_EXTERNAL_CDM, a backend that registers as a peer of Thunder
+and, for this first step, offers the org.w3.clearkey key system only. It
+decrypts in process with libgcrypt, resolving keys by key id from the
+shared CDMProxy key store that the ClearKey session fills. The feature
+defaults off and depends on ENCRYPTED_MEDIA.
+
+The EME-level ClearKey key handling, CENC key-id extraction and JSON Web
+Key parsing, is reused from the existing ClearKey CDM by promoting four
+helpers to the WebCore::ClearKey namespace, so only the GStreamer proxy,
+the decryptor element and the backend shells are new. The key handle
+value stays the raw key bytes, so KeyHandleValueVariant is unchanged.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+
+---
+
+--- a/Source/WebCore/platform/SourcesGStreamer.txt
++++ b/Source/WebCore/platform/SourcesGStreamer.txt
+@@ -82,11 +82,14 @@ platform/graphics/gstreamer/VideoTrackPr
+ platform/graphics/gstreamer/WebKitAudioSinkGStreamer.cpp
+ platform/graphics/gstreamer/WebKitWebSourceGStreamer.cpp
+ 
++platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
+ platform/graphics/gstreamer/eme/CDMFactoryGStreamer.cpp
++platform/graphics/gstreamer/eme/CDMProxyExternalCDM.cpp
+ platform/graphics/gstreamer/eme/CDMProxyThunder.cpp
+ platform/graphics/gstreamer/eme/CDMThunder.cpp
+ platform/graphics/gstreamer/eme/GStreamerEMEUtilities.cpp
+ platform/graphics/gstreamer/eme/WebKitCommonEncryptionDecryptorGStreamer.cpp
++platform/graphics/gstreamer/eme/WebKitExternalCDMDecryptorGStreamer.cpp @no-unify
+ platform/graphics/gstreamer/eme/WebKitThunderDecryptorGStreamer.cpp
+ platform/graphics/gstreamer/eme/WebKitThunderParser.cpp
+ 
+--- a/Source/WebCore/platform/encryptedmedia/CDMInstance.h
++++ b/Source/WebCore/platform/encryptedmedia/CDMInstance.h
+@@ -104,6 +104,9 @@ public:
+ #if ENABLE(THUNDER)
+         Thunder,
+ #endif
++#if ENABLE(EXTERNAL_CDM)
++        ExternalCDM,
++#endif
+     };
+     virtual ImplementationType implementationType() const = 0;
+ 
+--- a/Source/WebCore/platform/encryptedmedia/clearkey/CDMClearKey.cpp
++++ b/Source/WebCore/platform/encryptedmedia/clearkey/CDMClearKey.cpp
+@@ -55,7 +55,7 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMFactory
+ WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMPrivateClearKey);
+ WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMInstanceClearKey);
+ 
+-static std::optional<Vector<Ref<KeyHandle>>> parseLicenseFormat(const JSON::Object& root)
++std::optional<Vector<Ref<KeyHandle>>> ClearKey::parseLicenseFormat(const JSON::Object& root)
+ {
+     // If the 'keys' key is present in the root object, parse the JSON further
+     // according to the specified 'license' format.
+@@ -103,7 +103,7 @@ static std::optional<Vector<Ref<KeyHandl
+     return decodedKeys;
+ }
+ 
+-static bool parseLicenseReleaseAcknowledgementFormat(const JSON::Object& root)
++bool ClearKey::parseLicenseReleaseAcknowledgementFormat(const JSON::Object& root)
+ {
+     // If the 'kids' key is present in the root object, parse the JSON further
+     // according to the specified 'license release acknowledgement' format.
+@@ -202,7 +202,7 @@ static bool isCencInitData(const SharedB
+     return ((keyIdsMap.first) && (keyIdsMap.second));
+ }
+ 
+-static CDMKeyID extractKeyidsFromCencInitData(const SharedBuffer& initData)
++CDMKeyID ClearKey::extractKeyidsFromCencInitData(const SharedBuffer& initData)
+ {
+     std::pair<unsigned, unsigned> keyIdsMap = extractKeyidsLocationFromCencInitData(initData);
+     unsigned keyIdCount = keyIdsMap.first;
+@@ -231,7 +231,7 @@ static CDMKeyID extractKeyidsFromCencIni
+     return SharedBuffer::create(object->toJSONString().utf8().span());
+ }
+ 
+-static CDMKeyID extractKeyIdFromWebMInitData(const SharedBuffer& initData)
++CDMKeyID ClearKey::extractKeyIdFromWebMInitData(const SharedBuffer& initData)
+ {
+     // Check if initData is a valid WebM initData.
+     if (initData.isEmpty() || initData.size() > std::numeric_limits<unsigned>::max())
+@@ -456,10 +456,10 @@ void CDMInstanceSessionClearKey::request
+         m_sessionID = emptyString();
+ 
+     if (equalLettersIgnoringASCIICase(initDataType, "cenc"_s))
+-        initData = extractKeyidsFromCencInitData(initData.get());
++        initData = ClearKey::extractKeyidsFromCencInitData(initData.get());
+ 
+     if (equalLettersIgnoringASCIICase(initDataType, "webm"_s))
+-        initData = extractKeyIdFromWebMInitData(initData.get());
++        initData = ClearKey::extractKeyIdFromWebMInitData(initData.get());
+ 
+     callOnMainThread(
+         [sessionID = m_sessionID, callback = WTF::move(callback), initData = WTF::move(initData)]() mutable {
+@@ -502,7 +502,7 @@ void CDMInstanceSessionClearKey::updateL
+ 
+     LOG(EME, "EME - ClearKey - updating license for session %s which currently contains %u keys", sessionId.utf8().data(), m_keyStore.numKeys());
+ 
+-    if (auto decodedKeys = parseLicenseFormat(*root)) {
++    if (auto decodedKeys = ClearKey::parseLicenseFormat(*root)) {
+         bool keysChanged = m_keyStore.addKeys(WTF::move(*decodedKeys));
+ 
+         LOG(EME, "EME - ClearKey - session %s has %u keys after update()", sessionId.utf8().data(), m_keyStore.numKeys());
+@@ -518,7 +518,7 @@ void CDMInstanceSessionClearKey::updateL
+         return;
+     }
+ 
+-    if (parseLicenseReleaseAcknowledgementFormat(*root)) {
++    if (ClearKey::parseLicenseReleaseAcknowledgementFormat(*root)) {
+         LOG(EME, "EME - ClearKey - session %s release acknowledged, clearing all known keys", sessionId.utf8().data());
+         parentInstance->unrefAllKeysFrom(m_keyStore);
+         m_keyStore.clear();
+--- a/Source/WebCore/platform/encryptedmedia/clearkey/CDMClearKey.h
++++ b/Source/WebCore/platform/encryptedmedia/clearkey/CDMClearKey.h
+@@ -33,8 +33,10 @@
+ #include "CDMFactory.h"
+ #include "CDMInstanceSession.h"
+ #include "CDMPrivate.h"
++#include "CDMKeyID.h"
+ #include "CDMProxy.h"
+ #include "SharedBuffer.h"
++#include <wtf/JSONValues.h>
+ #include <wtf/TZoneMalloc.h>
+ #include <wtf/WeakPtr.h>
+ 
+@@ -51,6 +53,13 @@ enum {
+     IVSizeInBytes = 16,
+ };
+ 
++// EME-level ClearKey helpers, shared with the GStreamer external-CDM backend
++// so the key-id and JSON Web Key handling is not reimplemented.
++std::optional<Vector<Ref<KeyHandle>>> parseLicenseFormat(const JSON::Object&);
++bool parseLicenseReleaseAcknowledgementFormat(const JSON::Object&);
++CDMKeyID extractKeyidsFromCencInitData(const SharedBuffer&);
++CDMKeyID extractKeyIdFromWebMInitData(const SharedBuffer&);
++
+ } // namespace ClearKey
+ 
+ class CDMFactoryClearKey final : public CDMFactory {
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
+@@ -89,6 +89,11 @@
+ #include "WebKitThunderParser.h"
+ #endif
+ 
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++#include "CDMExternalCDM.h"
++#include "WebKitExternalCDMDecryptorGStreamer.h"
++#endif
++
+ #if ENABLE(VIDEO)
+ #include "ImageDecoderGStreamer.h"
+ #include "VideoEncoderPrivateGStreamer.h"
+@@ -566,6 +571,11 @@ void registerWebKitGStreamerElements()
+         }
+ #endif
+ 
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++        if (!CDMFactoryExternalCDM::singleton().supportedKeySystems().isEmpty())
++            gst_element_register(nullptr, "webkitexternalcdm", GST_RANK_PRIMARY + 100, WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT);
++#endif
++
+ #if ENABLE(MEDIA_STREAM)
+         gst_element_register(nullptr, "mediastreamsrc", GST_RANK_PRIMARY, WEBKIT_TYPE_MEDIA_STREAM_SRC);
+ #endif
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
+@@ -0,0 +1,383 @@
++/*
++ * Copyright (C) 2016 Metrological Group B.V.
++ * Copyright (C) 2016 Igalia S.L.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above
++ *    copyright notice, this list of conditions and the following
++ *    disclaimer in the documentation and/or other materials provided
++ *    with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include "config.h"
++#include "CDMExternalCDM.h"
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++
++#include "CDMClearKey.h"
++#include "CDMKeySystemConfiguration.h"
++#include "CDMProxyExternalCDM.h"
++#include "CDMRestrictions.h"
++#include "CDMSessionType.h"
++#include "CDMUtilities.h"
++#include "GStreamerCommon.h"
++#include "GStreamerEMEUtilities.h"
++#include "Logging.h"
++#include <ranges>
++#include <wtf/JSONValues.h>
++#include <wtf/MainThread.h>
++#include <wtf/NeverDestroyed.h>
++#include <wtf/TZoneMallocInlines.h>
++#include <wtf/text/Base64.h>
++#include <wtf/text/StringToIntegerConversion.h>
++
++namespace WebCore {
++
++WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMFactoryExternalCDM);
++WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMPrivateExternalCDM);
++WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMInstanceExternalCDM);
++
++CDMFactoryExternalCDM& CDMFactoryExternalCDM::singleton()
++{
++    static std::once_flag onceFlag;
++    std::call_once(onceFlag, [] {
++        ensureGStreamerInitialized();
++    });
++    static NeverDestroyed<CDMFactoryExternalCDM> s_factory;
++    return s_factory;
++}
++
++CDMFactoryExternalCDM::CDMFactoryExternalCDM()
++{
++    ASSERT(isMainThread());
++
++    // ClearKey is software-only and always available. Widevine and other
++    // blob-backed key systems are a later iteration of this backend.
++    m_supportedKeySystems.append(String::fromLatin1(GStreamerEMEUtilities::s_ClearKeyKeySystem));
++}
++
++std::unique_ptr<CDMPrivate> CDMFactoryExternalCDM::createCDM(const String& keySystem, const String& mediaKeysHashSalt, const CDMPrivateClient&)
++{
++    UNUSED_PARAM(mediaKeysHashSalt);
++    ASSERT(supportsKeySystem(keySystem));
++    return makeUnique<CDMPrivateExternalCDM>(keySystem);
++}
++
++RefPtr<CDMProxy> CDMFactoryExternalCDM::createCDMProxy(const String& keySystem)
++{
++    ASSERT(supportsKeySystem(keySystem));
++    return adoptRef(new CDMProxyExternalCDM(keySystem));
++}
++
++bool CDMFactoryExternalCDM::supportsKeySystem(const String& keySystem)
++{
++    return m_supportedKeySystems.contains(keySystem);
++}
++
++CDMPrivateExternalCDM::CDMPrivateExternalCDM(const String& keySystem)
++    : m_keySystem(keySystem)
++{
++}
++
++Vector<String> CDMPrivateExternalCDM::supportedInitDataTypes() const
++{
++    return { "keyids"_s, "cenc"_s, "webm"_s };
++}
++
++static bool containsPersistentLicenseType(const Vector<CDMSessionType>& types)
++{
++    return std::ranges::find(types, CDMSessionType::PersistentLicense) != types.end();
++}
++
++bool CDMPrivateExternalCDM::supportsConfiguration(const CDMKeySystemConfiguration& configuration) const
++{
++    if (configuration.distinctiveIdentifier == CDMRequirement::Required)
++        return false;
++
++    if (configuration.persistentState == CDMRequirement::Required && !containsPersistentLicenseType(configuration.sessionTypes))
++        return false;
++
++    return true;
++}
++
++bool CDMPrivateExternalCDM::supportsConfigurationWithRestrictions(const CDMKeySystemConfiguration& configuration, const CDMRestrictions& restrictions) const
++{
++    if ((configuration.distinctiveIdentifier == CDMRequirement::Optional && restrictions.distinctiveIdentifierDenied)
++        || configuration.distinctiveIdentifier == CDMRequirement::Required)
++        return false;
++
++    if (configuration.persistentState == CDMRequirement::Optional && restrictions.persistentStateDenied)
++        return false;
++
++    if (configuration.persistentState == CDMRequirement::Required && !containsPersistentLicenseType(configuration.sessionTypes))
++        return false;
++
++    return true;
++}
++
++bool CDMPrivateExternalCDM::supportsSessionTypeWithConfiguration(const CDMSessionType& sessionType, const CDMKeySystemConfiguration& configuration) const
++{
++    if (sessionType != CDMSessionType::Temporary && sessionType != CDMSessionType::PersistentLicense)
++        return false;
++    return supportsConfiguration(configuration);
++}
++
++Vector<String> CDMPrivateExternalCDM::supportedRobustnesses() const
++{
++    return { emptyString() };
++}
++
++CDMRequirement CDMPrivateExternalCDM::distinctiveIdentifiersRequirement(const CDMKeySystemConfiguration&, const CDMRestrictions& restrictions) const
++{
++    if (restrictions.distinctiveIdentifierDenied)
++        return CDMRequirement::NotAllowed;
++    return CDMRequirement::Optional;
++}
++
++CDMRequirement CDMPrivateExternalCDM::persistentStateRequirement(const CDMKeySystemConfiguration&, const CDMRestrictions& restrictions) const
++{
++    if (restrictions.persistentStateDenied)
++        return CDMRequirement::NotAllowed;
++    return CDMRequirement::Optional;
++}
++
++bool CDMPrivateExternalCDM::distinctiveIdentifiersAreUniquePerOriginAndClearable(const CDMKeySystemConfiguration&) const
++{
++    return false;
++}
++
++RefPtr<CDMInstance> CDMPrivateExternalCDM::createInstance()
++{
++    return adoptRef(new CDMInstanceExternalCDM(m_keySystem));
++}
++
++void CDMPrivateExternalCDM::loadAndInitialize()
++{
++    // No-op.
++}
++
++bool CDMPrivateExternalCDM::supportsServerCertificates() const
++{
++    // ClearKey does not use server certificates.
++    return false;
++}
++
++bool CDMPrivateExternalCDM::supportsSessions() const
++{
++    return true;
++}
++
++bool CDMPrivateExternalCDM::supportsInitData(const String& initDataType, const SharedBuffer& initData) const
++{
++    if (equalLettersIgnoringASCIICase(initDataType, "keyids"_s) && CDMUtilities::parseJSONObject(initData))
++        return true;
++
++    if (equalLettersIgnoringASCIICase(initDataType, "cenc"_s) && !initData.isEmpty())
++        return true;
++
++    if (equalLettersIgnoringASCIICase(initDataType, "webm"_s) && !initData.isEmpty())
++        return true;
++
++    return false;
++}
++
++RefPtr<SharedBuffer> CDMPrivateExternalCDM::sanitizeResponse(const SharedBuffer& response) const
++{
++    if (!CDMUtilities::parseJSONObject(response))
++        return nullptr;
++    return response.makeContiguous();
++}
++
++std::optional<String> CDMPrivateExternalCDM::sanitizeSessionId(const String& sessionId) const
++{
++    if (!parseInteger<uint32_t>(sessionId))
++        return std::nullopt;
++    return sessionId;
++}
++
++CDMInstanceExternalCDM::CDMInstanceExternalCDM(const String& keySystem)
++    : CDMInstanceProxy(keySystem)
++    , m_keySystem(keySystem)
++{
++}
++
++void CDMInstanceExternalCDM::initializeWithConfiguration(const CDMKeySystemConfiguration&, AllowDistinctiveIdentifiers distinctiveIdentifiers, AllowPersistentState persistentState, SuccessCallback&& callback)
++{
++    SuccessValue succeeded = (distinctiveIdentifiers == AllowDistinctiveIdentifiers::No && persistentState == AllowPersistentState::No)
++        ? CDMInstanceSuccessValue::Succeeded : CDMInstanceSuccessValue::Failed;
++    callback(succeeded);
++}
++
++void CDMInstanceExternalCDM::setServerCertificate(Ref<SharedBuffer>&&, SuccessCallback&& callback)
++{
++    callback(CDMInstanceSuccessValue::Failed);
++}
++
++void CDMInstanceExternalCDM::setStorageDirectory(const String&)
++{
++}
++
++RefPtr<CDMInstanceSession> CDMInstanceExternalCDM::createSession()
++{
++    return adoptRef(new CDMInstanceSessionExternalCDM(*this));
++}
++
++CDMInstanceSessionExternalCDM::CDMInstanceSessionExternalCDM(CDMInstanceExternalCDM& instance)
++    : CDMInstanceSessionProxy(instance)
++{
++}
++
++CDMInstanceExternalCDM* CDMInstanceSessionExternalCDM::cdmInstanceExternalCDM() const
++{
++    return dynamicDowncast<CDMInstanceExternalCDM>(cdmInstanceProxy().get());
++}
++
++void CDMInstanceSessionExternalCDM::requestLicense(LicenseType, KeyGroupingStrategy, const String& initDataType, Ref<SharedBuffer>&& initData, LicenseCallback&& callback)
++{
++    if (RefPtr instance = cdmInstanceExternalCDM())
++        m_sessionID = String::number(instance->getNextSessionIdValue());
++    else
++        m_sessionID = emptyString();
++
++    // The licence request is the list of key IDs, derived from the init data
++    // exactly as the cross-platform ClearKey CDM does it.
++    if (equalLettersIgnoringASCIICase(initDataType, "cenc"_s))
++        initData = ClearKey::extractKeyidsFromCencInitData(initData.get());
++
++    if (equalLettersIgnoringASCIICase(initDataType, "webm"_s))
++        initData = ClearKey::extractKeyIdFromWebMInitData(initData.get());
++
++    callOnMainThread(
++        [sessionID = m_sessionID, callback = WTF::move(callback), initData = WTF::move(initData)]() mutable {
++            callback(WTF::move(initData), sessionID, false, Succeeded);
++        });
++}
++
++void CDMInstanceSessionExternalCDM::updateLicense(const String& sessionID, LicenseType, Ref<SharedBuffer>&& response, LicenseUpdateCallback&& callback)
++{
++    auto dispatchCallback =
++        [weakThis = WeakPtr { *this }, &callback](bool sessionWasClosed, std::optional<KeyStatusVector>&& changedKeys, SuccessValue succeeded) {
++            callOnMainThread(
++                [weakThis = WeakPtr { *weakThis }, callback = WTF::move(callback), sessionWasClosed, changedKeys = WTF::move(changedKeys), succeeded]() mutable {
++                    if (!weakThis)
++                        return;
++                    callback(sessionWasClosed, WTF::move(changedKeys), std::nullopt, std::nullopt, succeeded);
++                });
++        };
++
++    RefPtr<JSON::Object> root = CDMUtilities::parseJSONObject(response);
++    if (!root) {
++        LOG(EME, "EME - ExternalCDM - session %s update payload was not valid JSON", sessionID.utf8().data());
++        dispatchCallback(false, std::nullopt, SuccessValue::Failed);
++        return;
++    }
++
++    RefPtr instance = cdmInstanceExternalCDM();
++    if (!instance) {
++        LOG(EME, "EME - ExternalCDM - session %s is in an invalid state", sessionID.utf8().data());
++        dispatchCallback(false, std::nullopt, SuccessValue::Failed);
++        return;
++    }
++
++    if (auto decodedKeys = ClearKey::parseLicenseFormat(*root)) {
++        bool keysChanged = m_keyStore.addKeys(WTF::move(*decodedKeys));
++
++        std::optional<KeyStatusVector> changedKeys;
++        if (keysChanged) {
++            instance->mergeKeysFrom(m_keyStore);
++            changedKeys = m_keyStore.convertToJSKeyStatusVector();
++        }
++
++        dispatchCallback(false, WTF::move(changedKeys), SuccessValue::Succeeded);
++        return;
++    }
++
++    if (ClearKey::parseLicenseReleaseAcknowledgementFormat(*root)) {
++        instance->unrefAllKeysFrom(m_keyStore);
++        m_keyStore.clear();
++        dispatchCallback(true, std::nullopt, SuccessValue::Succeeded);
++        return;
++    }
++
++    LOG(EME, "EME - ExternalCDM - session %s update payload was an unrecognized format", sessionID.utf8().data());
++    dispatchCallback(false, std::nullopt, SuccessValue::Failed);
++}
++
++void CDMInstanceSessionExternalCDM::loadSession(LicenseType, const String& sessionID, const String&, LoadSessionCallback&& callback)
++{
++    ASSERT_UNUSED(sessionID, sessionID == m_sessionID);
++    KeyStatusVector keyStatusVector = m_keyStore.convertToJSKeyStatusVector();
++    callOnMainThread([weakThis = WeakPtr { *this }, callback = WTF::move(callback), keyStatusVector = WTF::move(keyStatusVector)]() mutable {
++        if (!weakThis)
++            return;
++        callback(WTF::move(keyStatusVector), std::nullopt, std::nullopt, Succeeded, SessionLoadFailure::None);
++    });
++}
++
++void CDMInstanceSessionExternalCDM::closeSession(const String&, CloseSessionCallback&& callback)
++{
++    callOnMainThread([weakThis = WeakPtr { *this }, callback = WTF::move(callback)]() mutable {
++        if (!weakThis)
++            return;
++        callback();
++    });
++}
++
++void CDMInstanceSessionExternalCDM::removeSessionData(const String& sessionID, LicenseType, RemoveSessionDataCallback&& callback)
++{
++    ASSERT_UNUSED(sessionID, sessionID == m_sessionID);
++
++    auto dispatchCallback =
++        [weakThis = WeakPtr { *this }, &callback](KeyStatusVector&& keyStatusVector, RefPtr<SharedBuffer>&& message, SuccessValue success) {
++            callOnMainThread(
++                [weakThis = WeakPtr { *weakThis }, callback = WTF::move(callback), keyStatusVector = WTF::move(keyStatusVector), message = WTF::move(message), success]() mutable {
++                    if (!weakThis)
++                        return;
++                    callback(WTF::move(keyStatusVector), WTF::move(message), success);
++                });
++        };
++
++    KeyStatusVector keyStatusVector = m_keyStore.allKeysAs(CDMInstanceSession::KeyStatus::Released);
++    RefPtr<SharedBuffer> message;
++    {
++        auto rootObject = JSON::Object::create();
++        {
++            auto array = JSON::Array::create();
++            for (const auto& key : m_keyStore.values())
++                array->pushString(base64URLEncodeToString(key->id().span()));
++            rootObject->setArray("kids"_s, WTF::move(array));
++        }
++        String messageString = rootObject->toJSONString();
++        message = SharedBuffer::create(messageString.utf8().span());
++    }
++
++    if (RefPtr instance = cdmInstanceExternalCDM())
++        instance->unrefAllKeysFrom(m_keyStore);
++    m_keyStore.clear();
++    dispatchCallback(WTF::move(keyStatusVector), Ref<SharedBuffer>(*message), SuccessValue::Succeeded);
++}
++
++void CDMInstanceSessionExternalCDM::storeRecordOfKeyUsage(const String&)
++{
++}
++
++} // namespace WebCore
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.h
+@@ -0,0 +1,136 @@
++/*
++ * Copyright (C) 2016 Metrological Group B.V.
++ * Copyright (C) 2016 Igalia S.L.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above
++ *    copyright notice, this list of conditions and the following
++ *    disclaimer in the documentation and/or other materials provided
++ *    with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#pragma once
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++
++#include "CDMFactory.h"
++#include "CDMInstanceSession.h"
++#include "CDMPrivate.h"
++#include "CDMProxy.h"
++#include "SharedBuffer.h"
++#include <wtf/TZoneMalloc.h>
++#include <wtf/WeakPtr.h>
++
++namespace WebCore {
++
++class CDMFactoryExternalCDM final : public CDMFactory, public CDMProxyFactory {
++    WTF_MAKE_TZONE_ALLOCATED(CDMFactoryExternalCDM);
++public:
++    static CDMFactoryExternalCDM& singleton();
++
++    virtual ~CDMFactoryExternalCDM() = default;
++
++    // Do nothing since this is a singleton object.
++    void ref() const final { }
++    void deref() const final { }
++
++    std::unique_ptr<CDMPrivate> createCDM(const String& keySystem, const String& mediaKeysHashSalt, const CDMPrivateClient&) final;
++    RefPtr<CDMProxy> createCDMProxy(const String&) final;
++    bool supportsKeySystem(const String&) final;
++    const Vector<String>& supportedKeySystems() const LIFETIME_BOUND { return m_supportedKeySystems; }
++
++private:
++    friend class NeverDestroyed<CDMFactoryExternalCDM>;
++    CDMFactoryExternalCDM();
++    Vector<String> m_supportedKeySystems;
++};
++
++class CDMPrivateExternalCDM final : public CDMPrivate {
++    WTF_MAKE_TZONE_ALLOCATED(CDMPrivateExternalCDM);
++    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(CDMPrivateExternalCDM);
++public:
++    CDMPrivateExternalCDM(const String& keySystem);
++    virtual ~CDMPrivateExternalCDM() = default;
++
++    Vector<String> supportedInitDataTypes() const final;
++    bool supportsConfiguration(const CDMKeySystemConfiguration&) const final;
++    bool supportsConfigurationWithRestrictions(const CDMKeySystemConfiguration&, const CDMRestrictions&) const final;
++    bool supportsSessionTypeWithConfiguration(const CDMSessionType&, const CDMKeySystemConfiguration&) const final;
++    Vector<String> supportedRobustnesses() const final;
++    CDMRequirement distinctiveIdentifiersRequirement(const CDMKeySystemConfiguration&, const CDMRestrictions&) const final;
++    CDMRequirement persistentStateRequirement(const CDMKeySystemConfiguration&, const CDMRestrictions&) const final;
++    bool distinctiveIdentifiersAreUniquePerOriginAndClearable(const CDMKeySystemConfiguration&) const final;
++    RefPtr<CDMInstance> createInstance() final;
++    void loadAndInitialize() final;
++    bool supportsServerCertificates() const final;
++    bool supportsSessions() const final;
++    bool supportsInitData(const String&, const SharedBuffer&) const final;
++    RefPtr<SharedBuffer> sanitizeResponse(const SharedBuffer&) const final;
++    std::optional<String> sanitizeSessionId(const String&) const final;
++
++private:
++    String m_keySystem;
++};
++
++class CDMInstanceExternalCDM final : public CDMInstanceProxy {
++    WTF_MAKE_TZONE_ALLOCATED(CDMInstanceExternalCDM);
++    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(CDMInstanceExternalCDM);
++public:
++    CDMInstanceExternalCDM(const String& keySystem);
++    virtual ~CDMInstanceExternalCDM() = default;
++
++    uint32_t getNextSessionIdValue() { return m_nextSessionIdValue++; }
++
++    // CDMInstance
++    ImplementationType implementationType() const final { return ImplementationType::ExternalCDM; }
++    void initializeWithConfiguration(const CDMKeySystemConfiguration&, AllowDistinctiveIdentifiers, AllowPersistentState, SuccessCallback&&) final;
++    void setServerCertificate(Ref<SharedBuffer>&&, SuccessCallback&&) final;
++    void setStorageDirectory(const String&) final;
++    const String& keySystem() const LIFETIME_BOUND final { return m_keySystem; }
++    RefPtr<CDMInstanceSession> createSession() final;
++
++private:
++    String m_keySystem;
++    uint32_t m_nextSessionIdValue { 0 };
++};
++
++class CDMInstanceSessionExternalCDM final : public CDMInstanceSessionProxy {
++public:
++    CDMInstanceSessionExternalCDM(CDMInstanceExternalCDM&);
++
++    void requestLicense(LicenseType, KeyGroupingStrategy, const String& initDataType, Ref<SharedBuffer>&& initData, LicenseCallback&&) final;
++    void updateLicense(const String&, LicenseType, Ref<SharedBuffer>&&, LicenseUpdateCallback&&) final;
++    void loadSession(LicenseType, const String&, const String&, LoadSessionCallback&&) final;
++    void closeSession(const String&, CloseSessionCallback&&) final;
++    void removeSessionData(const String&, LicenseType, RemoveSessionDataCallback&&) final;
++    void storeRecordOfKeyUsage(const String&) final;
++
++private:
++    CDMInstanceExternalCDM* cdmInstanceExternalCDM() const;
++
++    String m_sessionID;
++    KeyStore m_keyStore;
++};
++
++} // namespace WebCore
++
++SPECIALIZE_TYPE_TRAITS_CDM_INSTANCE(WebCore::CDMInstanceExternalCDM, WebCore::CDMInstance::ImplementationType::ExternalCDM);
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMFactoryGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMFactoryGStreamer.cpp
+@@ -37,13 +37,21 @@
+ #include "CDMThunder.h"
+ #endif
+ 
++#if ENABLE(EXTERNAL_CDM)
++#include "CDMExternalCDM.h"
++#endif
++
+ namespace WebCore {
+ 
+ void CDMFactory::platformRegisterFactories(Vector<WeakRef<CDMFactory>>& factories)
+ {
+ #if ENABLE(THUNDER)
+     factories.append(CDMFactoryThunder::singleton());
+-#else
++#endif
++#if ENABLE(EXTERNAL_CDM)
++    factories.append(CDMFactoryExternalCDM::singleton());
++#endif
++#if !ENABLE(THUNDER) && !ENABLE(EXTERNAL_CDM)
+     UNUSED_PARAM(factories);
+ #endif
+ }
+@@ -52,9 +60,11 @@ Vector<CDMProxyFactory*> CDMProxyFactory
+ {
+     Vector<CDMProxyFactory*> factories;
+ #if ENABLE(THUNDER)
+-    factories.reserveInitialCapacity(1);
+     factories.append(&CDMFactoryThunder::singleton());
+ #endif
++#if ENABLE(EXTERNAL_CDM)
++    factories.append(&CDMFactoryExternalCDM::singleton());
++#endif
+     return factories;
+ }
+ 
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.cpp
+@@ -0,0 +1,209 @@
++/*
++ * Copyright (C) 2020 Metrological Group B.V.
++ * Copyright (C) 2020 Igalia S.L.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above
++ *    copyright notice, this list of conditions and the following
++ *    disclaimer in the documentation and/or other materials provided
++ *    with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include "config.h"
++#include "CDMProxyExternalCDM.h"
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++
++#include "CDMClearKey.h"
++#include "Logging.h"
++#include <wtf/ByteOrder.h>
++
++namespace WebCore {
++
++static bool readUInt32(const uint8_t* buffer, size_t bufferSize, size_t& offset, uint32_t& value)
++{
++    ASSERT_ARG(offset, offset <= bufferSize);
++    if (bufferSize - offset < sizeof(value))
++        return false;
++
++    value = ntohl(*reinterpret_cast_ptr<const uint32_t*>(buffer + offset));
++    offset += sizeof(value);
++
++    return true;
++}
++
++static bool readUInt16(const uint8_t* buffer, size_t bufferSize, size_t& offset, uint16_t& value)
++{
++    ASSERT_ARG(offset, offset <= bufferSize);
++    if (bufferSize - offset < sizeof(value))
++        return false;
++
++    value = ntohs(*reinterpret_cast_ptr<const uint16_t*>(buffer + offset));
++    offset += sizeof(value);
++
++    return true;
++}
++
++CDMProxyExternalCDM::~CDMProxyExternalCDM()
++{
++    closeGCryptHandle();
++}
++
++bool CDMProxyExternalCDM::cencSetCounterVector(const cencDecryptContext& input)
++{
++    uint8_t ctr[ClearKey::AES128CTRBlockSizeInBytes];
++    if (input.ivSizeInBytes == 8) {
++        // ISO/IEC 23001-7:2016 Section 9.3: for an 8-byte IV the least
++        // significant 8 bytes of the 16-byte counter block are zero.
++        memset(ctr + 8, 0, 8);
++        memcpy(ctr, input.iv, 8);
++    } else
++        memcpy(ctr, input.iv, ClearKey::IVSizeInBytes);
++
++    if (gcry_error_t cipherError = gcry_cipher_setctr(gCryptHandle(), ctr, ClearKey::IVSizeInBytes)) {
++#if !LOG_DISABLED
++        LOG(EME, "EME - CDMProxyExternalCDM - ERROR(gcry_cipher_setctr): %s", gpg_strerror(cipherError));
++#else
++        UNUSED_VARIABLE(cipherError);
++#endif
++        return false;
++    }
++
++    return true;
++}
++
++bool CDMProxyExternalCDM::cencDecryptFullSample(cencDecryptContext& in)
++{
++    if (!in.encryptedBufferSizeInBytes)
++        return true;
++
++    if (gcry_error_t cipherError = gcry_cipher_decrypt(gCryptHandle(), in.encryptedBuffer, in.encryptedBufferSizeInBytes, 0, 0)) {
++#if !LOG_DISABLED
++        LOG(EME, "EME - CDMProxyExternalCDM - ERROR(gcry_cipher_decrypt): %s", gpg_strerror(cipherError));
++#else
++        UNUSED_VARIABLE(cipherError);
++#endif
++        return false;
++    }
++
++    return true;
++}
++
++bool CDMProxyExternalCDM::cencDecryptSubsampled(cencDecryptContext& input)
++{
++    unsigned encryptedBufferByteOffset = 0;
++    size_t subSampleBufferByteOffset = 0;
++    unsigned subsampleIndex = 0;
++    while (encryptedBufferByteOffset < input.encryptedBufferSizeInBytes) {
++        uint16_t subsampleNumClearBytes = 0;
++        uint32_t subsampleNumEncryptedBytes = 0;
++
++        if (subsampleIndex < input.numSubsamples) {
++            if (!readUInt16(input.subsamplesBuffer, input.subsamplesBufferSizeInBytes, subSampleBufferByteOffset, subsampleNumClearBytes)) {
++                LOG(EME, "EME - CDMProxyExternalCDM - could not read number of clear bytes in subsample at index %u", subsampleIndex);
++                return false;
++            }
++            if (!readUInt32(input.subsamplesBuffer, input.subsamplesBufferSizeInBytes, subSampleBufferByteOffset, subsampleNumEncryptedBytes)) {
++                LOG(EME, "EME - CDMProxyExternalCDM - could not read number of encrypted bytes in subsample at index %u", subsampleIndex);
++                return false;
++            }
++            subsampleIndex++;
++        } else {
++            subsampleNumClearBytes = 0;
++            subsampleNumEncryptedBytes = input.encryptedBufferSizeInBytes - encryptedBufferByteOffset;
++        }
++
++        encryptedBufferByteOffset += subsampleNumClearBytes;
++
++        if (subsampleNumEncryptedBytes) {
++            if (gcry_error_t cipherError = gcry_cipher_decrypt(gCryptHandle(), input.encryptedBuffer + encryptedBufferByteOffset, subsampleNumEncryptedBytes, 0, 0)) {
++#if !LOG_DISABLED
++                LOG(EME, "EME - CDMProxyExternalCDM - ERROR(gcry_cipher_decrypt): %s", gpg_strerror(cipherError));
++#else
++                UNUSED_VARIABLE(cipherError);
++#endif
++                return false;
++            }
++
++            encryptedBufferByteOffset += subsampleNumEncryptedBytes;
++        }
++    }
++
++    return true;
++}
++
++DecryptionResult CDMProxyExternalCDM::cencDecrypt(CDMProxyExternalCDM::cencDecryptContext& input)
++{
++    Vector<uint8_t> keyIDVec;
++    keyIDVec.append(unsafeMakeSpan(input.keyID, input.keyIDSizeInBytes));
++
++    auto keyData = getOrWaitForKeyValue(keyIDVec, WTF::move(input.cdmProxyDecryptionClient));
++    if (!keyData) {
++        LOG(EME, "EME - CDMProxyExternalCDM - key unavailable or operation aborted");
++        return DecryptionResult::NoKey;
++    }
++
++    ASSERT(std::holds_alternative<Vector<uint8_t>>(keyData.value()));
++    auto& keyDataValue = std::get<Vector<uint8_t>>(keyData.value());
++
++    if (gcry_error_t cipherError = gcry_cipher_setkey(gCryptHandle(), keyDataValue.span().data(), keyDataValue.size())) {
++#if !LOG_DISABLED
++        LOG(EME, "EME - CDMProxyExternalCDM - ERROR(gcry_cipher_setkey): %s", gpg_strerror(cipherError));
++#else
++        UNUSED_VARIABLE(cipherError);
++#endif
++        return DecryptionResult::Failure;
++    }
++
++    if (!cencSetCounterVector(input))
++        return DecryptionResult::Failure;
++
++    bool success = input.isSubsampled() ? cencDecryptSubsampled(input) : cencDecryptFullSample(input);
++    return success ? DecryptionResult::Success : DecryptionResult::Failure;
++}
++
++void CDMProxyExternalCDM::closeGCryptHandle()
++{
++    if (m_gCryptHandle) {
++        gcry_cipher_close(*m_gCryptHandle);
++        m_gCryptHandle.reset();
++    }
++}
++
++gcry_cipher_hd_t& CDMProxyExternalCDM::gCryptHandle()
++{
++    if (!m_gCryptHandle) {
++        m_gCryptHandle.emplace();
++        if (gcry_error_t error = gcry_cipher_open(&m_gCryptHandle.value(), GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CTR, GCRY_CIPHER_SECURE)) {
++#if !LOG_DISABLED
++            LOG(EME, "EME - CDMProxyExternalCDM - ERROR(gcry_cipher_open): %s", gpg_strerror(error));
++#else
++            UNUSED_VARIABLE(error);
++#endif
++            RELEASE_ASSERT(false && "Should not get this far with a functional GCrypt!");
++        }
++    }
++
++    return *m_gCryptHandle;
++}
++
++} // namespace WebCore
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.h
+@@ -0,0 +1,84 @@
++/*
++ * Copyright (C) 2020 Metrological Group B.V.
++ * Copyright (C) 2020 Igalia S.L.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above
++ *    copyright notice, this list of conditions and the following
++ *    disclaimer in the documentation and/or other materials provided
++ *    with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#pragma once
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
++
++#include "CDMProxy.h"
++#include "GStreamerEMEUtilities.h"
++#include "SharedBuffer.h"
++#include <gcrypt.h>
++
++namespace WebCore {
++
++// Thread-safe API that decode threads use to drive the external CDM. For the
++// ClearKey key system the decryption runs in-process against the keys the
++// CDMInstanceSession placed in the shared key store; blob-backed key systems
++// are a later iteration.
++class CDMProxyExternalCDM final : public CDMProxy, public CanMakeWeakPtr<CDMProxyExternalCDM, WeakPtrFactoryInitialization::Eager> {
++public:
++    CDMProxyExternalCDM(const String& keySystem)
++        : m_keySystem(keySystem) { }
++    virtual ~CDMProxyExternalCDM();
++
++    struct cencDecryptContext {
++        const uint8_t* keyID;
++        size_t keyIDSizeInBytes;
++
++        const uint8_t* iv;
++        size_t ivSizeInBytes;
++
++        uint8_t* encryptedBuffer;
++        size_t encryptedBufferSizeInBytes;
++
++        const uint8_t* subsamplesBuffer;
++        size_t subsamplesBufferSizeInBytes;
++        size_t numSubsamples;
++        WeakPtr<CDMProxyDecryptionClient> cdmProxyDecryptionClient;
++
++        bool isSubsampled() const { return numSubsamples; }
++    };
++
++    DecryptionResult cencDecrypt(cencDecryptContext&);
++    const String& keySystem() const LIFETIME_BOUND { return m_keySystem; }
++
++private:
++    gcry_cipher_hd_t& gCryptHandle();
++    bool cencSetCounterVector(const cencDecryptContext&);
++    bool cencDecryptFullSample(cencDecryptContext&);
++    bool cencDecryptSubsampled(cencDecryptContext&);
++    void closeGCryptHandle();
++
++    String m_keySystem;
++    std::optional<gcry_cipher_hd_t> m_gCryptHandle { std::nullopt };
++};
++
++} // namespace WebCore
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMDecryptorGStreamer.cpp
+@@ -0,0 +1,192 @@
++/* GStreamer external CDM common encryption decryptor
++ *
++ * Copyright (C) 2020 Metrological
++ * Copyright (C) 2020 Igalia S.L
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Suite 500,
++ * Boston, MA 02110-1335, USA.
++ */
++
++#include "config.h"
++#include "WebKitExternalCDMDecryptorGStreamer.h"
++#include "WebKitCommonEncryptionDecryptorGStreamer.h"
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
++
++#include "CDMExternalCDM.h"
++#include "CDMProxyExternalCDM.h"
++#include "GStreamerCommon.h"
++#include "GStreamerEMEUtilities.h"
++#include <wtf/glib/WTFGType.h>
++
++using namespace WebCore;
++
++struct WebKitMediaExternalCDMDecryptPrivate {
++    RefPtr<CDMProxyExternalCDM> cdmProxy;
++};
++
++static ASCIILiteral protectionSystemId(WebKitMediaCommonEncryptionDecrypt*);
++static bool cdmProxyAttached(WebKitMediaCommonEncryptionDecrypt*, const RefPtr<CDMProxy>&);
++static DecryptionResult decrypt(WebKitMediaCommonEncryptionDecrypt*, GstBuffer* iv, GstBuffer* keyid, GstBuffer* sample, unsigned subSamplesCount,
++    GstBuffer* subSamples);
++
++GST_DEBUG_CATEGORY_STATIC(webkitMediaExternalCDMDecryptDebugCategory);
++#define GST_CAT_DEFAULT webkitMediaExternalCDMDecryptDebugCategory
++
++static GstStaticPadTemplate externalCDMSrcTemplate = GST_STATIC_PAD_TEMPLATE("src",
++    GST_PAD_SRC,
++    GST_PAD_ALWAYS,
++    GST_STATIC_CAPS(
++        "video/webm; "
++        "audio/webm; "
++        "video/mp4; "
++        "audio/mp4; "
++        "audio/mpeg; "
++        "audio/x-flac; "
++        "video/x-h264; "
++        "video/x-h265; "
++        "video/x-vp9; video/x-vp8; "
++        "video/x-av1; "
++        "audio/x-opus; audio/x-vorbis"));
++
++WEBKIT_DEFINE_TYPE(WebKitMediaExternalCDMDecrypt, webkit_media_external_cdm_decrypt, WEBKIT_TYPE_MEDIA_CENC_DECRYPT)
++
++static GRefPtr<GstCaps> createSinkPadTemplateCaps()
++{
++    GRefPtr<GstCaps> caps = adoptGRef(gst_caps_new_empty());
++
++    auto& supportedKeySystems = CDMFactoryExternalCDM::singleton().supportedKeySystems();
++    if (supportedKeySystems.isEmpty()) {
++        GST_WARNING("no supported key systems in the external CDM, the decryptor cannot decrypt anything");
++        return caps;
++    }
++
++    for (const auto& mediaType : GStreamerEMEUtilities::s_cencEncryptionMediaTypes) {
++        gst_caps_append_structure(caps.get(), gst_structure_new("application/x-cenc", "original-media-type", G_TYPE_STRING,
++            mediaType.characters(), nullptr));
++    }
++    for (const auto& keySystem : supportedKeySystems) {
++        for (const auto& mediaType : GStreamerEMEUtilities::s_cencEncryptionMediaTypes) {
++            gst_caps_append_structure(caps.get(), gst_structure_new("application/x-cenc", "original-media-type", G_TYPE_STRING,
++                mediaType.characters(), "protection-system", G_TYPE_STRING, GStreamerEMEUtilities::keySystemToUuid(keySystem).characters(), nullptr));
++        }
++    }
++
++    if (supportedKeySystems.contains(GStreamerEMEUtilities::s_ClearKeyKeySystem)) {
++        for (const auto& mediaType : GStreamerEMEUtilities::s_webmEncryptionMediaTypes) {
++            gst_caps_append_structure(caps.get(), gst_structure_new("application/x-webm-enc", "original-media-type", G_TYPE_STRING,
++                mediaType.characters(), nullptr));
++        }
++    }
++
++    GST_DEBUG("sink pad template caps %" GST_PTR_FORMAT, caps.get());
++
++    return caps;
++}
++
++static void webkit_media_external_cdm_decrypt_class_init(WebKitMediaExternalCDMDecryptClass* klass)
++{
++    GST_DEBUG_CATEGORY_INIT(webkitMediaExternalCDMDecryptDebugCategory, "webkitexternalcdm", 0, "external CDM decrypt");
++
++    GstElementClass* elementClass = GST_ELEMENT_CLASS(klass);
++    GRefPtr<GstCaps> gstSinkPadTemplateCaps = createSinkPadTemplateCaps();
++    gst_element_class_add_pad_template(elementClass, gst_pad_template_new("sink", GST_PAD_SINK, GST_PAD_ALWAYS, gstSinkPadTemplateCaps.get()));
++    gst_element_class_add_pad_template(elementClass, gst_static_pad_template_get(&externalCDMSrcTemplate));
++
++    gst_element_class_set_static_metadata(elementClass, "Decrypt encrypted content using an external CDM", GST_ELEMENT_FACTORY_KLASS_DECRYPTOR,
++        "Decrypts encrypted media using an external W3C CDM.", "Igalia");
++
++    WebKitMediaCommonEncryptionDecryptClass* commonClass = WEBKIT_MEDIA_CENC_DECRYPT_CLASS(klass);
++    commonClass->protectionSystemId = GST_DEBUG_FUNCPTR(protectionSystemId);
++    commonClass->cdmProxyAttached = GST_DEBUG_FUNCPTR(cdmProxyAttached);
++    commonClass->decrypt = GST_DEBUG_FUNCPTR(decrypt);
++}
++
++static ASCIILiteral protectionSystemId(WebKitMediaCommonEncryptionDecrypt* decryptor)
++{
++    auto* self = WEBKIT_MEDIA_EXTERNAL_CDM_DECRYPT(decryptor);
++    ASSERT(self->priv->cdmProxy);
++    return GStreamerEMEUtilities::keySystemToUuid(self->priv->cdmProxy->keySystem());
++}
++
++static bool cdmProxyAttached(WebKitMediaCommonEncryptionDecrypt* decryptor, const RefPtr<CDMProxy>& cdmProxy)
++{
++    auto* self = WEBKIT_MEDIA_EXTERNAL_CDM_DECRYPT(decryptor);
++    self->priv->cdmProxy = reinterpret_cast<CDMProxyExternalCDM*>(cdmProxy.get());
++    return self->priv->cdmProxy;
++}
++
++static DecryptionResult decrypt(WebKitMediaCommonEncryptionDecrypt* decryptor, GstBuffer* ivBuffer, GstBuffer* keyIDBuffer, GstBuffer* buffer, unsigned subsampleCount,
++    GstBuffer* subsamplesBuffer)
++{
++    auto* self = WEBKIT_MEDIA_EXTERNAL_CDM_DECRYPT(decryptor);
++    auto* priv = self->priv;
++
++    if (!ivBuffer || !keyIDBuffer || !buffer) {
++        GST_ERROR_OBJECT(self, "invalid decrypt() parameter");
++        ASSERT_NOT_REACHED();
++        return DecryptionResult::Failure;
++    }
++
++    if (subsampleCount && !subsamplesBuffer) {
++        GST_ERROR_OBJECT(self, "invalid decrypt() subsamples parameter");
++        ASSERT_NOT_REACHED();
++        return DecryptionResult::Failure;
++    }
++
++    GstMappedBuffer mappedIVBuffer(ivBuffer, GST_MAP_READ);
++    if (!mappedIVBuffer) {
++        GST_ERROR_OBJECT(self, "failed to map IV buffer");
++        return DecryptionResult::Failure;
++    }
++
++    GstMappedBuffer mappedKeyIdBuffer(keyIDBuffer, GST_MAP_READ);
++    if (!mappedKeyIdBuffer) {
++        GST_ERROR_OBJECT(self, "failed to map key ID buffer");
++        return DecryptionResult::Failure;
++    }
++
++    GstMappedBuffer mappedBuffer(buffer, GST_MAP_READWRITE);
++    if (!mappedBuffer) {
++        GST_ERROR_OBJECT(self, "failed to map data buffer");
++        return DecryptionResult::Failure;
++    }
++
++    std::optional<GstMappedBuffer> mappedSubsamplesBuffer;
++    CDMProxyExternalCDM::cencDecryptContext context = { };
++    context.keyID = mappedKeyIdBuffer.data();
++    context.keyIDSizeInBytes = mappedKeyIdBuffer.size();
++    context.iv = mappedIVBuffer.data();
++    context.ivSizeInBytes = mappedIVBuffer.size();
++    context.encryptedBuffer = mappedBuffer.data();
++    context.encryptedBufferSizeInBytes = mappedBuffer.size();
++    context.numSubsamples = subsampleCount;
++    if (subsampleCount) {
++        mappedSubsamplesBuffer.emplace(subsamplesBuffer, GST_MAP_READ);
++        if (!*mappedSubsamplesBuffer) {
++            GST_ERROR_OBJECT(self, "failed to map subsamples buffer");
++            return DecryptionResult::Failure;
++        }
++        context.subsamplesBuffer = mappedSubsamplesBuffer->data();
++        context.subsamplesBufferSizeInBytes = mappedSubsamplesBuffer->size();
++    }
++    context.cdmProxyDecryptionClient = webKitMediaCommonEncryptionDecryptGetCDMProxyDecryptionClient(decryptor);
++
++    return priv->cdmProxy->cencDecrypt(context);
++}
++
++#undef GST_CAT_DEFAULT
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMDecryptorGStreamer.h
+@@ -0,0 +1,54 @@
++/* GStreamer external CDM common encryption decryptor
++ *
++ * Copyright (C) 2020 Metrological
++ * Copyright (C) 2020 Igalia S.L
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++
++#pragma once
++
++#if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
++
++#include "WebKitCommonEncryptionDecryptorGStreamer.h"
++
++G_BEGIN_DECLS
++
++#define WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT          (webkit_media_external_cdm_decrypt_get_type())
++#define WEBKIT_MEDIA_EXTERNAL_CDM_DECRYPT(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT, WebKitMediaExternalCDMDecrypt))
++#define WEBKIT_MEDIA_EXTERNAL_CDM_DECRYPT_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass), WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT, WebKitMediaExternalCDMDecryptClass))
++#define WEBKIT_IS_MEDIA_EXTERNAL_CDM_DECRYPT(obj)       (G_TYPE_CHECK_INSTANCE_TYPE((obj), WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT))
++#define WEBKIT_IS_MEDIA_EXTERNAL_CDM_DECRYPT_CLASS(obj) (G_TYPE_CHECK_CLASS_TYPE((klass), WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT))
++
++typedef struct _WebKitMediaExternalCDMDecrypt        WebKitMediaExternalCDMDecrypt;
++typedef struct _WebKitMediaExternalCDMDecryptClass   WebKitMediaExternalCDMDecryptClass;
++struct WebKitMediaExternalCDMDecryptPrivate;
++
++GType webkit_media_external_cdm_decrypt_get_type(void);
++
++struct _WebKitMediaExternalCDMDecrypt {
++    WebKitMediaCommonEncryptionDecrypt parent;
++
++    WebKitMediaExternalCDMDecryptPrivate* priv;
++};
++
++struct _WebKitMediaExternalCDMDecryptClass {
++    WebKitMediaCommonEncryptionDecryptClass parentClass;
++};
++
++G_END_DECLS
++
++#endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
+--- a/Source/cmake/OptionsWPE.cmake
++++ b/Source/cmake/OptionsWPE.cmake
+@@ -50,6 +50,7 @@ include(FindGLibCompileResources)
+ # without approval from a WPE reviewer. There must be strong reason to support
+ # changing the value of the option.
+ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_ENCRYPTED_MEDIA PUBLIC ${ENABLE_EXPERIMENTAL_FEATURES})
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_EXTERNAL_CDM PRIVATE OFF)
+ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_PDFJS PUBLIC ON)
+ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_SPELLCHECK PUBLIC ON)
+ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBDRIVER PUBLIC ON)
+--- a/Source/cmake/WebKitFeatures.cmake
++++ b/Source/cmake/WebKitFeatures.cmake
+@@ -220,6 +220,7 @@ macro(WEBKIT_OPTION_BEGIN)
+     WEBKIT_OPTION_DEFINE(ENABLE_DRAG_SUPPORT "Toggle support of drag actions (including selection of text with mouse)" PRIVATE OFF)
+     WEBKIT_OPTION_DEFINE(ENABLE_ENCRYPTED_MEDIA "Toggle EME V3 support" PRIVATE OFF)
+     WEBKIT_OPTION_DEFINE(ENABLE_EXPERIMENTAL_FEATURES "Enable experimental features" PRIVATE OFF)
++    WEBKIT_OPTION_DEFINE(ENABLE_EXTERNAL_CDM "Toggle EME V3 external W3C CDM support" PRIVATE OFF)
+     WEBKIT_OPTION_DEFINE(ENABLE_FTL_JIT "Toggle FTL JIT support" PRIVATE ${ENABLE_FTL_DEFAULT})
+     WEBKIT_OPTION_DEFINE(ENABLE_FULLSCREEN_API "Toggle Fullscreen API support" PRIVATE ON)
+     WEBKIT_OPTION_DEFINE(ENABLE_GAMEPAD "Toggle Gamepad support" PRIVATE OFF)
+@@ -338,6 +339,7 @@ macro(WEBKIT_OPTION_BEGIN)
+ 
+     WEBKIT_OPTION_DEPEND(ENABLE_WEB_RTC ENABLE_MEDIA_STREAM)
+     WEBKIT_OPTION_DEPEND(ENABLE_ENCRYPTED_MEDIA ENABLE_VIDEO)
++    WEBKIT_OPTION_DEPEND(ENABLE_EXTERNAL_CDM ENABLE_ENCRYPTED_MEDIA)
+     WEBKIT_OPTION_DEPEND(ENABLE_LEGACY_ENCRYPTED_MEDIA ENABLE_VIDEO)
+     WEBKIT_OPTION_DEPEND(ENABLE_DFG_JIT ENABLE_JIT)
+     WEBKIT_OPTION_DEPEND(ENABLE_FTL_JIT ENABLE_DFG_JIT)

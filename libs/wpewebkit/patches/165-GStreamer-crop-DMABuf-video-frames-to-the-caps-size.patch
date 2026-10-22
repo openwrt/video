@@ -1,0 +1,36 @@
+From 7a86fcd6b2733f025a82df0d6416ef62a83c0c32 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 8 Oct 2026 15:47:19 +0100
+Subject: [PATCH] GStreamer: crop DMABuf video frames to the caps size
+
+VideoFrameGStreamer::getDMABuf() sizes the imported DMABuf from the
+GstVideoMeta width and height. A hardware decoder fills those with the
+coded picture size, which v4l2codecs takes straight from the V4L2 capture
+format, so a 1080-line stream decoded into 1088-line buffers is imported
+as 1920x1088 and then scaled into the 1080-line layer. The eight padding
+lines show up as a green stripe along the bottom of every frame.
+
+The caps carry the display size, so take the frame size from the
+GstVideoInfo and keep only the plane strides and offsets from the meta.
+This matches what b3d3dc5c2be0 ("[GStreamer] Use m_videoSize for DMABuf
+dimensions if available") did for the previous DMABuf path; the sink
+added in 36eefe856208 ("[GStreamer] Add support for DMA-BUF to GL video
+sink") sized its import from the meta again.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
+@@ -854,8 +854,8 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+         WTF_ALLOW_UNSAFE_BUFFER_USAGE_END;
+     }
+ 
+-    IntSize size(videoMeta->width, videoMeta->height);
+     const auto& videoInfo = info();
++    IntSize size(GST_VIDEO_INFO_WIDTH(&videoInfo), GST_VIDEO_INFO_HEIGHT(&videoInfo));
+     auto dmabufFormat = this->dmaBufFormat();
+     uint64_t modifier = dmabufFormat ? dmabufFormat->second : DRM_FORMAT_MOD_INVALID;
+     uint32_t fourcc = 0;
