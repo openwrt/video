@@ -1,0 +1,36 @@
+From 46264493405a8f2444a63ceab41be65f3089634d Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Fri, 23 Oct 2026 11:50:04 +0100
+Subject: [PATCH] [GLib] Service worker script updates are sent without cookies
+
+https://bugs.webkit.org/show_bug.cgi?id=328830
+
+Reviewed by NOBODY (OOPS!).
+
+SWServer::createScriptRequest() sets the first party for cookies but
+leaves the request's same-site flag unspecified. On the libsoup ports
+ResourceRequest::createSoupMessage() then sets no site for cookies, so
+libsoup treats the soft update fetch of the service worker script as
+cross-site and attaches no SameSite=Lax or SameSite=Strict cookie. A
+site that answers such a request with fresh session cookies, as Netflix
+does, logs the user out on every navigation that triggers a soft update.
+
+Mark the request same-site when the script URL and the top origin share
+a registrable domain.
+
+* Source/WebCore/workers/service/server/SWServer.cpp:
+(WebCore::SWServer::createScriptRequest):
+---
+ Source/WebCore/workers/service/server/SWServer.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/Source/WebCore/workers/service/server/SWServer.cpp
++++ b/Source/WebCore/workers/service/server/SWServer.cpp
+@@ -726,6 +726,7 @@ ResourceRequest SWServer::createScriptRe
+     request.setShouldBlockThirdPartyStorage(jobData.shouldBlockThirdPartyStorage);
+     request.setAllowCookies(true);
+     request.setFirstPartyForCookies(topOrigin->toURL());
++    request.setIsSameSite(RegistrableDomain(url) == RegistrableDomain(jobData.topOrigin));
+ 
+     request.setHTTPHeaderField(HTTPHeaderName::Origin, origin->toString());
+     request.setHTTPReferrer(SecurityPolicy::referrerToOriginString(jobData.scriptURL));

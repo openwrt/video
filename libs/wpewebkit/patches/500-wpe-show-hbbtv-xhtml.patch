@@ -1,0 +1,45 @@
+From 4da1748ec0f8cf4f08cc2392740c01f520c92e08 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sun, 25 Oct 2026 04:37:50 +0200
+Subject: [PATCH] [WPE] Show application/vnd.hbbtv.xhtml+xml as XHTML
+
+Reviewed by NOBODY (OOPS!).
+
+The HbbTV edition of a broadcaster page is served as
+application/vnd.hbbtv.xhtml+xml. WPE cannot show it: the type is not
+among the supported non-image MIME types, so the response is downloaded
+and the view reports a frame load interruption. Add the type to the
+supported non-image MIME types and create an XHTML document for it, as
+for application/xhtml+xml, so the page loads and parses as XHTML.
+
+* Source/WebCore/dom/DOMImplementation.cpp:
+(WebCore::DOMImplementation::createDocument):
+* Source/WebCore/platform/MIMETypeRegistry.cpp:
+(WebCore::MIMETypeRegistry::supportedNonImageMIMETypes):
+---
+ Source/WebCore/dom/DOMImplementation.cpp     | 3 ++-
+ Source/WebCore/platform/MIMETypeRegistry.cpp | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/dom/DOMImplementation.cpp
++++ b/Source/WebCore/dom/DOMImplementation.cpp
+@@ -167,7 +167,8 @@ Ref<Document> DOMImplementation::createD
+     // Plug-ins cannot take over for HTML, XHTML, plain text, or non-PDF images.
+     if (equalLettersIgnoringASCIICase(contentType, "text/html"_s))
+         return HTMLDocument::create(frame, settings, url, documentIdentifier);
+-    if (equalLettersIgnoringASCIICase(contentType, "application/xhtml+xml"_s))
++    if (equalLettersIgnoringASCIICase(contentType, "application/xhtml+xml"_s)
++        || equalLettersIgnoringASCIICase(contentType, "application/vnd.hbbtv.xhtml+xml"_s))
+         return XMLDocument::createXHTML(frame, settings, url);
+     if (equalLettersIgnoringASCIICase(contentType, "text/plain"_s))
+         return TextDocument::create(frame, settings, url, documentIdentifier);
+--- a/Source/WebCore/platform/MIMETypeRegistry.cpp
++++ b/Source/WebCore/platform/MIMETypeRegistry.cpp
+@@ -229,6 +229,7 @@ HashSet<String, ASCIICaseInsensitiveHash
+             "application/xhtml+xml"_s,
+ #if !PLATFORM(IOS_FAMILY)
+             "application/vnd.wap.xhtml+xml"_s,
++            "application/vnd.hbbtv.xhtml+xml"_s,
+             "application/rss+xml"_s,
+             "application/atom+xml"_s,
+ #endif

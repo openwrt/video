@@ -1,0 +1,506 @@
+From d8b44c87676a940cbd93423fa532b6a776fb96c4 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 24 Oct 2026 15:41:10 +0300
+Subject: [PATCH] [WPE] Bind a network session to an uplink
+
+Reviewed by NOBODY (OOPS!).
+
+Add an uplink property to the network session that pins every connection
+of a web view to a chosen interface, source address or subnet, so one
+view can leave through a tunnel while others use the default route. An
+interface pin binds the device only, for IPv4 and IPv6, so the kernel
+picks the device's current source address per connection and an address
+change during a session is followed; an address or subnet pin binds that
+address, per family. A connection that cannot be pinned fails closed.
+
+The uplink is given as "<interface|address|subnet>[;dns=<server>,...]".
+When it is set, the full value is handed to uplinkdns_uplink_add() if
+that symbol is present, so names resolve through the same uplink the
+socket binds to; absent it, the system resolver is used. The bind runs
+for every connection at the connecting stage, before connect.
+
+* Source/WebCore/platform/network/soup/SoupNetworkSession.cpp:
+(WebCore::inetAddressForInterface):
+(WebCore::firstUpIPv4Interface):
+(WebCore::resolveUplinkSubnet):
+(WebCore::resolveUplink):
+(WebCore::SoupNetworkSession::bindConnectionToUplink):
+(WebCore::SoupNetworkSession::setUplink):
+* Source/WebCore/platform/network/soup/SoupNetworkSession.h:
+* Source/WebKit/NetworkProcess/NetworkProcess.h:
+* Source/WebKit/NetworkProcess/NetworkProcess.messages.in:
+* Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.h:
+* Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.serialization.in:
+* Source/WebKit/NetworkProcess/soup/NetworkProcessSoup.cpp:
+(WebKit::NetworkProcess::setUplink):
+* Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.cpp:
+(WebKit::NetworkSessionSoup::NetworkSessionSoup):
+(WebKit::NetworkSessionSoup::setUplink):
+* Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.h:
+* Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp:
+(webkitNetworkSessionGetProperty):
+(webkitNetworkSessionSetProperty):
+(webkitNetworkSessionConstructed):
+(webkit_network_session_class_init):
+* Source/WebKit/UIProcess/WebsiteData/WebsiteDataStore.h:
+* Source/WebKit/UIProcess/WebsiteData/soup/WebsiteDataStoreSoup.cpp:
+(WebKit::WebsiteDataStore::platformSetNetworkParameters):
+(WebKit::WebsiteDataStore::setUplink):
+---
+ .../network/soup/SoupNetworkSession.cpp       | 170 ++++++++++++++++++
+ .../network/soup/SoupNetworkSession.h         |   4 +
+ Source/WebKit/NetworkProcess/NetworkProcess.h |   1 +
+ .../NetworkProcess/NetworkProcess.messages.in |   1 +
+ .../NetworkSessionCreationParameters.h        |   1 +
+ ...SessionCreationParameters.serialization.in |   1 +
+ .../soup/NetworkProcessSoup.cpp               |   6 +
+ .../soup/NetworkSessionSoup.cpp               |   8 +
+ .../NetworkProcess/soup/NetworkSessionSoup.h  |   1 +
+ .../API/glib/WebKitNetworkSession.cpp         |  45 ++++-
+ .../UIProcess/WebsiteData/WebsiteDataStore.h  |   3 +
+ .../WebsiteData/soup/WebsiteDataStoreSoup.cpp |  10 ++
+ 12 files changed, 250 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/platform/network/soup/SoupNetworkSession.cpp
++++ b/Source/WebCore/platform/network/soup/SoupNetworkSession.cpp
+@@ -33,8 +33,15 @@
+ #include "GUniquePtrSoup.h"
+ #include "Logging.h"
+ #include "WebKitAutoconfigProxyResolver.h"
++#include <arpa/inet.h>
++#include <dlfcn.h>
+ #include <glib/gstdio.h>
++#include <ifaddrs.h>
+ #include <libsoup/soup.h>
++#include <net/if.h>
++#include <netinet/in.h>
++#include <sys/socket.h>
++#include <cerrno>
+ #include <pal/crypto/CryptoDigest.h>
+ #include <wtf/FileSystem.h>
+ #include <wtf/HashSet.h>
+@@ -43,6 +50,7 @@
+ #include <wtf/glib/GSpanExtras.h>
+ #include <wtf/text/Base64.h>
+ #include <wtf/text/CString.h>
++#include <wtf/text/StringToIntegerConversion.h>
+ 
+ namespace WebCore {
+ 
+@@ -301,6 +309,168 @@ void SoupNetworkSession::setProxySetting
+     soup_session_abort(m_soupSession.get());
+ }
+ 
++static GRefPtr<GInetAddress> inetAddressForInterface(struct ifaddrs* entry)
++{
++    auto* address = reinterpret_cast<struct sockaddr_in*>(entry->ifa_addr);
++    return adoptGRef(g_inet_address_new_from_bytes(reinterpret_cast<const guint8*>(&address->sin_addr), G_SOCKET_FAMILY_IPV4));
++}
++
++template<typename MatchFunction>
++static GRefPtr<GInetAddress> firstUpIPv4Interface(const MatchFunction& matches)
++{
++    struct ifaddrs* interfaces = nullptr;
++    if (getifaddrs(&interfaces))
++        return nullptr;
++
++    GRefPtr<GInetAddress> result;
++    for (struct ifaddrs* entry = interfaces; entry; entry = entry->ifa_next) {
++        if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET)
++            continue;
++        if (!(entry->ifa_flags & IFF_UP))
++            continue;
++        if (!matches(entry))
++            continue;
++        result = inetAddressForInterface(entry);
++        break;
++    }
++
++    freeifaddrs(interfaces);
++    return result;
++}
++
++static GRefPtr<GInetAddress> resolveUplinkSubnet(const CString& addressText, unsigned prefixLength)
++{
++    struct in_addr subnet;
++    if (inet_pton(AF_INET, addressText.data(), &subnet) != 1)
++        return nullptr;
++
++    uint32_t subnetBits = ntohl(subnet.s_addr);
++    uint32_t mask = prefixLength ? (~uint32_t { 0 } << (32 - prefixLength)) : 0;
++
++    return firstUpIPv4Interface([&](struct ifaddrs* entry) {
++        auto* address = reinterpret_cast<struct sockaddr_in*>(entry->ifa_addr);
++        return (ntohl(address->sin_addr.s_addr) & mask) == (subnetBits & mask);
++    });
++}
++
++struct UplinkTarget {
++    GRefPtr<GInetAddress> address;
++    CString device;
++};
++
++// Resolve an uplink specification: an address or subnet to the local address a
++// connection binds to, or an interface name to the device to bind it to with no
++// address, so either family follows the device's current address. The resolution
++// runs for every connection so an address change is followed.
++static UplinkTarget resolveUplink(const String& uplink)
++{
++    if (uplink.isEmpty())
++        return { };
++
++    size_t slashPosition = uplink.find('/');
++    if (slashPosition != notFound) {
++        auto prefixLength = parseInteger<unsigned>(StringView(uplink).substring(slashPosition + 1), 10, WTF::ParseIntegerWhitespacePolicy::Disallow);
++        if (!prefixLength || *prefixLength > 32)
++            return { };
++        return { resolveUplinkSubnet(uplink.left(slashPosition).utf8(), *prefixLength), { } };
++    }
++
++    CString uplinkText = uplink.utf8();
++    GRefPtr<GInetAddress> literal = adoptGRef(g_inet_address_new_from_string(uplinkText.data()));
++    if (literal)
++        return { WTF::move(literal), { } };
++
++    return { nullptr, uplinkText };
++}
++
++void SoupNetworkSession::bindConnectionToUplink(GIOStream* connection)
++{
++    if (m_uplink.isEmpty())
++        return;
++
++    if (!G_IS_SOCKET_CONNECTION(connection))
++        return;
++
++    GSocket* socket = g_socket_connection_get_socket(G_SOCKET_CONNECTION(connection));
++    if (!socket)
++        return;
++
++    int fd = g_socket_get_fd(socket);
++
++    // A reused SoupMessage can carry the network-event handler more than once. A
++    // second SO_BINDTODEVICE on the same socket fails with EPERM for an
++    // unprivileged process, so skip a socket this session has already pinned,
++    // whether by device or by a non-wildcard address.
++    char boundDevice[IFNAMSIZ] = { };
++    socklen_t boundDeviceLength = sizeof(boundDevice);
++    if (!getsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, boundDevice, &boundDeviceLength) && boundDevice[0])
++        return;
++    GRefPtr<GSocketAddress> boundAddress = adoptGRef(g_socket_get_local_address(socket, nullptr));
++    if (boundAddress && G_IS_INET_SOCKET_ADDRESS(boundAddress.get())
++        && !g_inet_address_get_is_any(g_inet_socket_address_get_address(G_INET_SOCKET_ADDRESS(boundAddress.get()))))
++        return;
++
++    size_t separator = m_uplink.find(';');
++    UplinkTarget target = resolveUplink(separator == notFound ? m_uplink : m_uplink.left(separator));
++
++    // An interface pin binds the device only, for either family. The kernel picks
++    // the device's current source address at connect, so a v4 or v6 address change
++    // during the session is followed, and a family the device cannot route fails
++    // the connection locally.
++    if (!target.device.isNull()) {
++        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, target.device.data(), target.device.length())) {
++            WTFLogAlways("uplink: SO_BINDTODEVICE '%s' failed on fd %d: %s", target.device.data(), fd, g_strerror(errno));
++            g_socket_close(socket, nullptr);
++            return;
++        }
++        RELEASE_LOG(Network, "uplink: bound fd %d to dev %s (spec '%s')", fd, target.device.data(), m_uplink.utf8().data());
++        return;
++    }
++
++    // An address or subnet pin binds that address; a socket of the other family
++    // cannot leave through it and is failed closed.
++    if (target.address && g_socket_get_family(socket) == g_inet_address_get_family(target.address.get())) {
++        GRefPtr<GSocketAddress> bindAddress = adoptGRef(g_inet_socket_address_new(target.address.get(), 0));
++        GUniqueOutPtr<GError> error;
++        GUniquePtr<char> addrText(g_inet_address_to_string(target.address.get()));
++        if (!g_socket_bind(socket, bindAddress.get(), FALSE, &error.outPtr())) {
++            WTFLogAlways("uplink: bind to %s failed on fd %d: %s", addrText.get(), fd, error->message);
++            g_socket_close(socket, nullptr);
++            return;
++        }
++        RELEASE_LOG(Network, "uplink: bound fd %d to %s (spec '%s')", fd, addrText.get(), m_uplink.utf8().data());
++        return;
++    }
++
++    // Unresolved, device down, or a family this pin cannot satisfy: fail closed
++    // instead of leaving through the default route, so the loss stays visible.
++    WTFLogAlways("uplink: '%s' not satisfiable for fd %d, failing", m_uplink.utf8().data(), fd);
++    g_socket_close(socket, nullptr);
++}
++
++void SoupNetworkSession::setUplink(const String& uplink)
++{
++    m_uplink = uplink;
++    if (m_uplink.isEmpty())
++        return;
++
++    // Register the full spec, including any ';dns=' resolver list, with the uplink
++    // DNS interposition library when it is preloaded, so each connection's names
++    // resolve through the uplink the socket is bound to below. There is no link
++    // dependency: without the library the lookups use the system resolver.
++    using UplinkAddFunction = int (*)(const char*);
++    if (auto uplinkAdd = reinterpret_cast<UplinkAddFunction>(dlsym(RTLD_DEFAULT, "uplinkdns_uplink_add")))
++        uplinkAdd(m_uplink.utf8().data());
++
++    g_signal_connect(m_soupSession.get(), "request-queued", G_CALLBACK(+[](SoupSession*, SoupMessage* message, gpointer userData) {
++        g_signal_connect(message, "network-event", G_CALLBACK(+[](SoupMessage*, GSocketClientEvent event, GIOStream* connection, gpointer userData) {
++            if (event != G_SOCKET_CLIENT_CONNECTING)
++                return;
++            static_cast<SoupNetworkSession*>(userData)->bindConnectionToUplink(connection);
++        }), userData);
++    }), this);
++}
++
+ void SoupNetworkSession::setInitialAcceptLanguages(const CString& languages)
+ {
+     initialAcceptLanguages() = languages;
+--- a/Source/WebCore/platform/network/soup/SoupNetworkSession.h
++++ b/Source/WebCore/platform/network/soup/SoupNetworkSession.h
+@@ -66,6 +66,8 @@ public:
+ 
+     void setProxySettings(const SoupNetworkProxySettings&);
+ 
++    void setUplink(const String&);
++
+     static void setInitialAcceptLanguages(const CString&);
+     void setAcceptLanguages(const CString&);
+ 
+@@ -79,11 +81,13 @@ public:
+ 
+ private:
+     void setupLogger();
++    void bindConnectionToUplink(GIOStream*);
+ 
+     GRefPtr<SoupSession> m_soupSession;
+     PAL::SessionID m_sessionID;
+     bool m_ignoreTLSErrors { false };
+     SoupNetworkProxySettings m_proxySettings;
++    String m_uplink;
+     HashMap<String, HostTLSCertificateSet, ASCIICaseInsensitiveHash> m_allowedCertificates;
+ };
+ 
+--- a/Source/WebKit/NetworkProcess/NetworkProcess.h
++++ b/Source/WebKit/NetworkProcess/NetworkProcess.h
+@@ -594,6 +594,7 @@ private:
+     void setIgnoreTLSErrors(PAL::SessionID, bool);
+     void userPreferredLanguagesChanged(const Vector<String>&);
+     void setNetworkProxySettings(PAL::SessionID, WebCore::SoupNetworkProxySettings&&);
++    void setUplink(PAL::SessionID, const String&);
+     void setPersistentCredentialStorageEnabled(PAL::SessionID, bool);
+ #endif
+ 
+--- a/Source/WebKit/NetworkProcess/NetworkProcess.messages.in
++++ b/Source/WebKit/NetworkProcess/NetworkProcess.messages.in
+@@ -38,6 +38,7 @@ messages -> NetworkProcess : AuxiliaryPr
+     SetIgnoreTLSErrors(PAL::SessionID sessionID, bool ignoreTLSErrors)
+     UserPreferredLanguagesChanged(Vector<String> languages)
+     SetNetworkProxySettings(PAL::SessionID sessionID, struct WebCore::SoupNetworkProxySettings settings)
++    SetUplink(PAL::SessionID sessionID, String uplink)
+     PrefetchDNS(String hostname)
+     SetPersistentCredentialStorageEnabled(PAL::SessionID sessionID, bool enabled)
+ #endif
+--- a/Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.h
++++ b/Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.h
+@@ -75,6 +75,7 @@ struct NetworkSessionCreationParameters
+     bool persistentCredentialStorageEnabled { true };
+     bool ignoreTLSErrors { false };
+     WebCore::SoupNetworkProxySettings proxySettings;
++    String uplink;
+     WebCore::HTTPCookieAcceptPolicy cookieAcceptPolicy { WebCore::HTTPCookieAcceptPolicy::ExclusivelyFromMainDocumentDomain };
+ #endif
+ #if USE(CURL)
+--- a/Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.serialization.in
++++ b/Source/WebKit/NetworkProcess/NetworkSessionCreationParameters.serialization.in
+@@ -47,6 +47,7 @@ enum class WebKit::AllowsCellularAccess
+     bool persistentCredentialStorageEnabled;
+     bool ignoreTLSErrors;
+     WebCore::SoupNetworkProxySettings proxySettings;
++    String uplink;
+     WebCore::HTTPCookieAcceptPolicy cookieAcceptPolicy;
+ #endif
+ #if USE(CURL)
+--- a/Source/WebKit/NetworkProcess/soup/NetworkProcessSoup.cpp
++++ b/Source/WebKit/NetworkProcess/soup/NetworkProcessSoup.cpp
+@@ -163,6 +163,12 @@ void NetworkProcess::setIgnoreTLSErrors(
+         static_cast<NetworkSessionSoup&>(*session).setIgnoreTLSErrors(ignoreTLSErrors);
+ }
+ 
++void NetworkProcess::setUplink(PAL::SessionID sessionID, const String& uplink)
++{
++    if (auto* session = networkSession(sessionID))
++        static_cast<NetworkSessionSoup&>(*session).setUplink(uplink);
++}
++
+ void NetworkProcess::allowSpecificHTTPSCertificateForHost(PAL::SessionID sessionID, const CertificateInfo& certificateInfo, const String& host)
+ {
+     if (auto* session = networkSession(sessionID))
+--- a/Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.cpp
++++ b/Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.cpp
+@@ -57,6 +57,9 @@ NetworkSessionSoup::NetworkSessionSoup(N
+     if (parameters.proxySettings.mode != SoupNetworkProxySettings::Mode::Default)
+         setProxySettings(parameters.proxySettings);
+ 
++    if (!parameters.uplink.isEmpty())
++        m_networkSession->setUplink(parameters.uplink);
++
+     if (!parameters.cookiePersistentStoragePath.isEmpty())
+         setCookiePersistentStorage(parameters.cookiePersistentStoragePath, parameters.cookiePersistentStorageType);
+     else
+@@ -125,6 +128,11 @@ void NetworkSessionSoup::setIgnoreTLSErr
+     m_networkSession->setIgnoreTLSErrors(ignoreTLSErrors);
+ }
+ 
++void NetworkSessionSoup::setUplink(const String& uplink)
++{
++    m_networkSession->setUplink(uplink);
++}
++
+ void NetworkSessionSoup::allowSpecificHTTPSCertificateForHost(const CertificateInfo& certificateInfo, const String& host)
+ {
+     m_networkSession->allowSpecificHTTPSCertificateForHost(certificateInfo, host);
+--- a/Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.h
++++ b/Source/WebKit/NetworkProcess/soup/NetworkSessionSoup.h
+@@ -64,6 +64,7 @@ public:
+     bool persistentCredentialStorageEnabled() const { return m_persistentCredentialStorageEnabled; }
+ 
+     void setIgnoreTLSErrors(bool);
++    void setUplink(const String&);
+     void allowSpecificHTTPSCertificateForHost(const WebCore::CertificateInfo&, const String&);
+     void setProxySettings(const WebCore::SoupNetworkProxySettings&);
+ 
+--- a/Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp
+@@ -62,6 +62,7 @@ enum {
+     PROP_DATA_DIRECTORY,
+     PROP_CACHE_DIRECTORY,
+     PROP_IS_EPHEMERAL,
++    PROP_UPLINK,
+ 
+     N_PROPERTIES
+ };
+@@ -91,6 +92,7 @@ struct _WebKitNetworkSessionPrivate {
+ 
+     CString dataDirectory;
+     CString cacheDirectory;
++    String uplink;
+ 
+     HashSet<String> dnsPrefetchedHosts;
+     PAL::HysteresisActivity dnsPrefetchHystereris;
+@@ -106,6 +108,9 @@ static void webkitNetworkSessionGetPrope
+     case PROP_IS_EPHEMERAL:
+         g_value_set_boolean(value, webkit_network_session_is_ephemeral(session));
+         break;
++    case PROP_UPLINK:
++        g_value_set_string(value, session->priv->uplink.isNull() ? nullptr : session->priv->uplink.utf8().data());
++        break;
+     default:
+         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propID, paramSpec);
+     }
+@@ -126,6 +131,9 @@ static void webkitNetworkSessionSetPrope
+         if (g_value_get_boolean(value))
+             session->priv->websiteDataManager = adoptGRef(WEBKIT_WEBSITE_DATA_MANAGER(g_object_new(WEBKIT_TYPE_WEBSITE_DATA_MANAGER, "is-ephemeral", TRUE, nullptr)));
+         break;
++    case PROP_UPLINK:
++        session->priv->uplink = String::fromUTF8(g_value_get_string(value));
++        break;
+     default:
+         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propID, paramSpec);
+     }
+@@ -144,7 +152,13 @@ static void webkitNetworkSessionConstruc
+     }
+ 
+     priv->tlsErrorsPolicy = WEBKIT_TLS_ERRORS_POLICY_FAIL;
+-    webkitWebsiteDataManagerGetDataStore(priv->websiteDataManager.get()).setIgnoreTLSErrors(false);
++    Ref websiteDataStore = webkitWebsiteDataManagerGetDataStore(priv->websiteDataManager.get());
++    websiteDataStore->setIgnoreTLSErrors(false);
++
++    // Consume the uplink spec here, after every construct property has been set, so that
++    // the value survives regardless of the order "uplink" and the data directories arrive in.
++    if (!priv->uplink.isNull())
++        websiteDataStore->setUplink(priv->uplink);
+ }
+ 
+ static void webkit_network_session_class_init(WebKitNetworkSessionClass* sessionClass)
+@@ -198,6 +212,35 @@ static void webkit_network_session_class
+             FALSE,
+             static_cast<GParamFlags>(WEBKIT_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+ 
++    /**
++     * WebKitNetworkSession:uplink:
++     *
++     * The uplink that all connections of the session leave through, given as a
++     * source address specification. When %NULL or empty the system routing is
++     * used, which is the default. Otherwise the specification is resolved to a
++     * local IPv4 address that every new connection of the session is bound to,
++     * and the specification may take any of the following forms:
++     *
++     * - An IPv4 literal, used directly as the source address.
++     * - An `address/prefix` range, resolved to the address of the first
++     *   interface that is up and owns an address within the range.
++     * - An interface name, resolved to the first IPv4 address of that interface
++     *   while it is up.
++     *
++     * The specification is resolved anew for every new connection, so a change
++     * of address is followed without recreating the session. When it cannot be
++     * resolved the connection fails rather than falling back to the default
++     * route, which keeps a loss of the uplink visible instead of silent.
++     *
++     * Since: 2.56
++     */
++    sObjProperties[PROP_UPLINK] =
++        g_param_spec_string(
++            "uplink",
++            nullptr, nullptr,
++            nullptr,
++            static_cast<GParamFlags>(WEBKIT_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
++
+     g_object_class_install_properties(gObjectClass, N_PROPERTIES, sObjProperties.data());
+ 
+     /**
+--- a/Source/WebKit/UIProcess/WebsiteData/WebsiteDataStore.h
++++ b/Source/WebKit/UIProcess/WebsiteData/WebsiteDataStore.h
+@@ -338,6 +338,8 @@ public:
+     bool ignoreTLSErrors() const { return m_ignoreTLSErrors; }
+     void setNetworkProxySettings(WebCore::SoupNetworkProxySettings&&);
+     const WebCore::SoupNetworkProxySettings& networkProxySettings() const LIFETIME_BOUND { return m_networkProxySettings; }
++    void setUplink(const String&);
++    const String& uplink() const LIFETIME_BOUND { return m_uplink; }
+     void setCookiePersistentStorage(const String&, SoupCookiePersistentStorageType);
+     void setHTTPCookieAcceptPolicy(WebCore::HTTPCookieAcceptPolicy);
+ #endif
+@@ -646,6 +648,7 @@ private:
+     bool m_persistentCredentialStorageEnabled { true };
+     bool m_ignoreTLSErrors { true };
+     WebCore::SoupNetworkProxySettings m_networkProxySettings;
++    String m_uplink;
+     String m_cookiePersistentStoragePath;
+     SoupCookiePersistentStorageType m_cookiePersistentStorageType { SoupCookiePersistentStorageType::SQLite };
+     WebCore::HTTPCookieAcceptPolicy m_cookieAcceptPolicy { WebCore::HTTPCookieAcceptPolicy::ExclusivelyFromMainDocumentDomain };
+--- a/Source/WebKit/UIProcess/WebsiteData/soup/WebsiteDataStoreSoup.cpp
++++ b/Source/WebKit/UIProcess/WebsiteData/soup/WebsiteDataStoreSoup.cpp
+@@ -40,6 +40,7 @@ void WebsiteDataStore::platformSetNetwor
+     networkSessionParameters.persistentCredentialStorageEnabled = m_persistentCredentialStorageEnabled;
+     networkSessionParameters.ignoreTLSErrors = m_ignoreTLSErrors;
+     networkSessionParameters.proxySettings = m_networkProxySettings;
++    networkSessionParameters.uplink = m_uplink;
+     networkSessionParameters.cookiePersistentStoragePath = m_cookiePersistentStoragePath;
+     networkSessionParameters.cookiePersistentStorageType = m_cookiePersistentStorageType;
+     networkSessionParameters.cookieAcceptPolicy = m_cookieAcceptPolicy;
+@@ -72,6 +73,15 @@ void WebsiteDataStore::setNetworkProxySe
+     networkProcess().send(Messages::NetworkProcess::SetNetworkProxySettings(m_sessionID, m_networkProxySettings), 0);
+ }
+ 
++void WebsiteDataStore::setUplink(const String& uplink)
++{
++    // The creation parameters carry the uplink for a session not yet created,
++    // and this message carries it to one already created, so it applies
++    // whichever order the uplink and the data directories arrive in.
++    m_uplink = uplink;
++    networkProcess().send(Messages::NetworkProcess::SetUplink(m_sessionID, m_uplink), 0);
++}
++
+ void WebsiteDataStore::setCookiePersistentStorage(const String& storagePath, SoupCookiePersistentStorageType storageType)
+ {
+     if (m_cookiePersistentStoragePath == storagePath && m_cookiePersistentStorageType == storageType)

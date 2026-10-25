@@ -1,0 +1,58 @@
+From 96c4acb3e7567c990d473f8cbddd75e19e15bf90 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: declare BBQJIT ScratchScope for
+ non-X86/non-ARM64 archs
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+WasmBBQJIT64.cpp's addSIMDShuffle and addSIMDShift declare a ScratchScope
+named "scratches" only inside #if CPU(X86_64) / #elif CPU(ARM64), then
+reference that name from "if constexpr (isX86())" blocks and other code
+in the same function. In a non-template function, "if constexpr" does not
+discard the false branch from name lookup (C++17 [stmt.if]p2), so on any
+architecture not in that list the build fails with:
+
+  error: 'scratches' was not declared in this scope
+
+Add an #else branch in both functions declaring a ScratchScope with the
+same template arity as the X86 path. wasm SIMD is gated off at runtime
+on RISCV64 via Options::useWasmSIMD = false, so neither function is
+reached and the new scratches declaration is unused at run time; it
+only exists so the function bodies parse on RISCV64.
+
+* Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp:
+(JSC::Wasm::BBQJITImpl::BBQJIT::addSIMDShuffle):
+(JSC::Wasm::BBQJITImpl::BBQJIT::addSIMDShift):
+---
+ Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
+@@ -3652,6 +3652,11 @@ void NODELETE BBQJIT::notifyFunctionUses
+     clobber(ARM64Registers::q28);
+     clobber(ARM64Registers::q29);
+     ScratchScope<0, 0> scratches(*this, Location::fromFPR(ARM64Registers::q28), Location::fromFPR(ARM64Registers::q29));
++#else
++    // Other architectures (e.g. RISCV64) have no wasm SIMD codegen and
++    // never reach this function at runtime (useWasmSIMD is forced off).
++    // Declare scratches so the if-constexpr(isX86()) block below parses.
++    ScratchScope<0, 1> scratches(*this);
+ #endif
+     Location aLocation = loadIfNecessary(a);
+     Location bLocation = loadIfNecessary(b);
+@@ -3709,6 +3714,11 @@ void NODELETE BBQJIT::notifyFunctionUses
+     // Clobber and preserve RCX on x86, since we need it to do shifts.
+     clobber(shiftRCX);
+     ScratchScope<2, 2> scratches(*this, Location::fromGPR(shiftRCX));
++#elif !CPU(ARM64)
++    // RISCV64 / other archs: no wasm SIMD codegen exists; this function
++    // is unreachable at runtime via useWasmSIMD = false. Declare a
++    // ScratchScope so the X86-only sub-block below still parses.
++    ScratchScope<2, 2> scratches(*this);
+ #endif
+     Location srcLocation = loadIfNecessary(src);
+     Location shiftLocation;

@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wpewebkit
-PKG_VERSION:=2.54.0
+PKG_VERSION:=2.54.2
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://wpewebkit.org/releases
-PKG_HASH:=efa9bcc3cb891c2d88f50eec710d9ccee71cbdf1040420361eb98c17355eb452
+PKG_HASH:=f3284e19e47fcb5ac8c63c2e1c113dbd65b2423eb8a545f5b345707829004f56
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1-or-later BSD-2-Clause
@@ -36,6 +36,8 @@ CMAKE_OPTIONS += \
 	-DENABLE_INTROSPECTION=OFF \
 	-DENABLE_DOCUMENTATION=OFF \
 	-DENABLE_WEB_CRYPTO=ON \
+	-DENABLE_ENCRYPTED_MEDIA=ON \
+	-DENABLE_EXTERNAL_CDM=ON \
 	-DENABLE_JOURNALD_LOG=OFF \
 	-DENABLE_MINIBROWSER=$(if $(CONFIG_PACKAGE_wpewebkit-minibrowser),ON,OFF) \
 	-DENABLE_WPE_LEGACY_API=OFF \
@@ -58,7 +60,7 @@ CMAKE_OPTIONS += \
 	-DUSE_JPEGXL=OFF \
 	-DUSE_WOFF2=OFF \
 	-DUSE_AVIF=OFF \
-	-DUSE_LCMS=OFF \
+	-DUSE_LCMS=ON \
 	-DUSE_SYSTEM_SYSPROF_CAPTURE=OFF
 
 define Package/libwpewebkit
@@ -72,7 +74,7 @@ define Package/libwpewebkit
 	   +libgst1gl +libgst1pbutils +libgst1tag +libgst1transcoder \
 	   +libgst1video +libinput +libmanette +libjpeg +libpng +libseccomp \
 	   +libsoup3 +libsqlite3 +libstdcpp +libtasn1 +libudev +libwayland \
-	   +libwebp +libxkbcommon +libxml2 +libxslt +zlib \
+	   +libwebp +libxkbcommon +libxml2 +libxslt +liblcms2 +zlib \
 	   @(arm_v7||i386||i686||ARCH_64BIT)
 endef
 

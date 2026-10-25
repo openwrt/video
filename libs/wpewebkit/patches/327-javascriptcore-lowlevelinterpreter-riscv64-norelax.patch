@@ -1,0 +1,57 @@
+From 2cd8b35316e145e75b2329c0927dbee289c032e6 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: disable linker relaxation for the LLInt asm
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+IPInt opcode handlers are padded to 256-byte aligned dispatch slots with
+.balignw. On RISC-V the linker relaxes auipc+jalr/addi pairs into single
+instructions, shrinking each handler by 4 bytes, and the padding is not
+recomputed afterwards. Consecutive ipint_*_validate labels then sit 252
+bytes apart and IPInt::initialize()'s VALIDATE_IPINT_OPCODE assertions
+fire.
+
+Wrap the LLInt asm block in .option norelax on RISCV64 so every dispatch
+slot keeps its alignment.
+
+* Source/JavaScriptCore/llint/LowLevelInterpreter.cpp:
+---
+ .../llint/LowLevelInterpreter.cpp               | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter.cpp
+@@ -524,13 +524,30 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+ // the jsc_llint_begin and jsc_llint_end labels help lldb_webkit.py find the
+ // start and end of the llint instruction range quickly.
+ 
++// On RISC-V, the linker (mold) relaxes `auipc + jalr/addi` pairs into single
++// `j`/`addi`-via-gp instructions, shrinking IPInt opcode handlers by 4 bytes
++// each. The `.balignw 256` padding that follows each handler is not recomputed
++// after relaxation, so consecutive `ipint_*_validate` labels end up 252 bytes
++// apart instead of 256, and `IPInt::initialize()`'s `VALIDATE_IPINT_OPCODE`
++// asserts fire. Suppress relaxation across the entire LLInt asm to keep all
++// 256-byte-aligned dispatch slots intact.
++#if CPU(RISCV64)
++#define OFFLINE_ASM_BEGIN_OPTIONS ".option push\n.option norelax\n"
++#define OFFLINE_ASM_END_OPTIONS ".option pop\n"
++#else
++#define OFFLINE_ASM_BEGIN_OPTIONS ""
++#define OFFLINE_ASM_END_OPTIONS ""
++#endif
++
+ #define OFFLINE_ASM_BEGIN   __asm__( \
++    OFFLINE_ASM_BEGIN_OPTIONS \
+     OFFLINE_ASM_GLOBAL_LABEL_IMPL(jsc_llint_begin, OFFLINE_ASM_NO_ALT_ENTRY_DIRECTIVE, OFFLINE_ASM_ALIGN4B, HIDE_SYMBOL) \
+     OFFLINE_ASM_BEGIN_SPACER
+ 
+ #define OFFLINE_ASM_END \
+     OFFLINE_ASM_BEGIN_SPACER \
+     OFFLINE_ASM_GLOBAL_LABEL_IMPL(jsc_llint_end, OFFLINE_ASM_NO_ALT_ENTRY_DIRECTIVE, OFFLINE_ASM_ALIGN4B, HIDE_SYMBOL) \
++    OFFLINE_ASM_END_OPTIONS \
+ );
+ 
+ #if ENABLE(LLINT_EMBEDDED_OPCODE_ID)

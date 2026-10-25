@@ -1,0 +1,40 @@
+From 1b0ca9c81c1fb000f88c02d0b9405d2337e11b69 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: add RISCV64 support to GdbJIT
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+GdbJIT emits a tiny in-memory ELF object for the debugger to pick up.
+Its DWARF unwinding register mapping hard-codes X86_64 and ARM64 and
+falls through to the ARMv7 numbering for anything else, which is wrong
+on RISCV64.
+
+Add the missing CPU(RISCV64) branch: RegisterFP = 8 (s0/x8) and
+RegisterLR = 1 (ra/x1), matching the RISC-V psABI's DWARF register
+numbering.
+
+This is a debug-only path; it has no effect on generated JIT code,
+it just makes GdbJIT.cpp correct on RISCV64.
+
+* Source/JavaScriptCore/jit/GdbJIT.cpp:
+---
+ Source/JavaScriptCore/jit/GdbJIT.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/Source/JavaScriptCore/jit/GdbJIT.cpp
++++ b/Source/JavaScriptCore/jit/GdbJIT.cpp
+@@ -1164,6 +1164,11 @@ private:
+ #elif CPU(ARM64)
+         RegisterFP = 29,
+         RegisterLR = 30,
++#elif CPU(RISCV64)
++        // RISC-V psABI: DWARF register numbers match x0..x31, so the frame
++        // pointer s0/x8 is 8 and the return-address register ra/x1 is 1.
++        RegisterFP = 8,
++        RegisterLR = 1,
+ #else
+         RegisterFP = 7,
+         RegisterLR = 14,

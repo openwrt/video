@@ -1,0 +1,46 @@
+From f4f43fbf77be72b98400f81ecec956b5d08b5dba Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: do not force useBBQJIT() off on RISCV64
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+Options.cpp force-disables a number of JIT-tier and wasm options on any
+CPU other than X86_64 / ARM64. For RISCV64 these defaults remain correct
+- there is no concurrent GC, no wasm SIMD codegen, and no IPInt tier
+yet - except for useBBQJIT(): RISCV64 enables WEBASSEMBLY_BBQJIT in
+PlatformEnable.h and BBQJIT is the only wasm execution tier available
+on this architecture.
+
+Add RISCV64 to the carve-out so useBBQJIT() retains its (true) default,
+matching what is already done for ARM_THUMB2.
+
+With ARM_THUMB2 and RISCV64 carved out, the resulting wasm tier matrix
+on RISCV64 is:
+  useWasmIPInt        = false  (no IPInt port)
+  useWasmSIMD         = false  (no SIMD codegen)
+  useBBQJIT           = true   (this change)
+  useOMGJIT           = false  (no OMGJIT port)
+
+* Source/JavaScriptCore/runtime/Options.cpp:
+(JSC::Options::notifyOptionsChanged):
+---
+ Source/JavaScriptCore/runtime/Options.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/Source/JavaScriptCore/runtime/Options.cpp
++++ b/Source/JavaScriptCore/runtime/Options.cpp
+@@ -841,7 +841,10 @@ void Options::notifyOptionsChanged()
+     Options::forceUnlinkedDFG() = false;
+     Options::useWasmSIMD() = false;
+     Options::useWasmIPInt() = false;
+-#if !CPU(ARM_THUMB2)
++#if !CPU(ARM_THUMB2) && !CPU(RISCV64)
++    // RISCV64 has BBQJIT (WEBASSEMBLY_BBQJIT enabled in PlatformEnable.h);
++    // wasm SIMD and IPInt are still off above, so BBQJIT is the only wasm
++    // tier on this architecture.
+     Options::useBBQJIT() = false;
+ #endif
+ #endif

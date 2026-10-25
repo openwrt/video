@@ -1,0 +1,47 @@
+From b2a50cde523981363b19792a0c9c6bc019f1476d Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 24 Oct 2026 15:39:51 +0300
+Subject: [PATCH] [WPE] Optionally preload a module into the web process for an
+ external CDM
+
+https://bugs.webkit.org/show_bug.cgi?id=328385
+
+Reviewed by NOBODY (OOPS!).
+
+An external CDM blob is built against glibc and may rely on a loader
+feature the host libc lacks; under musl an ifunc resolver shim has to be
+preloaded for the blob to load. When WPE_WIDEVINE_CDM_PRELOAD names such
+a shim, set LD_PRELOAD for the web process only, prepended to any
+existing value, so the shim covers the CDM without affecting the rest of
+the system.
+
+This rides on the sandbox bind of the CDM path and is kept a separate
+change because the preload is a host-integration workaround whose shape
+is specific to the deployment rather than to WebKit.
+
+* Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp:
+(WebKit::bindExternalCDM):
+---
+ .../UIProcess/Launcher/glib/BubblewrapLauncher.cpp    | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+--- a/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
++++ b/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
+@@ -477,6 +477,17 @@ static void bindExternalCDM(Vector<CStri
+     if (!cdmPath || !*cdmPath)
+         return;
+     bindIfExists(args, cdmPath);
++
++    // An optional preload (e.g. an ifunc resolver) is injected into the web
++    // process only, so a glibc CDM blob loads under a libc without ifunc.
++    const char* cdmPreload = g_getenv("WPE_WIDEVINE_CDM_PRELOAD");
++    if (!cdmPreload || !*cdmPreload)
++        return;
++    const char* existingPreload = g_getenv("LD_PRELOAD");
++    GUniquePtr<char> preloadValue(existingPreload && *existingPreload
++        ? g_strdup_printf("%s:%s", cdmPreload, existingPreload)
++        : g_strdup(cdmPreload));
++    args.appendList<CString>({ "--setenv", "LD_PRELOAD", preloadValue.get() });
+ }
+ #endif
+ 
