@@ -1,0 +1,1108 @@
+From e0ab5e2fdbb4108e06c6585bd758270744ee8dfb Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: route IPInt atomics through C helpers on
+ RISCV64
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+offlineasm has no RISC-V backend for the atomicload*, atomicxchg* and
+atomicweakcas* family, so every IPInt atomic op assembles to a trap on
+this architecture even though rv64gc includes the A extension.
+
+Add C slow-path helpers built on the __atomic_* builtins, all sequentially
+consistent as the wasm specification requires, and give each IPInt atomic
+macro a RISCV64 branch that calls them. The asm side passes a pointer that
+has already been bounds- and alignment-checked. The helpers take their
+arguments as (address), (address, value) or (address, expected,
+replacement) in a1..a3 and return the previous value in r0.
+
+* Source/JavaScriptCore/llint/InPlaceInterpreter64.asm:
+* Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp:
+(JSC::Wasm::BBQJITImpl::BBQJIT::emitAtomicOpGeneric):
+(JSC::Wasm::BBQJITImpl::BBQJIT::emitAtomicCompareExchange):
+* Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.cpp:
+(JSC::IPInt::WASM_IPINT_EXTERN_CPP_DECL):
+* Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.h:
+---
+ .../llint/InPlaceInterpreter64.asm            | 371 ++++++++++++++++++
+ Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp   |  68 ++++
+ .../wasm/WasmIPIntSlowPaths.cpp               | 117 ++++++
+ .../JavaScriptCore/wasm/WasmIPIntSlowPaths.h  |  40 ++
+ 4 files changed, 596 insertions(+)
+
+--- a/Source/JavaScriptCore/llint/InPlaceInterpreter64.asm
++++ b/Source/JavaScriptCore/llint/InPlaceInterpreter64.asm
+@@ -9042,6 +9042,10 @@ macro doI32AtomicLoad(mem, dst)
+     checkAlignment4(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadi [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load32) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9051,6 +9055,10 @@ macro doI64AtomicLoad(mem, dst)
+     checkAlignment8(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadq [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load64) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9060,6 +9068,10 @@ macro doI32AtomicLoad8(mem, dst)
+     noAlignmentCheck(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadb [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load8) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9069,6 +9081,10 @@ macro doI32AtomicLoad16(mem, dst)
+     checkAlignment2(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadh [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load16) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9078,6 +9094,10 @@ macro doI64AtomicLoad8(mem, dst)
+     noAlignmentCheck(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadb [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load8) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9087,6 +9107,10 @@ macro doI64AtomicLoad16(mem, dst)
+     checkAlignment2(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadh [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load16) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9096,6 +9120,10 @@ macro doI64AtomicLoad32(mem, dst)
+     checkAlignment4(mem, _ipint_throw_UnalignedMemoryAccess)
+     if ARM64 or ARM64E or X86_64
+         atomicloadi [mem], dst
++    elsif RISCV64
++        move mem, a1
++        operationCall(macro() cCall2(_ipint_extern_atomic_load32) end)
++        move r0, dst
+     else
+         break
+     end
+@@ -9112,6 +9140,11 @@ macro doI32AtomicStore(mem, val, memCopy
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store32) end)
+     else
+         break
+     end
+@@ -9128,6 +9161,11 @@ macro doI64AtomicStore(mem, val, memCopy
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store64) end)
+     else
+         break
+     end
+@@ -9144,6 +9182,11 @@ macro doI32AtomicStore8(mem, val, memCop
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store8) end)
+     else
+         break
+     end
+@@ -9160,6 +9203,11 @@ macro doI32AtomicStore16(mem, val, memCo
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store16) end)
+     else
+         break
+     end
+@@ -9176,6 +9224,11 @@ macro doI64AtomicStore8(mem, val, memCop
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store8) end)
+     else
+         break
+     end
+@@ -9192,6 +9245,11 @@ macro doI64AtomicStore16(mem, val, memCo
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store16) end)
+     else
+         break
+     end
+@@ -9208,6 +9266,11 @@ macro doI64AtomicStore32(mem, val, memCo
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_store32) end)
+     else
+         break
+     end
+@@ -9225,6 +9288,12 @@ macro doI32AtomicRmwAdd(mem, val, memCop
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9242,6 +9311,12 @@ macro doI64AtomicRmwAdd(mem, val, memCop
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addq value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9260,6 +9335,12 @@ macro doI32AtomicRmwAdd8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9278,6 +9359,12 @@ macro doI32AtomicRmwAdd16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9296,6 +9383,12 @@ macro doI64AtomicRmwAdd8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9314,6 +9407,12 @@ macro doI64AtomicRmwAdd16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9332,6 +9431,12 @@ macro doI64AtomicRmwAdd32(mem, val, memC
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             addi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_add32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9351,6 +9456,12 @@ macro doI32AtomicRmwSub(mem, val, memCop
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9370,6 +9481,12 @@ macro doI64AtomicRmwSub(mem, val, memCop
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subq oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9390,6 +9507,12 @@ macro doI32AtomicRmwSub8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9410,6 +9533,12 @@ macro doI32AtomicRmwSub16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9430,6 +9559,12 @@ macro doI64AtomicRmwSub8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9450,6 +9585,12 @@ macro doI64AtomicRmwSub16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9470,6 +9611,12 @@ macro doI64AtomicRmwSub32(mem, val, memC
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             subi oldValue, value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_sub32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9489,6 +9636,12 @@ macro doI32AtomicRmwAnd(mem, val, memCop
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9508,6 +9661,12 @@ macro doI64AtomicRmwAnd(mem, val, memCop
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andq value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9527,6 +9686,12 @@ macro doI32AtomicRmwAnd8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9546,6 +9711,12 @@ macro doI32AtomicRmwAnd16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9565,6 +9736,12 @@ macro doI64AtomicRmwAnd8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9584,6 +9761,12 @@ macro doI64AtomicRmwAnd16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9603,6 +9786,12 @@ macro doI64AtomicRmwAnd32(mem, val, memC
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             andi value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_and32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9621,6 +9810,12 @@ macro doI32AtomicRmwOr(mem, val, memCopy
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9639,6 +9834,12 @@ macro doI64AtomicRmwOr(mem, val, memCopy
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             orq value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9657,6 +9858,12 @@ macro doI32AtomicRmwOr8(mem, val, memCop
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9675,6 +9882,12 @@ macro doI32AtomicRmwOr16(mem, val, memCo
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9693,6 +9906,12 @@ macro doI64AtomicRmwOr8(mem, val, memCop
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9711,6 +9930,12 @@ macro doI64AtomicRmwOr16(mem, val, memCo
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9729,6 +9954,12 @@ macro doI64AtomicRmwOr32(mem, val, memCo
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             ori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_or32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9747,6 +9978,12 @@ macro doI32AtomicRmwXor(mem, val, memCop
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9765,6 +10002,12 @@ macro doI64AtomicRmwXor(mem, val, memCop
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xorq value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9783,6 +10026,12 @@ macro doI32AtomicRmwXor8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9801,6 +10050,12 @@ macro doI32AtomicRmwXor16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9819,6 +10074,12 @@ macro doI64AtomicRmwXor8(mem, val, memCo
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9837,6 +10098,12 @@ macro doI64AtomicRmwXor16(mem, val, memC
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9855,6 +10122,12 @@ macro doI64AtomicRmwXor32(mem, val, memC
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             xori value, oldValue, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xor32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9873,6 +10146,12 @@ macro doI32AtomicRmwXchg(mem, val, memCo
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9891,6 +10170,12 @@ macro doI64AtomicRmwXchg(mem, val, memCo
+         weakCASLoopQuad(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9909,6 +10194,12 @@ macro doI32AtomicRmwXchg8(mem, val, memC
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9927,6 +10218,12 @@ macro doI32AtomicRmwXchg16(mem, val, mem
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9945,6 +10242,12 @@ macro doI64AtomicRmwXchg8(mem, val, memC
+         weakCASLoopByte(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9963,6 +10266,12 @@ macro doI64AtomicRmwXchg16(mem, val, mem
+         weakCASLoopHalf(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9981,6 +10290,12 @@ macro doI64AtomicRmwXchg32(mem, val, mem
+         weakCASLoopInt(memCopy, val, mem, scratch, macro(value, oldValue, newValue)
+             move value, newValue
+         end)
++    elsif RISCV64
++        move val, mem
++        move memCopy, a1
++        move mem, a2
++        operationCall(macro() cCall3(_ipint_extern_atomic_rmw_xchg32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -9995,6 +10310,14 @@ macro doI32AtomicCmpxchg(mem, expected,
+         atomicweakcasi mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeInt(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg32) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10008,6 +10331,14 @@ macro doI64AtomicCmpxchg(mem, expected,
+         atomicweakcasq mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeQuad(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg64) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10022,6 +10353,14 @@ macro doI32AtomicCmpxchg8(mem, expected,
+         atomicweakcasb mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeByte(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10036,6 +10375,14 @@ macro doI32AtomicCmpxchg16(mem, expected
+         atomicweakcash mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeHalf(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10050,6 +10397,14 @@ macro doI64AtomicCmpxchg8(mem, expected,
+         atomicweakcasb mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeByte(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg8) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10064,6 +10419,14 @@ macro doI64AtomicCmpxchg16(mem, expected
+         atomicweakcash mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeHalf(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg16) end)
++        move r0, mem
+     else
+         break
+     end
+@@ -10078,6 +10441,14 @@ macro doI64AtomicCmpxchg32(mem, expected
+         atomicweakcasi mem, newVal, [memCopy]
+     elsif ARM64
+         weakCASExchangeInt(memCopy, newVal, mem, scratch, expected)
++    elsif RISCV64
++        move memCopy, expected
++        move mem, scratch
++        move newVal, a3
++        move expected, a1
++        move scratch, a2
++        operationCall(macro() cCall4(_ipint_extern_atomic_rmw_cmpxchg32) end)
++        move r0, mem
+     else
+         break
+     end
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
+@@ -634,6 +634,29 @@ void BBQJIT::emitAtomicOpGeneric(ExtAtom
+         RELEASE_ASSERT_NOT_REACHED();
+     }
+     m_jit.branchTest32(ResultCondition::NonZero, scratchGPR).linkTo(reloopLabel, &m_jit);
++#elif CPU(RISCV64)
++    // Slow path: plain load+store (no LR/SC). rv64gc does include the
++    // A-extension, but MacroAssemblerRISCV64.h's loadLinkAcq/storeCondRel
++    // primitives are still stubs. This is single-threaded-correct only;
++    // multi-threaded code would race. TODO: emit amo.* / lr.d+sc.d for
++    // a truly atomic version.
++    switch (accessWidth) {
++    case Width8:
++        m_jit.store8(scratchGPR, address);
++        break;
++    case Width16:
++        m_jit.store16(scratchGPR, address);
++        break;
++    case Width32:
++        m_jit.store32(scratchGPR, address);
++        break;
++    case Width64:
++        m_jit.store64(scratchGPR, address);
++        break;
++    case Width128:
++        RELEASE_ASSERT_NOT_REACHED();
++    }
++    UNUSED_PARAM(reloopLabel);
+ #endif
+ }
+ 
+@@ -1267,6 +1290,51 @@ Value BBQJIT::emitAtomicBinaryRMWOp(ExtA
+             return;
+         }
+ 
++#if CPU(RISCV64)
++        // Slow path: non-atomic CAS. Load current into resultGPR, compare
++        // to expectedGPR, store valueGPR only on equality. Single-threaded
++        // correct only. TODO: emit lr.{d,w}+sc.{d,w} for a truly atomic
++        // version using the rv64gc A-extension.
++        switch (accessWidth) {
++        case Width8:
++            m_jit.load8(address, resultGPR);
++            break;
++        case Width16:
++            m_jit.load16(address, resultGPR);
++            break;
++        case Width32:
++            m_jit.load32(address, resultGPR);
++            break;
++        case Width64:
++            m_jit.load64(address, resultGPR);
++            break;
++        default:
++            RELEASE_ASSERT_NOT_REACHED();
++            break;
++        }
++        auto notEqual = m_jit.branch64(MacroAssembler::NotEqual, resultGPR, expectedGPR);
++        switch (accessWidth) {
++        case Width8:
++            m_jit.store8(valueGPR, address);
++            break;
++        case Width16:
++            m_jit.store16(valueGPR, address);
++            break;
++        case Width32:
++            m_jit.store32(valueGPR, address);
++            break;
++        case Width64:
++            m_jit.store64(valueGPR, address);
++            break;
++        default:
++            RELEASE_ASSERT_NOT_REACHED();
++            break;
++        }
++        notEqual.link(&m_jit);
++        UNUSED_PARAM(scratchGPR);
++        return;
++#endif
++
+         m_jit.move(expectedGPR, resultGPR);
+         switch (accessWidth) {
+         case Width8:
+--- a/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.cpp
++++ b/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.cpp
+@@ -1404,6 +1404,123 @@ WASM_IPINT_EXTERN_CPP_DECL(ref_func, uns
+     IPINT_RETURN(Wasm::refFunc(instance, index));
+ }
+ 
++// ------------------------------------------------------------------
++// Slow-path atomic ops (currently used by IPInt on RISC-V64; rv64gc
++// does include the A-extension but offlineasm's atomicloadq /
++// atomicxchg* family has no RISC-V backend yet, so we route through C
++// helpers using __atomic_* builtins. The asm caller passes the
++// already-bounds-checked, alignment-checked host pointer.
++//
++// All ops are __ATOMIC_SEQ_CST, matching the wasm spec.
++// ------------------------------------------------------------------
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_load8, uint64_t address)
++{
++    UNUSED_PARAM(instance);
++    uint8_t v = __atomic_load_n(reinterpret_cast<uint8_t*>(address), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(v)), nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_load16, uint64_t address)
++{
++    UNUSED_PARAM(instance);
++    uint16_t v = __atomic_load_n(reinterpret_cast<uint16_t*>(address), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(v)), nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_load32, uint64_t address)
++{
++    UNUSED_PARAM(instance);
++    uint32_t v = __atomic_load_n(reinterpret_cast<uint32_t*>(address), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(v)), nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_load64, uint64_t address)
++{
++    UNUSED_PARAM(instance);
++    uint64_t v = __atomic_load_n(reinterpret_cast<uint64_t*>(address), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(v)), nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_store8, uint64_t address, uint64_t value)
++{
++    UNUSED_PARAM(instance);
++    __atomic_store_n(reinterpret_cast<uint8_t*>(address), static_cast<uint8_t>(value), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(nullptr, nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_store16, uint64_t address, uint64_t value)
++{
++    UNUSED_PARAM(instance);
++    __atomic_store_n(reinterpret_cast<uint16_t*>(address), static_cast<uint16_t>(value), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(nullptr, nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_store32, uint64_t address, uint64_t value)
++{
++    UNUSED_PARAM(instance);
++    __atomic_store_n(reinterpret_cast<uint32_t*>(address), static_cast<uint32_t>(value), __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(nullptr, nullptr);
++}
++
++WASM_IPINT_EXTERN_CPP_DECL(atomic_store64, uint64_t address, uint64_t value)
++{
++    UNUSED_PARAM(instance);
++    __atomic_store_n(reinterpret_cast<uint64_t*>(address), value, __ATOMIC_SEQ_CST);
++    WASM_RETURN_TWO(nullptr, nullptr);
++}
++
++#define IPINT_RMW_OP(name, builtin, type)                                                                 \
++WASM_IPINT_EXTERN_CPP_DECL(name, uint64_t address, uint64_t value)                                        \
++{                                                                                                         \
++    UNUSED_PARAM(instance);                                                                               \
++    type prev = builtin(reinterpret_cast<type*>(address), static_cast<type>(value), __ATOMIC_SEQ_CST);    \
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(prev)), nullptr);                         \
++}
++
++IPINT_RMW_OP(atomic_rmw_add8,  __atomic_fetch_add, uint8_t)
++IPINT_RMW_OP(atomic_rmw_add16, __atomic_fetch_add, uint16_t)
++IPINT_RMW_OP(atomic_rmw_add32, __atomic_fetch_add, uint32_t)
++IPINT_RMW_OP(atomic_rmw_add64, __atomic_fetch_add, uint64_t)
++IPINT_RMW_OP(atomic_rmw_sub8,  __atomic_fetch_sub, uint8_t)
++IPINT_RMW_OP(atomic_rmw_sub16, __atomic_fetch_sub, uint16_t)
++IPINT_RMW_OP(atomic_rmw_sub32, __atomic_fetch_sub, uint32_t)
++IPINT_RMW_OP(atomic_rmw_sub64, __atomic_fetch_sub, uint64_t)
++IPINT_RMW_OP(atomic_rmw_and8,  __atomic_fetch_and, uint8_t)
++IPINT_RMW_OP(atomic_rmw_and16, __atomic_fetch_and, uint16_t)
++IPINT_RMW_OP(atomic_rmw_and32, __atomic_fetch_and, uint32_t)
++IPINT_RMW_OP(atomic_rmw_and64, __atomic_fetch_and, uint64_t)
++IPINT_RMW_OP(atomic_rmw_or8,   __atomic_fetch_or,  uint8_t)
++IPINT_RMW_OP(atomic_rmw_or16,  __atomic_fetch_or,  uint16_t)
++IPINT_RMW_OP(atomic_rmw_or32,  __atomic_fetch_or,  uint32_t)
++IPINT_RMW_OP(atomic_rmw_or64,  __atomic_fetch_or,  uint64_t)
++IPINT_RMW_OP(atomic_rmw_xor8,  __atomic_fetch_xor, uint8_t)
++IPINT_RMW_OP(atomic_rmw_xor16, __atomic_fetch_xor, uint16_t)
++IPINT_RMW_OP(atomic_rmw_xor32, __atomic_fetch_xor, uint32_t)
++IPINT_RMW_OP(atomic_rmw_xor64, __atomic_fetch_xor, uint64_t)
++IPINT_RMW_OP(atomic_rmw_xchg8,  __atomic_exchange_n, uint8_t)
++IPINT_RMW_OP(atomic_rmw_xchg16, __atomic_exchange_n, uint16_t)
++IPINT_RMW_OP(atomic_rmw_xchg32, __atomic_exchange_n, uint32_t)
++IPINT_RMW_OP(atomic_rmw_xchg64, __atomic_exchange_n, uint64_t)
++#undef IPINT_RMW_OP
++
++#define IPINT_CMPXCHG_OP(name, type)                                                                      \
++WASM_IPINT_EXTERN_CPP_DECL(name, uint64_t address, uint64_t expected, uint64_t replacement)               \
++{                                                                                                         \
++    UNUSED_PARAM(instance);                                                                               \
++    type exp = static_cast<type>(expected);                                                               \
++    type rep = static_cast<type>(replacement);                                                            \
++    __atomic_compare_exchange_n(reinterpret_cast<type*>(address), &exp, rep, /*weak=*/false,              \
++                                __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);                                      \
++    WASM_RETURN_TWO(std::bit_cast<void*>(static_cast<uintptr_t>(exp)), nullptr);                          \
++}
++
++IPINT_CMPXCHG_OP(atomic_rmw_cmpxchg8,  uint8_t)
++IPINT_CMPXCHG_OP(atomic_rmw_cmpxchg16, uint16_t)
++IPINT_CMPXCHG_OP(atomic_rmw_cmpxchg32, uint32_t)
++IPINT_CMPXCHG_OP(atomic_rmw_cmpxchg64, uint64_t)
++#undef IPINT_CMPXCHG_OP
++
+ extern "C" void SYSV_ABI wasm_log_crash(CallFrame*, JSWebAssemblyInstance* instance)
+ {
+     dataLogLn("Reached IPInt code that should never have been executed.");
+--- a/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.h
++++ b/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.h
+@@ -143,6 +143,46 @@ WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(memory
+ WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(memory_atomic_wait64, IPIntStackEntry*);
+ WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(memory_atomic_notify, IPIntStackEntry*);
+ 
++// Slow-path atomic ops. The IPInt asm on architectures lacking direct
++// offlineasm atomic primitives (currently RISC-V64) routes here. The asm
++// caller passes the already-bounds-checked, page-aligned host pointer.
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_load8, uint64_t address);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_load16, uint64_t address);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_load32, uint64_t address);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_load64, uint64_t address);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_store8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_store16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_store32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_store64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_add8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_add16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_add32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_add64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_sub8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_sub16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_sub32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_sub64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_and8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_and16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_and32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_and64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_or8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_or16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_or32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_or64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xor8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xor16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xor32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xor64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xchg8, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xchg16, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xchg32, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_xchg64, uint64_t address, uint64_t value);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_cmpxchg8, uint64_t address, uint64_t expected, uint64_t replacement);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_cmpxchg16, uint64_t address, uint64_t expected, uint64_t replacement);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_cmpxchg32, uint64_t address, uint64_t expected, uint64_t replacement);
++WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_cmpxchg64, uint64_t address, uint64_t expected, uint64_t replacement);
++
+ WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(check_stack_and_vm_traps, void* candidateNewStackPointer, Wasm::IPIntCallee*, CallFrame*);
+ WASM_IPINT_EXTERN_CPP_DECL(handle_debugger_trap_if_needed, CallFrame*, Register*);
+ 

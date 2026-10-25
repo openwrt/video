@@ -1,0 +1,57 @@
+From a7c35d7113ca740799900b412cbf30a152d037cf Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] JavaScriptCore: gate canTierUpToOMG on the OMG JIT
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+BBQJIT::canTierUpToOMG() is gated only on Options::useOMGJIT() and
+per-function thresholds, not on OMG actually being compiled in. On a
+build without ENABLE(WEBASSEMBLY_OMGJIT) it can still return true, and
+emitEntryTierUpCheck() then reaches a RELEASE_ASSERT_NOT_REACHED().
+
+Return false from canTierUpToOMG() when the OMG JIT is not enabled, so
+that emitEntryTierUpCheck() skips emitting the tier-up counter check
+instead of aborting.
+
+* Source/JavaScriptCore/wasm/WasmBBQJIT.cpp:
+(JSC::Wasm::BBQJITImpl::BBQJIT::canTierUpToOMG const):
+(JSC::Wasm::BBQJITImpl::BBQJIT::emitEntryTierUpCheck):
+---
+ Source/JavaScriptCore/wasm/WasmBBQJIT.cpp | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+--- a/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
++++ b/Source/JavaScriptCore/wasm/WasmBBQJIT.cpp
+@@ -749,6 +749,9 @@ BBQJIT::BBQJIT(CompilationContext& compi
+ 
+ bool BBQJIT::canTierUpToOMG() const
+ {
++#if !ENABLE(WEBASSEMBLY_OMGJIT)
++    return false;
++#else
+     if (!Options::useOMGJIT())
+         return false;
+ 
+@@ -760,6 +763,7 @@ bool BBQJIT::canTierUpToOMG() const
+         return false;
+     }
+     return true;
++#endif
+ }
+ 
+ void BBQJIT::emitIncrementCallProfileCount(unsigned callProfileIndex)
+@@ -3229,7 +3233,10 @@ void BBQJIT::emitEntryTierUpCheck()
+         jit.jump(tierUpResume);
+     });
+ #else
+-    RELEASE_ASSERT_NOT_REACHED();
++    // OMG/FTL tiering is unavailable on this architecture; canTierUpToOMG()
++    // can still return true (it is gated only on per-function thresholds, not
++    // on the OMG implementation being compiled in), so silently skip emitting
++    // the tier-up counter check rather than aborting.
+ #endif
+ }
+ 

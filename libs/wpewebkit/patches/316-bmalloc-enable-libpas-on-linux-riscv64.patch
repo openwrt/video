@@ -1,0 +1,57 @@
+From 53992f129f04f935da78a9edbe3b15ad9ed12e29 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 23 Sep 2026 14:33:27 +0100
+Subject: [PATCH] bmalloc: enable libpas on Linux/RISCV64
+
+https://bugs.webkit.org/show_bug.cgi?id=315509
+
+Reviewed by NOBODY (OOPS!).
+
+bmalloc's BPlatform.h enabled the libpas-backed bmalloc only on a
+small allow-list of 64-bit Linux architectures (X86_64 and ARM64).
+RISCV64 was missing from that list, so LIBPAS_ENABLED ended up 0 and
+the inline allocator entry points bmalloc_*_inline (declared inside
+'#if LIBPAS_ENABLED' in bmalloc_heap_inlines.h) were not available.
+JSC consumers - e.g. StructureAlignedMemoryAllocator.cpp calling
+bmalloc_try_allocate_auxiliary_with_alignment_inline /
+bmalloc_deallocate_inline - then fail to compile with "was not
+declared in this scope".
+
+RISCV64 is just another 64-bit Linux target as far as libpas is
+concerned, so:
+
+ * Add a BCPU(RISCV64) macro alongside the existing BCPU(X86_64) /
+   BCPU(ARM64) definitions, gated on __riscv && __riscv_xlen == 64.
+ * Add BCPU(RISCV64) to the BENABLE(LIBPAS) allow-list for Linux.
+
+This is what gives RISCV64 the same libpas-backed bmalloc as the
+other supported 64-bit Linux targets.
+
+* Source/bmalloc/bmalloc/BPlatform.h:
+---
+ Source/bmalloc/bmalloc/BPlatform.h | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/Source/bmalloc/bmalloc/BPlatform.h
++++ b/Source/bmalloc/bmalloc/BPlatform.h
+@@ -176,6 +176,11 @@
+ #endif
+ #endif
+ 
++/* BCPU(RISCV64) - RISC-V 64-bit */
++#if defined(__riscv) && __riscv_xlen == 64
++#define BCPU_RISCV64 1
++#endif
++
+ /* BCPU(ARM) - ARM, any version*/
+ #define BARM_ARCH_AT_LEAST(N) (BCPU(ARM) && BARM_ARCH_VERSION >= N)
+ 
+@@ -397,7 +402,7 @@
+ 
+ /* BENABLE(LIBPAS) is enabling libpas build. But this does not mean we use libpas for bmalloc replacement. */
+ #if !defined(BENABLE_LIBPAS)
+-#if (!BUSE(MIMALLOC) && !BUSE(SYSTEM_MALLOC)) && BCPU(ADDRESS64) && (BOS(DARWIN) || BOS(WINDOWS) || (BOS(LINUX) && (BCPU(X86_64) || BCPU(ARM64))) || BPLATFORM(PLAYSTATION))
++#if (!BUSE(MIMALLOC) && !BUSE(SYSTEM_MALLOC)) && BCPU(ADDRESS64) && (BOS(DARWIN) || BOS(WINDOWS) || (BOS(LINUX) && (BCPU(X86_64) || BCPU(ARM64) || BCPU(RISCV64))) || BPLATFORM(PLAYSTATION))
+ #define BENABLE_LIBPAS 1
+ #ifndef PAS_BMALLOC
+ #define PAS_BMALLOC 1
