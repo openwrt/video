@@ -1,0 +1,127 @@
+From 73abe486d392effb9984dddbaacd182b633f4763 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Fri, 30 Oct 2026 02:46:27 +0200
+Subject: [PATCH] [GStreamer] Looping media replays its opening when segment
+ mode is armed
+
+https://bugs.webkit.org/show_bug.cgi?id=329628
+
+Reviewed by NOBODY (OOPS!).
+
+To loop seamlessly the player arms segment mode with a seek so the
+pipeline posts SEGMENT_DONE at the end of the media. That seek was issued
+from play() without the flush flag, once the demuxer had pushed part of
+the first segment into the queues ahead of the sinks. The queued data
+rendered, and the restarted segment then rendered the same frames, so the
+opening of the clip played twice on the first iteration.
+
+Arm segment mode at preroll with a flushing segment seek, while the sink
+still sits at the start. The flush drops the demuxer read-ahead, the seek
+re-prerolls in segment mode, and the cost folds into startup latency.
+play() retains the arming for a loop enabled after preroll.
+
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp:
+(WebCore::MediaPlayerPrivateGStreamer::play):
+(WebCore::MediaPlayerPrivateGStreamer::doSeek):
+(WebCore::MediaPlayerPrivateGStreamer::armInitialSegmentSeek):
+(WebCore::MediaPlayerPrivateGStreamer::updateStates):
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h:
+---
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 46 +++++++++++++++----
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  2 +
+ 2 files changed, 38 insertions(+), 10 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -508,11 +508,9 @@ void MediaPlayerPrivateGStreamer::play()
+ #endif
+         RefPtr player = m_player.get();
+         if (player) {
+-            if (isSeamlessSeekingEnabled() && !m_initialSegmentSeekDone) {
+-                GST_DEBUG_OBJECT(pipeline(), "Scheduling initial SEGMENT seek");
+-                doSeek(SeekTarget { playbackPosition() }, m_playbackRate, true, true);
+-                m_initialSegmentSeekDone = true;
+-            } else
++            if (isSeamlessSeekingEnabled() && !m_initialSegmentSeekDone)
++                armInitialSegmentSeek();
++            else
+                 updateDownloadBufferingFlag();
+         }
+     } else
+@@ -616,11 +614,16 @@ bool MediaPlayerPrivateGStreamer::doSeek
+         g_object_set(m_downloadBuffer.get(), "high-percent", 0, nullptr);
+     }
+ 
+-    auto flag = ((player->isLooping() && isSegment) || m_isLoopRestartSeekPending) ? GST_SEEK_FLAG_SEGMENT : GST_SEEK_FLAG_FLUSH;
+-    if (paused() && !m_isEndReached && player->isLooping()) {
+-        GST_DEBUG_OBJECT(pipeline(), "Segment non-flushing seek attempt not supported on a paused pipeline, enabling flush");
+-        m_isSegmentSeekAllowed = false;
+-        flag = GST_SEEK_FLAG_FLUSH;
++    GstSeekFlags flag;
++    if (m_isInitialArmingSeekPending)
++        flag = static_cast<GstSeekFlags>(GST_SEEK_FLAG_SEGMENT | GST_SEEK_FLAG_FLUSH);
++    else {
++        flag = ((player->isLooping() && isSegment) || m_isLoopRestartSeekPending) ? GST_SEEK_FLAG_SEGMENT : GST_SEEK_FLAG_FLUSH;
++        if (paused() && !m_isEndReached && player->isLooping()) {
++            GST_DEBUG_OBJECT(pipeline(), "Segment non-flushing seek attempt not supported on a paused pipeline, enabling flush");
++            m_isSegmentSeekAllowed = false;
++            flag = GST_SEEK_FLAG_FLUSH;
++        }
+     }
+     auto seekFlags = static_cast<GstSeekFlags>(flag | GST_SEEK_FLAG_ACCURATE);
+ 
+@@ -690,6 +693,23 @@ bool MediaPlayerPrivateGStreamer::doSeek
+     return gst_element_send_event(m_pipeline.get(), gst_event_new_seek(rate, GST_FORMAT_TIME, seekFlags, GST_SEEK_TYPE_SET, seekStart, GST_SEEK_TYPE_SET, seekStop));
+ }
+ 
++void MediaPlayerPrivateGStreamer::armInitialSegmentSeek()
++{
++    // Switch the pipeline into segment mode once, so SEGMENT_DONE is posted at the loop point. Issue it
++    // as a flushing segment seek at preroll, before playback data accumulates between the demuxer and the
++    // sinks: a non-flushing seek here would let that queued data render before the restarted segment,
++    // replaying the opening of the clip.
++    //
++    // The seek runs synchronously on the main thread. The video sink's flush probe completes FLUSH_START
++    // through callOnMainThreadAndWait, so issuing the seek on a helper thread would block it on the main
++    // thread while the main thread drives the state change that armed this seek. On the main thread that
++    // hop runs inline.
++    m_initialSegmentSeekDone = true;
++    m_isInitialArmingSeekPending = true;
++    doSeek(SeekTarget { playbackPosition() }, m_playbackRate, false, true);
++    m_isInitialArmingSeekPending = false;
++}
++
+ Ref<MediaTimePromise> MediaPlayerPrivateGStreamer::seekToTarget(const SeekTarget& inTarget)
+ {
+     if (auto previousSeekPromise = std::exchange(m_seekPromise, std::nullopt))
+@@ -3093,6 +3113,12 @@ void MediaPlayerPrivateGStreamer::update
+             m_isEndReached = false;
+         }
+ 
++        if (isSeamlessSeekingEnabled() && !m_initialSegmentSeekDone && stateReallyChanged
++            && m_oldState < GST_STATE_PAUSED && m_currentState == GST_STATE_PAUSED) {
++            GST_DEBUG_OBJECT(pipeline(), "Arming segment mode at preroll with a flushing segment seek");
++            armInitialSegmentSeek();
++        }
++
+         // Emit play state change notification only when going to PLAYING so that
+         // the media element gets a chance to enable its page sleep disabler.
+         // Emitting this notification in more cases triggers unwanted code paths
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -381,6 +381,7 @@ protected:
+     mutable std::optional<bool> m_isLiveStream;
+ 
+     bool isSeamlessSeekingEnabled() const;
++    void armInitialSegmentSeek();
+     bool m_isSegmentSeekAllowed { true };
+ 
+     // Must reflect whether the last successfull call to gst_element_set_state() was for PLAYING.
+@@ -408,6 +409,7 @@ protected:
+     std::optional<MediaTimePromise::AutoRejectProducer> m_seekPromise;
+     bool m_isSeekPending { false };
+     bool m_isLoopRestartSeekPending { false };
++    bool m_isInitialArmingSeekPending { false };
+     SeekTarget m_seekTarget;
+     GRefPtr<GstElement> m_source { nullptr };
+     bool m_areVolumeAndMuteInitialized { false };
