@@ -1,0 +1,107 @@
+From 749c33ff6d00a9ac1794b1bf8e90d8fd445fa44e Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 29 Oct 2026 23:31:25 +0200
+Subject: [PATCH] [GStreamer] Looping a media element drops the buffered tail
+ each iteration
+
+https://bugs.webkit.org/show_bug.cgi?id=329580
+
+Reviewed by NOBODY (OOPS!).
+
+When a media element loops with seamless seeking enabled the pipeline
+runs in segment mode, and the demuxer posts SEGMENT_DONE as soon as it
+has pushed the whole segment, well before the sinks have rendered it. In
+push mode no sink posts a SEGMENT_DONE of its own, so the pipeline's
+message is the demuxer's. The player reacts to it by looping through
+HTMLMediaElement, which issues a flushing seek to the start. The flush
+discards everything still queued between the demuxer and the sinks, about
+a second of already decoded video, so the tail of the clip is never
+shown, readyState drops to HAVE_CURRENT_DATA and the loop restarts early.
+
+Issue the loop restart as a non-flushing segment seek. It queues the new
+segment behind the buffered tail, which plays out and then continues
+seamlessly from the start, so nothing is discarded. The segment-done
+handler marks the restart, and doSeek turns it into a segment seek
+wherever HTMLMediaElement's loop handling commits it. A non-flushing seek
+has no asynchronous re-preroll, so the seek is finished as soon as it is
+issued, otherwise its promise and the "seeked" event would never fire.
+
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp:
+(WebCore::MediaPlayerPrivateGStreamer::doSeek):
+(WebCore::MediaPlayerPrivateGStreamer::prepareSeek):
+(WebCore::MediaPlayerPrivateGStreamer::updateStates):
+(WebCore::MediaPlayerPrivateGStreamer::createGSTPlayBin):
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h:
+---
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp  | 18 ++++++++++++++++--
+ .../gstreamer/MediaPlayerPrivateGStreamer.h    |  1 +
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -616,7 +616,7 @@ bool MediaPlayerPrivateGStreamer::doSeek
+         g_object_set(m_downloadBuffer.get(), "high-percent", 0, nullptr);
+     }
+ 
+-    auto flag = (player->isLooping() && isSegment) ? GST_SEEK_FLAG_SEGMENT : GST_SEEK_FLAG_FLUSH;
++    auto flag = ((player->isLooping() && isSegment) || m_isLoopRestartSeekPending) ? GST_SEEK_FLAG_SEGMENT : GST_SEEK_FLAG_FLUSH;
+     if (paused() && !m_isEndReached && player->isLooping()) {
+         GST_DEBUG_OBJECT(pipeline(), "Segment non-flushing seek attempt not supported on a paused pipeline, enabling flush");
+         m_isSegmentSeekAllowed = false;
+@@ -682,7 +682,7 @@ bool MediaPlayerPrivateGStreamer::doSeek
+     }
+ 
+     auto result = gst_element_send_event(m_pipeline.get(), event.leakRef());
+-    if (isSegment || !isSeamlessSeekingEnabled() || !result)
++    if (isSegment || m_isLoopRestartSeekPending || !isSeamlessSeekingEnabled() || !result)
+         return result;
+ 
+     GST_DEBUG_OBJECT(m_pipeline.get(), "Resuming segment playback");
+@@ -792,6 +792,11 @@ bool MediaPlayerPrivateGStreamer::prepar
+             GST_DEBUG_OBJECT(pipeline(), "[Seek] seeking to %s failed", toString(target.time).utf8().data());
+             return false;
+         }
++        if (std::exchange(m_isLoopRestartSeekPending, false)) {
++            // A seamless loop restart is a non-flushing segment seek with no async re-preroll to
++            // complete it, so finish it now; otherwise the seek promise and "seeked" never fire.
++            finishSeek();
++        }
+     }
+ 
+     m_isEndReached = false;
+@@ -3178,9 +3183,14 @@ void MediaPlayerPrivateGStreamer::update
+             GST_DEBUG_OBJECT(pipeline(), "[Seek] committing pending seek to %s", toString(m_seekTarget.time).utf8().data());
+             m_isSeekPending = false;
+             m_isSeeking = doSeek(m_seekTarget, player->rate());
++            bool wasLoopRestart = std::exchange(m_isLoopRestartSeekPending, false);
+             if (!m_isSeeking) {
+                 invalidateCachedPosition();
+                 GST_DEBUG_OBJECT(pipeline(), "[Seek] seeking to %s failed", toString(m_seekTarget.time).utf8().data());
++            } else if (wasLoopRestart) {
++                // A non-flushing segment seek has no async re-preroll to complete it, so finish the
++                // seek now; otherwise its promise and the "seeked" event would never fire.
++                finishSeek();
+             }
+         } else if (m_isSeeking && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
+             finishSeek();
+@@ -3640,6 +3650,10 @@ void MediaPlayerPrivateGStreamer::create
+             if (!mediaPlayer || !mediaPlayer->isLooping())
+                 return;
+             GST_DEBUG_OBJECT(player->pipeline(), "Handling segment-done message");
++            // The loop restart that didEnd() triggers must be a non-flushing segment seek so it keeps
++            // the buffered tail rather than discarding it. Mark it for doSeek(), which runs later from
++            // HTMLMediaElement's loop handling, on whichever seek path it takes.
++            player->m_isLoopRestartSeekPending = true;
+             player->didEnd();
+         });
+     }), this);
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -407,6 +407,7 @@ protected:
+     bool m_isSeeking { false };
+     std::optional<MediaTimePromise::AutoRejectProducer> m_seekPromise;
+     bool m_isSeekPending { false };
++    bool m_isLoopRestartSeekPending { false };
+     SeekTarget m_seekTarget;
+     GRefPtr<GstElement> m_source { nullptr };
+     bool m_areVolumeAndMuteInitialized { false };
