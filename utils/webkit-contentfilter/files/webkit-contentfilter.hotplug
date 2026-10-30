@@ -1,0 +1,12 @@
+#!/bin/sh
+
+case "$ACTION" in
+	step|stratum|periodic) ;;
+	*) exit 0 ;;
+esac
+# busybox ntpd reports stratum 16 until it has synchronised
+[ "${stratum:-16}" -lt 16 ] || exit 0
+[ -e /var/run/webkit-contentfilter.clock ] && exit 0
+
+touch /var/run/webkit-contentfilter.clock
+/etc/init.d/webkit-contentfilter enabled && /etc/init.d/webkit-contentfilter restart
