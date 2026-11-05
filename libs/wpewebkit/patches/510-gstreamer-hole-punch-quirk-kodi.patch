@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 5 Nov 2026 22:01:35 +0000
+Subject: [PATCH] [GStreamer] Add a hole-punch quirk for Kodi
+
+Kodi shows the video of the web pages it hosts on a display plane
+underneath the page. The kodi hole-punch quirk renders video into
+kodivideosink, which hands the decoded frames to Kodi, and passes the
+rectangle the hole is punched at to the sink, so Kodi places the plane
+there. The page stays transparent where the video shows through,
+whatever it paints underneath.
+---
+ .../gstreamer/GStreamerHolePunchQuirkKodi.h   | 54 +++++++++++++++++++
+ .../platform/gstreamer/GStreamerQuirks.cpp    |  5 +-
+ 2 files changed, 58 insertions(+), 1 deletion(-)
+ create mode 100644 Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
+
+--- /dev/null
++++ b/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
+@@ -0,0 +1,54 @@
++/*
++ * Copyright (C) 2026 Daniel Golle <daniel@makrotopia.org>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public License
++ * along with this library; see the file COPYING.LIB.  If not, write to
++ * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++
++#pragma once
++
++#if USE(GSTREAMER)
++
++#include "GStreamerCommon.h"
++#include "GStreamerQuirks.h"
++#include <wtf/text/MakeString.h>
++
++namespace WebCore {
++
++// Kodi shows the frames of kodivideosink on a display plane underneath the
++// page, at the rectangle the hole is punched at.
++class GStreamerHolePunchQuirkKodi final : public GStreamerHolePunchQuirk {
++public:
++    const ASCIILiteral identifier() const final { return "KodiHolePunch"_s; }
++
++    GstElement* createHolePunchVideoSink(bool, const MediaPlayer*) final
++    {
++        return makeGStreamerElement("kodivideosink"_s);
++    }
++
++    bool setHolePunchVideoRectangle(GstElement* videoSink, const IntRect& rect) final
++    {
++        if (!gstObjectHasProperty(videoSink, "rectangle"_s)) [[unlikely]]
++            return false;
++
++        auto rectString = makeString(rect.x(), ',', rect.y(), ',', rect.width(), ',', rect.height());
++        g_object_set(videoSink, "rectangle", rectString.ascii().data(), nullptr);
++        return true;
++    }
++};
++
++} // namespace WebCore
++
++#endif // USE(GSTREAMER)
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
+@@ -26,6 +26,7 @@
+ #include "GStreamerCommon.h"
+ #include "GStreamerHolePunchQuirkBcmNexus.h"
+ #include "GStreamerHolePunchQuirkFake.h"
++#include "GStreamerHolePunchQuirkKodi.h"
+ #include "GStreamerHolePunchQuirkRialto.h"
+ #include "GStreamerHolePunchQuirkWesteros.h"
+ #include "GStreamerQuirkAmLogic.h"
+@@ -150,7 +151,7 @@ GStreamerQuirksManager::GStreamerQuirksM
+         return;
+ 
+     if (WTF::equalLettersIgnoringASCIICase(identifierString.span(), "help"_s)) {
+-        gst_printerrln("Supported quirks for WEBKIT_GST_HOLE_PUNCH_QUIRK are: fake, bcmnexus, rialto, westeros");
++        gst_printerrln("Supported quirks for WEBKIT_GST_HOLE_PUNCH_QUIRK are: fake, bcmnexus, kodi, rialto, westeros");
+         return;
+     }
+ 
+@@ -163,6 +164,8 @@ GStreamerQuirksManager::GStreamerQuirksM
+         m_holePunchQuirk = WTF::makeUnique<GStreamerHolePunchQuirkWesteros>();
+     else if (WTF::equalLettersIgnoringASCIICase(identifierString.span(), "fake"_s))
+         m_holePunchQuirk = WTF::makeUnique<GStreamerHolePunchQuirkFake>();
++    else if (WTF::equalLettersIgnoringASCIICase(identifierString.span(), "kodi"_s))
++        m_holePunchQuirk = WTF::makeUnique<GStreamerHolePunchQuirkKodi>();
+     else
+         GST_WARNING("HolePunch quirk %s un-supported.", identifierString.utf8());
+ }
