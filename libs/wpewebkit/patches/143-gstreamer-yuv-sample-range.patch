@@ -1,0 +1,368 @@
+From 3598bc3a4bf0bba22a3b3824f223fc1905c5c4de Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 5 Nov 2026 09:23:09 +0000
+Subject: [PATCH] [GStreamer] Apply the sample range of YUV video frames
+
+https://bugs.webkit.org/show_bug.cgi?id=330300
+
+Reviewed by NOBODY (OOPS!).
+
+The YUV layer buffer converted every frame as if the sample range were
+fixed by the matrix. The Skia path used the full-range SkYUVColorSpace
+for BT.709, BT.2020 and SMPTE 240M and the limited-range one for BT.601,
+and the TextureMapper path used limited-range matrices throughout.
+Broadcast and streaming BT.709 is limited range, so on the Skia path
+black was raised and white stopped near 235, while full-range BT.601,
+such as MJPEG camera video, was stretched and clipped at both ends.
+
+Carry the range from GstVideoColorimetry to the layer buffer through
+VideoFrameGStreamer::yuvColorimetry() and DMABufBuffer::SampleRange, and
+apply it in both renderers. Skia selects the limited or full variant of
+each SkYUVColorSpace, and the 16-bit BT.2020 variant for P010, which
+keeps its 10-bit codes in the top bits of 16-bit samples. TextureMapper
+derives its matrix from Kr, Kb and the range equations of ITU-T H.273
+for 8-bit samples and for P010; this reproduces the limited-range
+tables it used for BT.601, BT.709 and BT.2020, and takes Kr 0.212 and
+Kb 0.087 for SMPTE 240M as H.273, GStreamer and Skia do.
+
+* Source/WebCore/platform/graphics/DMABufBuffer.h:
+(WebCore::DMABufBuffer::sampleRange const):
+(WebCore::DMABufBuffer::setSampleRange):
+* Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp:
+(WebCore::VideoFrameGStreamer::getDMABuf):
+(WebCore::VideoFrameGStreamer::yuvColorimetry const):
+* Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp:
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::importYUV const):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferExternalOES.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp:
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded):
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferFromGLMemory):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp:
+(WebCore::CoordinatedPlatformLayerBufferYUV::create):
+(WebCore::CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV):
+(WebCore::lumaCoefficients):
+(WebCore::yuvToRgbConversionMatrix):
+(WebCore::CoordinatedPlatformLayerBufferYUV::paintToTextureMapper):
+(WebCore::CoordinatedPlatformLayerBufferYUV::skiaImage):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h:
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../WebCore/platform/graphics/DMABufBuffer.h  |   5 +
+ .../gstreamer/VideoFrameGStreamer.cpp         |   2 +
+ .../graphics/gstreamer/VideoFrameGStreamer.h  |   1 +
+ .../CoordinatedPlatformLayerBufferDMABuf.cpp  |   3 +-
+ ...oordinatedPlatformLayerBufferExternalOES.h |   2 +-
+ .../CoordinatedPlatformLayerBufferVideo.cpp   |  10 +-
+ .../CoordinatedPlatformLayerBufferYUV.cpp     | 126 +++++++++++-------
+ .../CoordinatedPlatformLayerBufferYUV.h       |  10 +-
+ 8 files changed, 98 insertions(+), 61 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/DMABufBuffer.h
++++ b/Source/WebCore/platform/graphics/DMABufBuffer.h
+@@ -63,6 +63,10 @@ public:
+     std::optional<TransferFunction> transferFunction() const { return m_transferFunction; }
+     void setTransferFunction(TransferFunction transferFunction) { m_transferFunction = transferFunction; }
+ 
++    enum class SampleRange : bool { Narrow, Full };
++    std::optional<SampleRange> sampleRange() const { return m_sampleRange; }
++    void setSampleRange(SampleRange sampleRange) { m_sampleRange = sampleRange; }
++
+     EGLImage createEGLImage(GLDisplay&) const;
+     static EGLImage createEGLImage(GLDisplay&, const Attributes&);
+     static std::optional<Vector<EGLint>> buildEGLImageAttributes(const Attributes&, Attributes::EnableModifiers = Attributes::EnableModifiers::Yes);
+@@ -78,6 +82,7 @@ private:
+     Attributes m_attributes;
+     std::optional<ColorSpace> m_colorSpace;
+     std::optional<TransferFunction> m_transferFunction;
++    std::optional<SampleRange> m_sampleRange;
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> m_buffer;
+ };
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
+@@ -870,6 +870,7 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+     auto yuvColorimetry = this->yuvColorimetry();
+     dmabuf->setColorSpace(yuvColorimetry.colorSpace);
+     dmabuf->setTransferFunction(yuvColorimetry.transferFunction);
++    dmabuf->setSampleRange(yuvColorimetry.sampleRange);
+ 
+     dmabuf->ref();
+     gst_mini_object_set_qdata(memory, dmabufQuark, dmabuf.ptr(), [](gpointer data) {
+@@ -904,6 +905,7 @@ VideoFrameGStreamer::YUVColorimetry Vide
+     return {
+         yuvColorSpaceFromMatrix(colorimetry.matrix),
+         colorimetry.transfer == GST_VIDEO_TRANSFER_SMPTE2084 ? DMABufBuffer::TransferFunction::Pq : DMABufBuffer::TransferFunction::Bt709,
++        colorimetry.range == GST_VIDEO_COLOR_RANGE_0_255 ? DMABufBuffer::SampleRange::Full : DMABufBuffer::SampleRange::Narrow,
+     };
+ }
+ #endif
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h
+@@ -113,6 +113,7 @@ public:
+     struct YUVColorimetry {
+         DMABufBuffer::ColorSpace colorSpace;
+         DMABufBuffer::TransferFunction transferFunction;
++        DMABufBuffer::SampleRange sampleRange;
+     };
+     YUVColorimetry yuvColorimetry() const;
+ #endif
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+@@ -359,9 +359,10 @@ std::unique_ptr<CoordinatedPlatformLayer
+     auto format = yuvFormatFromDRMFourcc(attributes.fourcc.value);
+     auto yuvToRgbColorSpace = m_dmabuf->colorSpace().value_or(DMABufBuffer::ColorSpace::Bt601);
+     auto transferFunction = m_dmabuf->transferFunction().value_or(DMABufBuffer::TransferFunction::Bt709);
++    auto sampleRange = m_dmabuf->sampleRange().value_or(DMABufBuffer::SampleRange::Narrow);
+ 
+     unsigned numberOfPlanes = textures.size();
+-    return CoordinatedPlatformLayerBufferYUV::create(format, numberOfPlanes, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, m_size, m_flags, nullptr);
++    return CoordinatedPlatformLayerBufferYUV::create(format, numberOfPlanes, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, sampleRange, m_size, m_flags, nullptr);
+ }
+ 
+ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importDMABuf(bool& containsCopy) const
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferExternalOES.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferExternalOES.h
+@@ -42,7 +42,7 @@ public:
+     static std::unique_ptr<CoordinatedPlatformLayerBufferExternalOES> create(unsigned textureID, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     CoordinatedPlatformLayerBufferExternalOES(unsigned textureID, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+ #if USE(GSTREAMER) && USE(GBM)
+-    enum class SampleRange : bool { Narrow, Full };
++    using SampleRange = DMABufBuffer::SampleRange;
+     static std::unique_ptr<CoordinatedPlatformLayerBufferExternalOES> create(GRefPtr<GstBuffer>&&, uint32_t fourcc, CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>);
+     CoordinatedPlatformLayerBufferExternalOES(GRefPtr<GstBuffer>&&, uint32_t fourcc, CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>);
+ #endif
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
+@@ -99,12 +99,8 @@ std::unique_ptr<CoordinatedPlatformLayer
+         auto dmabufFormat = m_videoFrame->dmaBufFormat();
+         RELEASE_ASSERT(dmabufFormat);
+         // The driver converts YUV to RGB while sampling, so it needs the frame colorimetry.
+-        const auto& info = m_videoFrame->info();
+-        auto yuvColorSpace = m_videoFrame->yuvColorimetry().colorSpace;
+-        auto sampleRange = GST_VIDEO_INFO_COLORIMETRY(&info).range == GST_VIDEO_COLOR_RANGE_0_255
+-            ? CoordinatedPlatformLayerBufferExternalOES::SampleRange::Full
+-            : CoordinatedPlatformLayerBufferExternalOES::SampleRange::Narrow;
+-        return CoordinatedPlatformLayerBufferExternalOES::create(GRefPtr(buffer), dmabufFormat->first, yuvColorSpace, sampleRange, m_size, m_flags);
++        auto yuvColorimetry = m_videoFrame->yuvColorimetry();
++        return CoordinatedPlatformLayerBufferExternalOES::create(GRefPtr(buffer), dmabufFormat->first, yuvColorimetry.colorSpace, yuvColorimetry.sampleRange, m_size, m_flags);
+     }
+ 
+ #if GST_CHECK_VERSION(1, 24, 0)
+@@ -242,7 +238,7 @@ std::unique_ptr<CoordinatedPlatformLayer
+         }
+ 
+         auto yuvColorimetry = m_videoFrame->yuvColorimetry();
+-        return CoordinatedPlatformLayerBufferYUV::create(*format, numberOfPlanes, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvColorimetry.colorSpace, yuvColorimetry.transferFunction, m_size, m_flags, nullptr);
++        return CoordinatedPlatformLayerBufferYUV::create(*format, numberOfPlanes, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvColorimetry.colorSpace, yuvColorimetry.transferFunction, yuvColorimetry.sampleRange, m_size, m_flags, nullptr);
+     }
+ 
+     return nullptr;
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp
+@@ -45,17 +45,17 @@ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_
+ 
+ namespace WebCore {
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBufferYUV::create(Format format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBufferYUV::create(Format format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, SampleRange sampleRange, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
+ {
+-    return makeUnique<CoordinatedPlatformLayerBufferYUV>(format, planeCount, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, size, flags, WTF::move(fence));
++    return makeUnique<CoordinatedPlatformLayerBufferYUV>(format, planeCount, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, sampleRange, size, flags, WTF::move(fence));
+ }
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBufferYUV::create(Format format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBufferYUV::create(Format format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, SampleRange sampleRange, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
+ {
+-    return makeUnique<CoordinatedPlatformLayerBufferYUV>(format, planeCount, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, size, flags, WTF::move(fence));
++    return makeUnique<CoordinatedPlatformLayerBufferYUV>(format, planeCount, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, sampleRange, size, flags, WTF::move(fence));
+ }
+ 
+-CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(Format format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(Format format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, SampleRange sampleRange, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
+     : CoordinatedPlatformLayerBuffer(Type::YUV, size, flags, WTF::move(fence))
+     , m_format(format)
+     , m_planeCount(planeCount)
+@@ -64,10 +64,11 @@ CoordinatedPlatformLayerBufferYUV::Coord
+     , m_yuvPlaneOffset(WTF::move(yuvPlaneOffset))
+     , m_yuvToRgbColorSpace(yuvToRgbColorSpace)
+     , m_transferFunction(transferFunction)
++    , m_sampleRange(sampleRange)
+ {
+ }
+ 
+-CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(Format format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(Format format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, TransferFunction transferFunction, SampleRange sampleRange, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
+     : CoordinatedPlatformLayerBuffer(Type::YUV, size, flags, WTF::move(fence))
+     , m_format(format)
+     , m_planeCount(planeCount)
+@@ -76,6 +77,7 @@ CoordinatedPlatformLayerBufferYUV::Coord
+     , m_yuvPlaneOffset(WTF::move(yuvPlaneOffset))
+     , m_yuvToRgbColorSpace(yuvToRgbColorSpace)
+     , m_transferFunction(transferFunction)
++    , m_sampleRange(sampleRange)
+ {
+     for (unsigned i = 0; i < m_textures.size(); ++i)
+         m_planes[i] = m_textures[i] ? m_textures[i]->id() : 0;
+@@ -83,48 +85,72 @@ CoordinatedPlatformLayerBufferYUV::Coord
+ 
+ CoordinatedPlatformLayerBufferYUV::~CoordinatedPlatformLayerBufferYUV() = default;
+ 
+-void CoordinatedPlatformLayerBufferYUV::paintToTextureMapper(TextureMapper& textureMapper, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity)
++struct LumaCoefficients {
++    double kr;
++    double kb;
++};
++
++// Kr and Kb as ITU-T H.273 lists them for each MatrixCoefficients value.
++static constexpr LumaCoefficients lumaCoefficients(CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace colorSpace)
+ {
+-    waitForContentsIfNeeded();
++    switch (colorSpace) {
++    case CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt601:
++        return { 0.299, 0.114 };
++    case CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt709:
++        return { 0.2126, 0.0722 };
++    case CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt2020:
++        return { 0.2627, 0.0593 };
++    case CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Smpte240M:
++        return { 0.212, 0.087 };
++    }
++    RELEASE_ASSERT_NOT_REACHED();
++}
+ 
+-    static constexpr std::array<GLfloat, 16> s_bt601ConversionMatrix {
+-        1.164383561643836,  0.0,                1.596026785714286, -0.874202217873451,
+-        1.164383561643836, -0.391762290094914, -0.812967647237771,  0.531667823499146,
+-        1.164383561643836,  2.017232142857143,  0.0,               -1.085630789302022,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-    static constexpr std::array<GLfloat, 16> s_bt709ConversionMatrix {
+-        1.164383561643836,  0.0,                1.792741071428571, -0.972945075016308,
+-        1.164383561643836, -0.213248614273730, -0.532909328559444,  0.301482665475862,
+-        1.164383561643836,  2.112401785714286,  0.0,               -1.133402217873451,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-    static constexpr std::array<GLfloat, 16> s_bt2020ConversionMatrix {
+-        1.164383561643836,  0.0,                1.678674107142857, -0.915687932159165,
+-        1.164383561643836, -0.187326104219343, -0.650424318505057,  0.347458498519301,
+-        1.164383561643836,  2.141772321428571,  0.0,               -1.148145075016308,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-    static constexpr std::array<GLfloat, 16> s_smpte240MConversionMatrix {
+-        1.164383561643836,  0.0,                1.793651785714286, -0.973402217873451,
+-        1.164383561643836, -0.256532845251675, -0.542724809537390,  0.328136638536074,
+-        1.164383561643836,  2.07984375,         0.0,               -1.117059360730593,
+-        0.0,                0.0,                0.0,                1.0,
++// The ITU-T H.273 range equations for bitDepth-bit codes in the top bits of sampleBits-bit samples.
++static constexpr std::array<GLfloat, 16> yuvToRgbConversionMatrix(LumaCoefficients coefficients, CoordinatedPlatformLayerBufferYUV::SampleRange sampleRange, unsigned bitDepth, unsigned sampleBits)
++{
++    double kr = coefficients.kr;
++    double kb = coefficients.kb;
++    double kg = 1 - kr - kb;
++    double codesPerSample = ((1u << sampleBits) - 1) / static_cast<double>(1u << (sampleBits - bitDepth));
++
++    double lumaScale;
++    double lumaOffset;
++    double chromaScale;
++    double chromaOffset;
++    if (sampleRange == CoordinatedPlatformLayerBufferYUV::SampleRange::Full) {
++        double maxCode = (1u << bitDepth) - 1;
++        lumaScale = codesPerSample / maxCode;
++        lumaOffset = 0;
++        chromaScale = lumaScale;
++        chromaOffset = (1u << (bitDepth - 1)) / maxCode;
++    } else {
++        double codeStep = 1u << (bitDepth - 8);
++        lumaScale = codesPerSample / (codeStep * 219);
++        lumaOffset = 16.0 / 219;
++        chromaScale = codesPerSample / (codeStep * 224);
++        chromaOffset = 128.0 / 224;
++    }
++
++    double crToR = 2 * (1 - kr);
++    double cbToG = -2 * kb * (1 - kb) / kg;
++    double crToG = -2 * kr * (1 - kr) / kg;
++    double cbToB = 2 * (1 - kb);
++
++    return {
++        static_cast<GLfloat>(lumaScale), 0, static_cast<GLfloat>(crToR * chromaScale), static_cast<GLfloat>(-lumaOffset - crToR * chromaOffset),
++        static_cast<GLfloat>(lumaScale), static_cast<GLfloat>(cbToG * chromaScale), static_cast<GLfloat>(crToG * chromaScale), static_cast<GLfloat>(-lumaOffset - (cbToG + crToG) * chromaOffset),
++        static_cast<GLfloat>(lumaScale), static_cast<GLfloat>(cbToB * chromaScale), 0, static_cast<GLfloat>(-lumaOffset - cbToB * chromaOffset),
++        0, 0, 0, 1,
+     };
++}
+ 
+-    const std::array<GLfloat, 16>& yuvToRgbMatrix = [&] {
+-        switch (m_yuvToRgbColorSpace) {
+-        case YuvToRgbColorSpace::Bt601:
+-            return s_bt601ConversionMatrix;
+-        case YuvToRgbColorSpace::Bt709:
+-            return s_bt709ConversionMatrix;
+-        case YuvToRgbColorSpace::Bt2020:
+-            return s_bt2020ConversionMatrix;
+-        case YuvToRgbColorSpace::Smpte240M:
+-            return s_smpte240MConversionMatrix;
+-        }
+-        RELEASE_ASSERT_NOT_REACHED();
+-    }();
++void CoordinatedPlatformLayerBufferYUV::paintToTextureMapper(TextureMapper& textureMapper, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity)
++{
++    waitForContentsIfNeeded();
++
++    bool isP010 = m_format == Format::P010;
++    auto yuvToRgbMatrix = yuvToRgbConversionMatrix(lumaCoefficients(m_yuvToRgbColorSpace), m_sampleRange, isP010 ? 10 : 8, isP010 ? 16 : 8);
+ 
+     TextureMapper::TransferFunction textureMapperTransferFunction;
+     switch (m_transferFunction) {
+@@ -259,15 +285,19 @@ sk_sp<SkImage> CoordinatedPlatformLayerB
+         return nullptr;
+ 
+     SkYUVColorSpace yuvaColorSpace = [&] {
++        bool isFullRange = m_sampleRange == SampleRange::Full;
+         switch (m_yuvToRgbColorSpace) {
+         case YuvToRgbColorSpace::Bt601:
+-            return kRec601_Limited_SkYUVColorSpace;
++            return isFullRange ? kJPEG_Full_SkYUVColorSpace : kRec601_Limited_SkYUVColorSpace;
+         case YuvToRgbColorSpace::Bt709:
+-            return kRec709_Full_SkYUVColorSpace;
++            return isFullRange ? kRec709_Full_SkYUVColorSpace : kRec709_Limited_SkYUVColorSpace;
+         case YuvToRgbColorSpace::Bt2020:
+-            return kBT2020_8bit_Full_SkYUVColorSpace;
++            // P010 holds its 10-bit codes in the top bits of 16-bit samples, which is the 16-bit code scale.
++            if (m_format == Format::P010)
++                return isFullRange ? kBT2020_16bit_Full_SkYUVColorSpace : kBT2020_16bit_Limited_SkYUVColorSpace;
++            return isFullRange ? kBT2020_8bit_Full_SkYUVColorSpace : kBT2020_8bit_Limited_SkYUVColorSpace;
+         case YuvToRgbColorSpace::Smpte240M:
+-            return kSMPTE240_Full_SkYUVColorSpace;
++            return isFullRange ? kSMPTE240_Full_SkYUVColorSpace : kSMPTE240_Limited_SkYUVColorSpace;
+         }
+         RELEASE_ASSERT_NOT_REACHED();
+     }();
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
+@@ -38,10 +38,11 @@ public:
+     enum class Format : uint8_t { AYUV, NV12, NV21, P010, YUV420, YVU420, YUV444, YUV411, YUV422, A420 };
+     using YuvToRgbColorSpace = DMABufBuffer::ColorSpace;
+     using TransferFunction = DMABufBuffer::TransferFunction;
+-    static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+-    static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+-    CoordinatedPlatformLayerBufferYUV(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+-    CoordinatedPlatformLayerBufferYUV(Format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    using SampleRange = DMABufBuffer::SampleRange;
++    static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    CoordinatedPlatformLayerBufferYUV(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    CoordinatedPlatformLayerBufferYUV(Format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, SampleRange, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     virtual ~CoordinatedPlatformLayerBufferYUV();
+ 
+ private:
+@@ -59,6 +60,7 @@ private:
+     std::array<unsigned, 4> m_yuvPlaneOffset;
+     YuvToRgbColorSpace m_yuvToRgbColorSpace { YuvToRgbColorSpace::Bt601 };
+     TransferFunction m_transferFunction { TransferFunction::Bt709 };
++    SampleRange m_sampleRange { SampleRange::Narrow };
+ };
+ 
+ } // namespace WebCore

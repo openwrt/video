@@ -1,0 +1,238 @@
+From a571ac2e73f9a563b53e115e17e349eed0b3bc65 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Thu, 5 Nov 2026 09:20:30 +0000
+Subject: [PATCH] [GStreamer] Select the YUV matrix from the colorimetry matrix
+
+https://bugs.webkit.org/show_bug.cgi?id=330299
+
+Reviewed by NOBODY (OOPS!).
+
+The YUV to RGB matrix and the transfer function of a video frame were
+chosen by comparing its whole GstVideoColorimetry with the presets
+bt709, bt2020, bt2100-pq and smpte240m. gst_video_colorimetry_matches()
+compares range, matrix, transfer and primaries together, so a frame
+that differs from a preset in any one field fell back to BT.601:
+full-range BT.709, BT.2020 with the bt2020-10 transfer that 10-bit HEVC
+signals, HLG, and streams that signal only some of the fields.
+
+Map the matrix field and the transfer field each on their own, in one
+place, VideoFrameGStreamer::yuvColorimetry(), which the DMA-BUF, GL
+memory and Qualcomm paths all use. The YUV layer buffer takes the
+DMABufBuffer color enums as its own, so the DMA-BUF import passes them
+through.
+
+* Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp:
+(WebCore::VideoFrameGStreamer::getDMABuf):
+(WebCore::yuvColorSpaceFromMatrix):
+(WebCore::VideoFrameGStreamer::yuvColorimetry const):
+* Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp:
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::importYUV const):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp:
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded):
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferFromGLMemory):
+(WebCore::yuvColorSpaceFromVideoInfo): Deleted.
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h:
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../gstreamer/VideoFrameGStreamer.cpp         | 44 +++++++++++++------
+ .../graphics/gstreamer/VideoFrameGStreamer.h  | 10 ++++-
+ .../CoordinatedPlatformLayerBufferDMABuf.cpp  | 28 +-----------
+ .../CoordinatedPlatformLayerBufferVideo.cpp   | 26 ++---------
+ .../CoordinatedPlatformLayerBufferYUV.h       |  5 ++-
+ 5 files changed, 48 insertions(+), 65 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
+@@ -867,19 +867,9 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+ 
+     Ref dmabuf = DMABufBuffer::create({ size, fourcc, WTF::move(fds), WTF::move(offsets), WTF::move(strides), modifier });
+ 
+-    DMABufBuffer::ColorSpace colorSpace = DMABufBuffer::ColorSpace::Bt601;
+-    DMABufBuffer::TransferFunction transferFunction = DMABufBuffer::TransferFunction::Bt709;
+-    if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo), GST_VIDEO_COLORIMETRY_BT709))
+-        colorSpace = DMABufBuffer::ColorSpace::Bt709;
+-    else if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo), GST_VIDEO_COLORIMETRY_BT2020))
+-        colorSpace = DMABufBuffer::ColorSpace::Bt2020;
+-    else if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo), GST_VIDEO_COLORIMETRY_BT2100_PQ)) {
+-        colorSpace = DMABufBuffer::ColorSpace::Bt2020;
+-        transferFunction = DMABufBuffer::TransferFunction::Pq;
+-    } else if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo), GST_VIDEO_COLORIMETRY_SMPTE240M))
+-        colorSpace = DMABufBuffer::ColorSpace::Smpte240M;
+-    dmabuf->setColorSpace(colorSpace);
+-    dmabuf->setTransferFunction(transferFunction);
++    auto yuvColorimetry = this->yuvColorimetry();
++    dmabuf->setColorSpace(yuvColorimetry.colorSpace);
++    dmabuf->setTransferFunction(yuvColorimetry.transferFunction);
+ 
+     dmabuf->ref();
+     gst_mini_object_set_qdata(memory, dmabufQuark, dmabuf.ptr(), [](gpointer data) {
+@@ -890,6 +880,34 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+ }
+ #endif
+ 
++#if USE(COORDINATED_GRAPHICS)
++static DMABufBuffer::ColorSpace yuvColorSpaceFromMatrix(GstVideoColorMatrix matrix)
++{
++    switch (matrix) {
++    case GST_VIDEO_COLOR_MATRIX_BT709:
++        return DMABufBuffer::ColorSpace::Bt709;
++    case GST_VIDEO_COLOR_MATRIX_BT2020:
++        return DMABufBuffer::ColorSpace::Bt2020;
++    case GST_VIDEO_COLOR_MATRIX_SMPTE240M:
++        return DMABufBuffer::ColorSpace::Smpte240M;
++    default:
++        break;
++    }
++
++    // Default to bt601. This is the same behaviour as GStreamer's glcolorconvert element.
++    return DMABufBuffer::ColorSpace::Bt601;
++}
++
++VideoFrameGStreamer::YUVColorimetry VideoFrameGStreamer::yuvColorimetry() const
++{
++    const auto& colorimetry = GST_VIDEO_INFO_COLORIMETRY(&m_info.info);
++    return {
++        yuvColorSpaceFromMatrix(colorimetry.matrix),
++        colorimetry.transfer == GST_VIDEO_TRANSFER_SMPTE2084 ? DMABufBuffer::TransferFunction::Pq : DMABufBuffer::TransferFunction::Bt709,
++    };
++}
++#endif
++
+ VideoFrameContentHint VideoFrameGStreamer::contentHint() const
+ {
+     auto buffer = gst_sample_get_buffer(m_sample.get());
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.h
+@@ -28,7 +28,7 @@
+ #include <gst/video/video-info.h>
+ #include <wtf/glib/GRefPtr.h>
+ 
+-#if USE(GBM)
++#if USE(COORDINATED_GRAPHICS)
+ #include "DMABufBuffer.h"
+ #endif
+ 
+@@ -109,6 +109,14 @@ public:
+     const GstVideoInfo& info() const LIFETIME_BOUND { return m_info.info; }
+     std::optional<DMABufFormat> dmaBufFormat() const { return m_info.dmaBufFormat; }
+ 
++#if USE(COORDINATED_GRAPHICS)
++    struct YUVColorimetry {
++        DMABufBuffer::ColorSpace colorSpace;
++        DMABufBuffer::TransferFunction transferFunction;
++    };
++    YUVColorimetry yuvColorimetry() const;
++#endif
++
+     VideoFrameContentHint contentHint() const;
+     PlatformVideoColorSpace nativeColorSpace() const;
+ 
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+@@ -357,32 +357,8 @@ std::unique_ptr<CoordinatedPlatformLayer
+         return nullptr;
+ 
+     auto format = yuvFormatFromDRMFourcc(attributes.fourcc.value);
+-
+-    CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace yuvToRgbColorSpace;
+-    switch (m_dmabuf->colorSpace().value_or(DMABufBuffer::ColorSpace::Bt601)) {
+-    case DMABufBuffer::ColorSpace::Bt601:
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt601;
+-        break;
+-    case DMABufBuffer::ColorSpace::Bt709:
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt709;
+-        break;
+-    case DMABufBuffer::ColorSpace::Bt2020:
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt2020;
+-        break;
+-    case DMABufBuffer::ColorSpace::Smpte240M:
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Smpte240M;
+-        break;
+-    }
+-
+-    CoordinatedPlatformLayerBufferYUV::TransferFunction transferFunction;
+-    switch (m_dmabuf->transferFunction().value_or(DMABufBuffer::TransferFunction::Bt709)) {
+-    case DMABufBuffer::TransferFunction::Bt709:
+-        transferFunction = CoordinatedPlatformLayerBufferYUV::TransferFunction::Bt709;
+-        break;
+-    case DMABufBuffer::TransferFunction::Pq:
+-        transferFunction = CoordinatedPlatformLayerBufferYUV::TransferFunction::Pq;
+-        break;
+-    }
++    auto yuvToRgbColorSpace = m_dmabuf->colorSpace().value_or(DMABufBuffer::ColorSpace::Bt601);
++    auto transferFunction = m_dmabuf->transferFunction().value_or(DMABufBuffer::TransferFunction::Bt709);
+ 
+     unsigned numberOfPlanes = textures.size();
+     return CoordinatedPlatformLayerBufferYUV::create(format, numberOfPlanes, WTF::move(textures), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, m_size, m_flags, nullptr);
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
+@@ -83,26 +83,6 @@ std::unique_ptr<CoordinatedPlatformLayer
+     return CoordinatedPlatformLayerBufferRGB::create(WTF::move(texture), m_flags, nullptr);
+ }
+ 
+-#if USE(GBM) || USE(GSTREAMER_GL)
+-static std::pair<CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace, CoordinatedPlatformLayerBufferYUV::TransferFunction> yuvColorSpaceFromVideoInfo(const GstVideoInfo& info)
+-{
+-    // Default to bt601. This is the same behaviour as GStreamer's glcolorconvert element.
+-    auto yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt601;
+-    auto transferFunction = CoordinatedPlatformLayerBufferYUV::TransferFunction::Bt709;
+-    const auto& colorimetry = GST_VIDEO_INFO_COLORIMETRY(&info);
+-    if (gst_video_colorimetry_matches(&colorimetry, GST_VIDEO_COLORIMETRY_BT709))
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt709;
+-    else if (gst_video_colorimetry_matches(&colorimetry, GST_VIDEO_COLORIMETRY_BT2020))
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt2020;
+-    else if (gst_video_colorimetry_matches(&colorimetry, GST_VIDEO_COLORIMETRY_BT2100_PQ)) {
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Bt2020;
+-        transferFunction = CoordinatedPlatformLayerBufferYUV::TransferFunction::Pq;
+-    } else if (gst_video_colorimetry_matches(&colorimetry, GST_VIDEO_COLORIMETRY_SMPTE240M))
+-        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::Smpte240M;
+-    return { yuvToRgbColorSpace, transferFunction };
+-}
+-#endif
+-
+ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded(bool gstGLEnabled)
+ {
+     const auto& sample = m_videoFrame->sample();
+@@ -120,7 +100,7 @@ std::unique_ptr<CoordinatedPlatformLayer
+         RELEASE_ASSERT(dmabufFormat);
+         // The driver converts YUV to RGB while sampling, so it needs the frame colorimetry.
+         const auto& info = m_videoFrame->info();
+-        auto yuvColorSpace = yuvColorSpaceFromVideoInfo(info).first;
++        auto yuvColorSpace = m_videoFrame->yuvColorimetry().colorSpace;
+         auto sampleRange = GST_VIDEO_INFO_COLORIMETRY(&info).range == GST_VIDEO_COLOR_RANGE_0_255
+             ? CoordinatedPlatformLayerBufferExternalOES::SampleRange::Full
+             : CoordinatedPlatformLayerBufferExternalOES::SampleRange::Narrow;
+@@ -261,8 +241,8 @@ std::unique_ptr<CoordinatedPlatformLayer
+             yuvPlaneOffset[i] = m_mappedVideoFrame->componentPlaneOffset(i);
+         }
+ 
+-        auto [yuvToRgbColorSpace, transferFunction] = yuvColorSpaceFromVideoInfo(*m_mappedVideoFrame->info());
+-        return CoordinatedPlatformLayerBufferYUV::create(*format, numberOfPlanes, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvToRgbColorSpace, transferFunction, m_size, m_flags, nullptr);
++        auto yuvColorimetry = m_videoFrame->yuvColorimetry();
++        return CoordinatedPlatformLayerBufferYUV::create(*format, numberOfPlanes, WTF::move(planes), WTF::move(yuvPlane), WTF::move(yuvPlaneOffset), yuvColorimetry.colorSpace, yuvColorimetry.transferFunction, m_size, m_flags, nullptr);
+     }
+ 
+     return nullptr;
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
+@@ -27,6 +27,7 @@
+ 
+ #if USE(COORDINATED_GRAPHICS)
+ #include "CoordinatedPlatformLayerBuffer.h"
++#include "DMABufBuffer.h"
+ 
+ namespace WebCore {
+ 
+@@ -35,8 +36,8 @@ class BitmapTexture;
+ class CoordinatedPlatformLayerBufferYUV final : public CoordinatedPlatformLayerBuffer {
+ public:
+     enum class Format : uint8_t { AYUV, NV12, NV21, P010, YUV420, YVU420, YUV444, YUV411, YUV422, A420 };
+-    enum class YuvToRgbColorSpace : uint8_t { Bt601, Bt709, Bt2020, Smpte240M };
+-    enum class TransferFunction : uint8_t { Bt709, Pq };
++    using YuvToRgbColorSpace = DMABufBuffer::ColorSpace;
++    using TransferFunction = DMABufBuffer::TransferFunction;
+     static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(Format, unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     CoordinatedPlatformLayerBufferYUV(Format, unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, TransferFunction, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
