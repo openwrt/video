@@ -12,7 +12,7 @@ PKG_RELEASE:=1
 PKG_HASH:=0cf7ab0e975fc57f5ce1375576a0a76e9ede25e6b01db3cf2339cd4d9750b4e9
 
 PKG_MAINTAINER:=Mirko Vogt <mirko-openwrt@nanl.de>
-# license of the tools built (Qt Linguist tools)
+# license of the tools built (Qt Linguist tools, kmap2qmap)
 PKG_LICENSE:=LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 PKG_LICENSE_FILES:= \
   LICENSES/LicenseRef-Qt-Commercial.txt \
@@ -31,10 +31,10 @@ include $(INCLUDE_DIR)/nls.mk
 include ../cmake.mk
 
 # The tools are host tools: the host build provides the Qt Linguist tools
-# (lupdate, lrelease, lconvert). The target build compiles nothing, as a cross
-# build takes the tools from the host build. Every other tool is disabled, as
-# is the lookup of the optional modules and libraries they would otherwise be
-# built against.
+# (lupdate, lrelease, lconvert) and kmap2qmap. The target build compiles
+# nothing, as a cross build takes the tools from the host build. Every other
+# tool is disabled, as is the lookup of the optional modules and libraries
+# they would otherwise be built against.
 # lupdate's QML support would need Qml from qt6quick's host build.
 QT6TOOLS_OPTIONS:= \
 	-DFEATURE_linguist=ON \
@@ -65,9 +65,15 @@ QT6TOOLS_OPTIONS:= \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6OpenGL=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6OpenGLWidgets=ON
 
-CMAKE_OPTIONS += $(QT6TOOLS_OPTIONS)
+CMAKE_OPTIONS += \
+	$(QT6TOOLS_OPTIONS) \
+	-DFEATURE_kmap2qmap=OFF \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6InputSupportPrivate=ON
 
-CMAKE_HOST_OPTIONS += $(QT6TOOLS_OPTIONS)
+CMAKE_HOST_OPTIONS += \
+	$(QT6TOOLS_OPTIONS) \
+	-DFEATURE_kmap2qmap=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6InputSupportPrivate=ON
 
 define Package/qt6tools
   SECTION:=video-frameworks
