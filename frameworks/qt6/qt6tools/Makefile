@@ -20,7 +20,7 @@ PKG_LICENSE_FILES:= \
   LICENSES/Qt-GPL-exception-1.0.txt
 
 PKG_BUILD_DEPENDS:=qt6base qt6tools/host
-HOST_BUILD_DEPENDS:=qt6base/host
+HOST_BUILD_DEPENDS:=qt6base/host qt6quick/host
 
 QT_MODULE:=qttools
 
@@ -35,7 +35,6 @@ include ../cmake.mk
 # nothing, as a cross build takes the tools from the host build. Every other
 # tool is disabled, as is the lookup of the optional modules and libraries
 # they would otherwise be built against.
-# lupdate's QML support would need Qml from qt6quick's host build.
 QT6TOOLS_OPTIONS:= \
 	-DFEATURE_linguist=ON \
 	-DFEATURE_assistant=OFF \
@@ -53,12 +52,10 @@ QT6TOOLS_OPTIONS:= \
 	-DFEATURE_qtplugininfo=OFF \
 	-DCMAKE_DISABLE_FIND_PACKAGE_WrapLibClang=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6DBus=ON \
-	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Network=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Xml=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Widgets=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Quick=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6QuickWidgets=ON \
-	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Qml=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6QmlLSPrivate=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Sql=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6PrintSupport=ON \
@@ -68,12 +65,18 @@ QT6TOOLS_OPTIONS:= \
 CMAKE_OPTIONS += \
 	$(QT6TOOLS_OPTIONS) \
 	-DFEATURE_kmap2qmap=OFF \
-	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6InputSupportPrivate=ON
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6InputSupportPrivate=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Network=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Qml=ON
 
+# lupdate uses Qt QML to extract translatable strings from QML and JavaScript
+# files. Qt Network is needed, as the host's Qt QML depends on it.
 CMAKE_HOST_OPTIONS += \
 	$(QT6TOOLS_OPTIONS) \
 	-DFEATURE_kmap2qmap=ON \
-	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6InputSupportPrivate=ON
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6InputSupportPrivate=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6Network=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6Qml=ON
 
 define Package/qt6tools
   SECTION:=video-frameworks
