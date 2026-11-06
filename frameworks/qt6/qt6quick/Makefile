@@ -23,8 +23,8 @@ PKG_LICENSE_FILES:= \
   LICENSES/BSD-2-Clause.txt \
   LICENSES/MIT.txt
 
-PKG_BUILD_DEPENDS:=qt6quick/host qt6shadertools
-HOST_BUILD_DEPENDS:=qt6shadertools/host qt6svg/host # qt6svg/host is an optional dependency, needed to build tool "svgtoqml" needed for svg support for QtQuick required by e.g. QtVirtualkeyboard
+PKG_BUILD_DEPENDS:=qt6quick/host qt6shadertools qt6shadertools/host
+HOST_BUILD_DEPENDS:=qt6shadertools/host
 
 QT_MODULE:=qtdeclarative
 
@@ -117,68 +117,84 @@ CMAKE_OPTIONS += \
 	-DFEATURE_quicktemplates2_calendar=ON \
 	-DFEATURE_quicktemplates2_container=ON
 
-# Svg is needed on the host for the svgtoqml tool.
+# On the host, only what is needed to build QML code for the target and to
+# parse QML and JavaScript in other host tools (e.g. Qt Linguist's lupdate)
+# is built. A cross build of qtdeclarative also requires host versions of all
+# tools the target build defines, so Qt Quick (for qmltime and qmlplugindump),
+# Qt Quick Test (for qmltestrunner) and QML debugging (for qmlprofiler) are
+# built as well. Qt Quick Templates and the Basic style of Qt Quick Controls
+# are always built, the latter regardless of FEATURE_quickcontrols2_basic.
+# Qt Quick and its templates keep their default features: with
+# quicktemplates2_container disabled, qquickpopupwindow.cpp still includes the
+# menubar header, whose sources are not built then. Only the separate modules
+# are disabled (Particles, the other Controls styles, WorkerScript, ...).
 CMAKE_HOST_OPTIONS += \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6Gui=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6Network=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6Test=ON \
+	-DCMAKE_REQUIRE_FIND_PACKAGE_Qt6ShaderToolsTools=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6ShaderTools=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6OpenGL=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Widgets=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6OpenGLWidgets=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Concurrent=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Sql=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6Svg=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6LinguistTools=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6LanguageServerPrivate=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6TestInternalsPrivate=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_Qt6ExamplesAssetDownloaderPrivate=ON \
-	-DCMAKE_DISABLE_FIND_PACKAGE_LTTngUST=ON
-
-define Host/Compile
-	$(call Host/Compile/Default, host_tools)
-endef
-
-# Only the host tools are built, so the regular install, which would build and
-# install the whole module, is not used. The needed files are copied instead.
-define Host/Install
-	$(INSTALL_DIR) \
-	  $(QT_HOSTPKG_BINS) \
-	  $(QT_HOSTPKG_LIBS) \
-	  $(QT_HOSTPKG_LIBEXECS) \
-	  $(QT_HOSTPKG_MKSPECS) \
-	  $(QT_HOSTPKG_CMAKES) \
-	  $(QT_HOSTPKG_PKGCONFIGS)
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_BINS))/* \
-	  $(QT_HOSTPKG_BINS)/
-
-	# the libraries the tools link against (e.g. libQt6QmlCompiler)
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_LIBS))/libQt6*.so* \
-	  $(QT_HOSTPKG_LIBS)/
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_LIBEXECS))/* \
-	  $(QT_HOSTPKG_LIBEXECS)/
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_MKSPECS))/* \
-	  $(QT_HOSTPKG_MKSPECS)/
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_CMAKES))/{Qt6QuickTools,Qt6QmlTools} \
-	  $(QT_HOSTPKG_CMAKES)/
-
-	# The *Targets.cmake files above are the build tree's ones, which refer to
-	# the tools in HOST_BUILD_DIR. Replace them by the ones CMake generates for
-	# the install tree.
-	$(CP) \
-	  $(HOST_BUILD_DIR)/CMakeFiles/Export/*/Qt6QuickToolsTargets*.cmake \
-	  $(QT_HOSTPKG_CMAKES)/Qt6QuickTools/
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/CMakeFiles/Export/*/Qt6QmlToolsTargets*.cmake \
-	  $(QT_HOSTPKG_CMAKES)/Qt6QmlTools/
-
-	$(CP) \
-	  $(HOST_BUILD_DIR)/$(subst $(QT_HOSTPKG_PREFIX)/,,$(QT_HOSTPKG_PKGCONFIGS))/Qt6*.pc \
-	  $(QT_HOSTPKG_PKGCONFIGS)/
-endef
+	-DCMAKE_DISABLE_FIND_PACKAGE_LTTngUST=ON \
+	-DFEATURE_qml_network=ON \
+	-DFEATURE_qml_ssl=OFF \
+	-DFEATURE_qml_jit=OFF \
+	-DFEATURE_qml_debug=ON \
+	-DFEATURE_qml_profiler=ON \
+	-DFEATURE_qml_preview=OFF \
+	-DFEATURE_qml_xml_http_request=OFF \
+	-DFEATURE_qml_locale=ON \
+	-DFEATURE_qml_animation=ON \
+	-DFEATURE_qml_worker_script=OFF \
+	-DFEATURE_qml_itemmodel=ON \
+	-DFEATURE_qml_xmllistmodel=OFF \
+	-DFEATURE_qml_type_loader_thread=ON \
+	-DFEATURE_qml_python=ON \
+	-DFEATURE_qml_object_model=ON \
+	-DFEATURE_qml_list_model=ON \
+	-DFEATURE_qml_delegate_model=ON \
+	-DFEATURE_qml_table_model=ON \
+	-DFEATURE_quick_animatedimage=ON \
+	-DFEATURE_quick_canvas=ON \
+	-DFEATURE_quick_designer=ON \
+	-DFEATURE_quick_flipable=ON \
+	-DFEATURE_quick_gridview=ON \
+	-DFEATURE_quick_itemview=ON \
+	-DFEATURE_quick_viewtransitions=ON \
+	-DFEATURE_quick_listview=ON \
+	-DFEATURE_quick_tableview=ON \
+	-DFEATURE_quick_treeview=ON \
+	-DFEATURE_quick_particles=OFF \
+	-DFEATURE_quick_path=ON \
+	-DFEATURE_quick_pathview=ON \
+	-DFEATURE_quick_positioners=ON \
+	-DFEATURE_quick_repeater=ON \
+	-DFEATURE_quick_shadereffect=ON \
+	-DFEATURE_quick_sprite=ON \
+	-DFEATURE_quick_draganddrop=ON \
+	-DFEATURE_quick_pixmap_cache_threaded_download=ON \
+	-DFEATURE_quickcontrols2_basic=OFF \
+	-DFEATURE_quickcontrols2_fusion=OFF \
+	-DFEATURE_quickcontrols2_imagine=OFF \
+	-DFEATURE_quickcontrols2_material=OFF \
+	-DFEATURE_quickcontrols2_universal=OFF \
+	-DFEATURE_quickcontrols2_fluentwinui3=OFF \
+	-DFEATURE_quickcontrols2_macos=OFF \
+	-DFEATURE_quickcontrols2_ios=OFF \
+	-DFEATURE_quickcontrols2_windows=OFF \
+	-DFEATURE_quicktemplates2_hover=ON \
+	-DFEATURE_quicktemplates2_multitouch=ON \
+	-DFEATURE_quicktemplates2_calendar=ON \
+	-DFEATURE_quicktemplates2_container=ON
 
 define Package/qt6quick/Default
   SECTION:=video-frameworks
