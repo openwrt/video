@@ -720,11 +720,6 @@ endef
 define Package/qt6quick-qml-mod-qtquick-dialogs/install
 	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs,*)
 	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl,*)
-	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl/qml,*)
-	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl/qml/+Fusion,*)
-	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl/qml/+Imagine,*)
-	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl/qml/+Material,*)
-	$(call Build/Install/QMLplugin,$(1),QtQuick/Dialogs/quickimpl/qml/+Universal,*)
 endef
 
 define Package/qt6quick-qml-mod-qtquick-effects/install
