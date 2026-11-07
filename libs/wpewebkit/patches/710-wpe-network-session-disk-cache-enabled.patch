@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 7 Nov 2026 01:20:36 +0000
+Subject: [PATCH] [WPE] Let a network session keep HTTP resources in memory
+ only
+
+A persistent network session caches HTTP resources on disk under its
+cache directory, sized from the free space there. On a device whose
+cache directory is on flash that wears the flash, and on tmpfs it holds
+memory that memory pressure handling never frees. Add a construct-only
+disk-cache-enabled property to the network session, TRUE by default;
+when FALSE, the session's website data store gets no network cache
+directory, so the network process opens no disk cache for it. Cookies,
+storage and the rest of the data under the cache directory stay as they
+are.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../API/glib/WebKitNetworkSession.cpp         | 28 ++++++++++++++++++-
+ .../API/glib/WebKitWebsiteDataManager.cpp     | 10 ++++++-
+ .../glib/WebKitWebsiteDataManagerPrivate.h    |  2 +-
+ 3 files changed, 37 insertions(+), 3 deletions(-)
+
+--- a/Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp
+@@ -63,6 +63,7 @@ enum {
+     PROP_CACHE_DIRECTORY,
+     PROP_IS_EPHEMERAL,
+     PROP_UPLINK,
++    PROP_DISK_CACHE_ENABLED,
+ 
+     N_PROPERTIES
+ };
+@@ -93,6 +94,7 @@ struct _WebKitNetworkSessionPrivate {
+     CString dataDirectory;
+     CString cacheDirectory;
+     String uplink;
++    bool diskCacheEnabled { true };
+ 
+     HashSet<String> dnsPrefetchedHosts;
+     PAL::HysteresisActivity dnsPrefetchHystereris;
+@@ -111,6 +113,9 @@ static void webkitNetworkSessionGetPrope
+     case PROP_UPLINK:
+         g_value_set_string(value, session->priv->uplink.isNull() ? nullptr : session->priv->uplink.utf8().data());
+         break;
++    case PROP_DISK_CACHE_ENABLED:
++        g_value_set_boolean(value, session->priv->diskCacheEnabled);
++        break;
+     default:
+         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propID, paramSpec);
+     }
+@@ -134,6 +139,9 @@ static void webkitNetworkSessionSetPrope
+     case PROP_UPLINK:
+         session->priv->uplink = String::fromUTF8(g_value_get_string(value));
+         break;
++    case PROP_DISK_CACHE_ENABLED:
++        session->priv->diskCacheEnabled = g_value_get_boolean(value);
++        break;
+     default:
+         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propID, paramSpec);
+     }
+@@ -147,7 +155,8 @@ static void webkitNetworkSessionConstruc
+     if (!priv->websiteDataManager) {
+         priv->websiteDataManager = adoptGRef(webkitWebsiteDataManagerCreate(
+             !priv->dataDirectory.isNull() ? WTF::move(priv->dataDirectory) : WebsiteDataStore::defaultBaseDataDirectory().utf8(),
+-            !priv->cacheDirectory.isNull() ? WTF::move(priv->cacheDirectory) : WebsiteDataStore::defaultBaseCacheDirectory().utf8())
++            !priv->cacheDirectory.isNull() ? WTF::move(priv->cacheDirectory) : WebsiteDataStore::defaultBaseCacheDirectory().utf8(),
++            priv->diskCacheEnabled)
+         );
+     }
+ 
+@@ -241,6 +250,23 @@ static void webkit_network_session_class
+             nullptr,
+             static_cast<GParamFlags>(WEBKIT_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+ 
++    /**
++     * WebKitNetworkSession:disk-cache-enabled:
++     *
++     * Whether the session keeps HTTP resources in a disk cache under its cache
++     * directory. When %FALSE, resources are cached in memory only. The other
++     * data kept under the cache directory is not affected. The property has no
++     * effect on an ephemeral session, which never uses a disk cache.
++     *
++     * Since: 2.56
++     */
++    sObjProperties[PROP_DISK_CACHE_ENABLED] =
++        g_param_spec_boolean(
++            "disk-cache-enabled",
++            nullptr, nullptr,
++            TRUE,
++            static_cast<GParamFlags>(WEBKIT_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
++
+     g_object_class_install_properties(gObjectClass, N_PROPERTIES, sObjProperties.data());
+ 
+     /**
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp
+@@ -99,6 +99,10 @@ struct _WebKitWebsiteDataManagerPrivate
+     GRefPtr<WebKitFaviconDatabase> faviconDatabase;
+ #endif
+ 
++#if ENABLE(2022_GLIB_API)
++    bool diskCacheEnabled { true };
++#endif
++
+ #if !ENABLE(2022_GLIB_API)
+     WebKitTLSErrorsPolicy tlsErrorsPolicy;
+ 
+@@ -552,6 +556,9 @@ WebKit::WebsiteDataStore& webkitWebsiteD
+             configuration->setServiceWorkerRegistrationDirectory(FileSystem::stringFromFileSystemRepresentation(priv->swRegistrationsDirectory.get()));
+         if (priv->domCacheDirectory)
+             configuration->setCacheStorageDirectory(FileSystem::stringFromFileSystemRepresentation(priv->domCacheDirectory.get()));
++#else
++        if (!priv->diskCacheEnabled)
++            configuration->setNetworkCacheDirectory({ });
+ #endif
+         if (priv->originStorageRatio >= 0.0)
+             configuration->setOriginQuotaRatio(priv->originStorageRatio);
+@@ -569,11 +576,12 @@ WebKit::WebsiteDataStore& webkitWebsiteD
+ }
+ 
+ #if ENABLE(2022_GLIB_API)
+-WebKitWebsiteDataManager* webkitWebsiteDataManagerCreate(CString&& baseDataDirectory, CString&& baseCacheDirectory)
++WebKitWebsiteDataManager* webkitWebsiteDataManagerCreate(CString&& baseDataDirectory, CString&& baseCacheDirectory, bool diskCacheEnabled)
+ {
+     auto* manager = WEBKIT_WEBSITE_DATA_MANAGER(g_object_new(WEBKIT_TYPE_WEBSITE_DATA_MANAGER, nullptr));
+     manager->priv->baseDataDirectory = WTF::move(baseDataDirectory);
+     manager->priv->baseCacheDirectory = WTF::move(baseCacheDirectory);
++    manager->priv->diskCacheEnabled = diskCacheEnabled;
+     return manager;
+ }
+ #else
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManagerPrivate.h
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManagerPrivate.h
+@@ -25,7 +25,7 @@
+ #include <wtf/text/CString.h>
+ 
+ #if ENABLE(2022_GLIB_API)
+-WebKitWebsiteDataManager* webkitWebsiteDataManagerCreate(CString&&, CString&&);
++WebKitWebsiteDataManager* webkitWebsiteDataManagerCreate(CString&&, CString&&, bool diskCacheEnabled);
+ #endif
+ WebKit::WebsiteDataStore& webkitWebsiteDataManagerGetDataStore(WebKitWebsiteDataManager*);
+ 
