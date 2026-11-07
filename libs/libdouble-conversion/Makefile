@@ -49,6 +49,10 @@ CMAKE_OPTIONS += \
 	-DBUILD_SHARED_LIBS=ON \
 	-DBUILD_TESTING=OFF
 
+CMAKE_HOST_OPTIONS += \
+	-DBUILD_SHARED_LIBS=ON \
+	-DBUILD_TESTING=OFF
+
 TARGET_CXXFLAGS += -fno-rtti
 
 define Package/libdouble-conversion/install

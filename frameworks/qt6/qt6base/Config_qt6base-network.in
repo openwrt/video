@@ -1,0 +1,4 @@
+config BUILD_qt6base-network_SSL
+    bool "Include native SSL support (OpenSSL)"
+    depends on PACKAGE_qt6base-network
+    default y
