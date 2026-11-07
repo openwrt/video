@@ -217,17 +217,22 @@ define Build/Install/Plugins
 	fi
 endef
 
-# Not every QML module directory contains all kinds of files, e.g. some only
-# contain .qml files. The directory has to exist and contain at least one of
-# them, though.
+# Installs the qmldir, the type information and the plugin of the QML module
+# in $(2). If the qmldir has a "prefer" line, the QML engine loads the .qml
+# and .js files of the module from the resources compiled into its binaries,
+# so they are not installed; otherwise it loads them from the module's
+# directory, so they are installed as well. The module's directory has to
+# exist and contain at least one of the files to install.
 define Build/Install/QMLplugin
 	$(INSTALL_DIR) \
 		$(1)/$(QT_INSTALL_QML)/$(2)
 
-	files="$$$$($(FIND) $(PKG_INSTALL_DIR)/$(QT_INSTALL_QML)/$(2) \
+	dir=$(PKG_INSTALL_DIR)/$(QT_INSTALL_QML)/$(2) && \
+	if grep -q '^prefer ' "$$$$dir/qmldir" 2>/dev/null; then sources=; else sources=1; fi && \
+	files="$$$$($(FIND) "$$$$dir" \
 	  -mindepth 1 -maxdepth 1 \
-	  \( -name plugins.qmltypes -o -name qmldir \
-	  -o -name '$(3).so' -o -name '$(3).qml' -o -name '$(3).js' \))" && \
+	  \( -name plugins.qmltypes -o -name qmldir -o -name '$(3).so' \
+	  $$$${sources:+-o -name '$(3).qml' -o -name '$(3).js'} \))" && \
 	[ -n "$$$$files" ] && \
 	$(CP) \
 	  $$$$files \
