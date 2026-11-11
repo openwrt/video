@@ -131,7 +131,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
 --- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
 +++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
-@@ -357,32 +357,8 @@ std::unique_ptr<CoordinatedPlatformLayer
+@@ -368,32 +368,8 @@ std::unique_ptr<CoordinatedPlatformLayer
          return nullptr;
  
      auto format = yuvFormatFromDRMFourcc(attributes.fourcc.value);

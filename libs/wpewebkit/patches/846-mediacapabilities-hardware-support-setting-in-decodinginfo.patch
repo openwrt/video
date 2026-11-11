@@ -1,0 +1,135 @@
+From 4055bde9672ed7eafbee4a615b1be09f6e43e8cf Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 10:09:40 +0200
+Subject: [PATCH] [MediaCapabilities] Apply the hardware-support setting to
+ decodingInfo()
+
+decodingInfo() passes the document's allowed container and codec types
+to the media engine but not media-content-types-requiring-hardware-
+support, and the GStreamer engine decides support with any decoder, so
+it reports codecs as supported that canPlayType() and
+MediaSource.isTypeSupported() refuse under that setting. The setting
+now travels with the decoding configuration, and the GStreamer registry
+scanner decides each video and audio type with isContentTypeSupported(),
+the function canPlayType() and isTypeSupported() use.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../mediacapabilities/MediaCapabilities.cpp     |  1 +
+ .../mediacapabilities/MediaConfiguration.h      |  1 +
+ .../gstreamer/GStreamerRegistryScanner.cpp      | 17 ++++++-----------
+ .../PlatformMediaConfiguration.h                |  5 +++++
+ .../WebCoreArgumentCoders.serialization.in      |  1 +
+ 5 files changed, 14 insertions(+), 11 deletions(-)
+
+--- a/Source/WebCore/Modules/mediacapabilities/MediaCapabilities.cpp
++++ b/Source/WebCore/Modules/mediacapabilities/MediaCapabilities.cpp
+@@ -189,6 +189,7 @@ static void gatherDecodingInfo(Document&
+ 
+     configuration.allowedMediaContainerTypes = document.settings().allowedMediaContainerTypes();
+     configuration.allowedMediaCodecTypes = document.settings().allowedMediaCodecTypes();
++    configuration.contentTypesRequiringHardwareSupport = document.settings().mediaContentTypesRequiringHardwareSupport();
+ 
+ #if ENABLE(VP9)
+     configuration.canExposeVP9 = document.settings().vp9DecoderEnabled();
+--- a/Source/WebCore/Modules/mediacapabilities/MediaConfiguration.h
++++ b/Source/WebCore/Modules/mediacapabilities/MediaConfiguration.h
+@@ -63,6 +63,7 @@ inline PlatformMediaConfiguration toPlat
+         value.audio ? std::optional { toPlatform(WTF::move(*value.audio)) } : std::nullopt,
+         { },
+         { },
++        { },
+     };
+ }
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
+@@ -1110,7 +1110,6 @@ GStreamerRegistryScanner::RegistryLookup
+     ASCIILiteral configLogString = configurationNameForLogging(configuration);
+ #endif
+ 
+-    Vector<String> allCodecs;
+     Vector<String> videoCodecs;
+ 
+     if (mediaConfiguration.video) {
+@@ -1157,9 +1156,10 @@ GStreamerRegistryScanner::RegistryLookup
+         if (!isContainerTypeSupported(configuration, contentType.containerType()))
+             return { false, false, nullptr };
+ 
+-        auto codecs = contentType.codecs();
+-        allCodecs.appendVector(codecs);
+-        videoCodecs.appendVector(WTF::move(codecs));
++        if (isContentTypeSupported(configuration, contentType, mediaConfiguration.contentTypesRequiringHardwareSupport) == MediaPlayerEnums::SupportsType::IsNotSupported)
++            return { false, false, nullptr };
++
++        videoCodecs = contentType.codecs();
+     }
+ 
+     if (mediaConfiguration.audio) {
+@@ -1173,16 +1173,11 @@ GStreamerRegistryScanner::RegistryLookup
+         if (!isContainerTypeSupported(configuration, contentType.containerType()))
+             return { false, false, nullptr };
+ 
+-        allCodecs.appendVector(contentType.codecs());
+-    }
+-
+-    bool isUsingHardware = false;
+-    if (!allCodecs.isEmpty()) {
+-        if (!areAllCodecsSupported(configuration, allCodecs, false))
++        if (isContentTypeSupported(configuration, contentType, mediaConfiguration.contentTypesRequiringHardwareSupport) == MediaPlayerEnums::SupportsType::IsNotSupported)
+             return { false, false, nullptr };
+-        isUsingHardware = !videoCodecs.isEmpty() && areAllCodecsSupported(configuration, videoCodecs, true);
+     }
+ 
++    bool isUsingHardware = !videoCodecs.isEmpty() && areAllCodecsSupported(configuration, videoCodecs, true);
+     return { true, isUsingHardware, nullptr };
+ }
+ 
+--- a/Source/WebCore/platform/mediacapabilities/PlatformMediaConfiguration.h
++++ b/Source/WebCore/platform/mediacapabilities/PlatformMediaConfiguration.h
+@@ -25,9 +25,11 @@
+ 
+ #pragma once
+ 
++#include <WebCore/ContentType.h>
+ #include <WebCore/PlatformMediaCapabilitiesAudioConfiguration.h>
+ #include <WebCore/PlatformMediaCapabilitiesVideoConfiguration.h>
+ #include <wtf/CrossThreadCopier.h>
++#include <wtf/Vector.h>
+ 
+ namespace WebCore {
+ 
+@@ -37,6 +39,7 @@ struct PlatformMediaConfiguration {
+ 
+     std::optional<Vector<String>> allowedMediaContainerTypes;
+     std::optional<Vector<String>> allowedMediaCodecTypes;
++    Vector<ContentType> contentTypesRequiringHardwareSupport;
+ 
+     PlatformMediaConfiguration isolatedCopy() const &;
+     PlatformMediaConfiguration isolatedCopy() &&;
+@@ -49,6 +52,7 @@ inline PlatformMediaConfiguration Platfo
+         crossThreadCopy(audio),
+         crossThreadCopy(allowedMediaContainerTypes),
+         crossThreadCopy(allowedMediaCodecTypes),
++        crossThreadCopy(contentTypesRequiringHardwareSupport),
+     };
+ }
+ 
+@@ -59,6 +63,7 @@ inline PlatformMediaConfiguration Platfo
+         crossThreadCopy(WTF::move(audio)),
+         crossThreadCopy(WTF::move(allowedMediaContainerTypes)),
+         crossThreadCopy(WTF::move(allowedMediaCodecTypes)),
++        crossThreadCopy(WTF::move(contentTypesRequiringHardwareSupport)),
+     };
+ }
+ 
+--- a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
++++ b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
+@@ -2084,6 +2084,7 @@ struct WebCore::PlatformMediaConfigurati
+ 
+     std::optional<Vector<String>> allowedMediaContainerTypes;
+     std::optional<Vector<String>> allowedMediaCodecTypes;
++    Vector<WebCore::ContentType> contentTypesRequiringHardwareSupport;
+ };
+ 
+ struct WebCore::PlatformMediaEncodingConfiguration : WebCore::PlatformMediaConfiguration {

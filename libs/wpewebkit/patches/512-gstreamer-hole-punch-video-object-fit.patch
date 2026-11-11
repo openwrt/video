@@ -1,0 +1,144 @@
+From a79d0165f74e8000300d13da436b42a7cca7d1ca Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sun, 8 Nov 2026 09:47:13 +0000
+Subject: [PATCH] [GStreamer] Let a hole-punch quirk place video by the page's
+ object-fit
+
+With hole punching, the player ignores the video's intrinsic size, so
+RenderVideo::videoBox() is the element's content box whatever the
+element's object-fit and object-position say, and the quirk is handed
+that box. A display plane that fits the video into it shows bars where
+the page crops the video with object-fit: cover. A quirk can now ask
+for the intrinsic size to count once the player knows the video's
+size: the player then takes the natural size from the caps on the
+hole-punch sink's pad, and the rectangle the quirk gets is the video
+box object-fit places, which the clipping of the layer cuts to the
+element. Before that, the intrinsic size is the default object size of
+300x150 or a placeholder, so the quirk keeps getting the content box,
+where the display plane fits the video by its own aspect ratio. The
+Kodi quirk asks for it.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 42 ++++++++++++++++++-
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  2 +
+ .../gstreamer/GStreamerHolePunchQuirkKodi.h   |  3 ++
+ .../platform/gstreamer/GStreamerQuirks.cpp    |  5 +++
+ .../platform/gstreamer/GStreamerQuirks.h      |  2 +
+ 5 files changed, 53 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -4688,9 +4688,47 @@ void MediaPlayerPrivateGStreamer::pushNe
+ #endif
+ }
+ 
++void MediaPlayerPrivateGStreamer::watchHolePunchVideoSize()
++{
++    struct Watcher {
++        ThreadSafeWeakPtr<MediaPlayerPrivateGStreamer> player;
++        static void destroy(void* watcher, GClosure*) { delete static_cast<Watcher*>(watcher); }
++    };
++
++    GRefPtr pad = adoptGRef(gst_element_get_static_pad(m_videoSink.get(), "sink"));
++    if (!pad)
++        return;
++
++    g_signal_connect_data(pad.get(), "notify::caps", G_CALLBACK(+[](GstPad* videoSinkPad, GParamSpec*, Watcher* watcher) {
++        GRefPtr<GstCaps> caps = adoptGRef(gst_pad_get_current_caps(videoSinkPad));
++        if (!caps)
++            return;
++
++        RunLoop::mainSingleton().dispatch([player = watcher->player, caps = WTF::move(caps)] {
++            RefPtr self = player.get();
++            if (self && self->isHolePunchRenderingEnabled())
++                self->updateVideoSizeAndOrientationFromCaps(caps.get());
++        });
++    }), new Watcher { *this }, Watcher::destroy, static_cast<GConnectFlags>(0));
++}
++
++bool MediaPlayerPrivateGStreamer::holePunchPlacesVideoByObjectFit() const
++{
++    if (m_quirksManagerForTesting)
++        return m_quirksManagerForTesting->holePunchPlacesVideoByObjectFit();
++    return GStreamerQuirksManager::singleton().holePunchPlacesVideoByObjectFit();
++}
++
+ bool MediaPlayerPrivateGStreamer::shouldIgnoreIntrinsicSize()
+ {
+-    return isHolePunchRenderingEnabled();
++    if (!isHolePunchRenderingEnabled())
++        return false;
++
++    if (!holePunchPlacesVideoByObjectFit())
++        return true;
++
++    // Until the video's size is known, the intrinsic size is a placeholder.
++    return m_readyState < MediaPlayer::ReadyState::HaveMetadata || m_videoSize.isEmpty();
+ }
+ 
+ void MediaPlayerPrivateGStreamer::configureVideoSinkForPlayback(GstElement* videoSink)
+@@ -4747,6 +4785,8 @@ GstElement* MediaPlayerPrivateGStreamer:
+ 
+     if (isHolePunchRenderingEnabled()) {
+         m_videoSink = createHolePunchVideoSink();
++        if (m_videoSink && holePunchPlacesVideoByObjectFit())
++            watchHolePunchVideoSize();
+ #if USE(GSTREAMER_GL)
+         if (m_videoSink && GStreamerQuirksManager::singleton().holePunchLeavesSoftwareDecodedVideoToGL() && m_canRenderingBeAccelerated) {
+             m_isCreatingSoftwareDecodedVideoSink = true;
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -324,6 +324,8 @@ protected:
+     void leaveHolePunchOnSystemMemoryOutput(GstElement* decoder);
+     void leaveHolePunch(GstElement* decoder);
+     void pushNextHolePunchBuffer();
++    void watchHolePunchVideoSize();
++    bool holePunchPlacesVideoByObjectFit() const;
+     bool shouldIgnoreIntrinsicSize() final;
+ 
+ #if USE(GSTREAMER_GL)
+--- a/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
+@@ -41,6 +41,9 @@ public:
+     // Kodi's planes take the dma-bufs hardware decoders produce; video decoded into system memory is cheaper to draw with GL.
+     bool leavesSoftwareDecodedVideoToGL() const final { return true; }
+ 
++    // Kodi shows the video in the rectangle it is given, so that rectangle carries the page's object-fit.
++    bool placesVideoByObjectFit() const final { return true; }
++
+     bool setHolePunchVideoRectangle(GstElement* videoSink, const IntRect& rect) final
+     {
+         if (!gstObjectHasProperty(videoSink, "rectangle"_s)) [[unlikely]]
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
+@@ -238,6 +238,11 @@ bool GStreamerQuirksManager::holePunchLe
+     return m_holePunchQuirk && m_holePunchQuirk->leavesSoftwareDecodedVideoToGL();
+ }
+ 
++bool GStreamerQuirksManager::holePunchPlacesVideoByObjectFit() const
++{
++    return m_holePunchQuirk && m_holePunchQuirk->placesVideoByObjectFit();
++}
++
+ void GStreamerQuirksManager::configureElement(GstElement* element, OptionSet<ElementRuntimeCharacteristics>&& characteristics)
+ {
+     if (m_quirks.isEmpty())
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
+@@ -115,6 +115,7 @@ public:
+     virtual bool setHolePunchVideoRectangle(GstElement*, const IntRect&) { return false; }
+     virtual bool requiresClockSynchronization() const { return true; }
+     virtual bool leavesSoftwareDecodedVideoToGL() const { return false; }
++    virtual bool placesVideoByObjectFit() const { return false; }
+ };
+ 
+ class GStreamerQuirksManager : public RefCounted<GStreamerQuirksManager> {
+@@ -148,6 +149,7 @@ public:
+     void setHolePunchVideoRectangle(GstElement*, const IntRect&);
+     bool sinksRequireClockSynchronization() const;
+     bool holePunchLeavesSoftwareDecodedVideoToGL() const;
++    bool holePunchPlacesVideoByObjectFit() const;
+ 
+     void setHolePunchEnabledForTesting(bool);
+ 

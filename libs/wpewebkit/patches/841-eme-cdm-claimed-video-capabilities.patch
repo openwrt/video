@@ -1,0 +1,40 @@
+From 211b701942cf083deeb35ba29ec7febc2d17bbb6 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:27:14 +0200
+Subject: [PATCH] [EME] Let a CDM claim the video it decodes itself
+
+A CDM that decrypts and decodes video in one step decodes the codecs it
+supports, whatever decoders the media engine has for clear video, but
+requestMediaKeySystemAccess() judges every video capability by the
+media engine's decoders and by the hardware-support setting. CDMPrivate
+gains decodesVideoContentType(), false by default; for a video
+capability the CDM claims, the media engine is only asked for the
+container.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp | 2 ++
+ Source/WebCore/platform/encryptedmedia/CDMPrivate.h   | 1 +
+ 2 files changed, 3 insertions(+)
+
+--- a/Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp
++++ b/Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp
+@@ -427,6 +427,8 @@ std::optional<Vector<CDMMediaCapability>
+             .type = ContentType(contentType->contentType()),
+             .contentTypesRequiringHardwareSupport = m_contentTypesRequiringHardwareSupport,
+         };
++        if (type == AudioVideoType::Video && decodesVideoContentType(parameters.type))
++            parameters.type = ContentType(container);
+         if (MediaPlayer::supportsType(parameters) == MediaPlayer::SupportsType::IsNotSupported) {
+             // Try with Media Source:
+             parameters.platformType = PlatformMediaDecodingType::MediaSource;
+--- a/Source/WebCore/platform/encryptedmedia/CDMPrivate.h
++++ b/Source/WebCore/platform/encryptedmedia/CDMPrivate.h
+@@ -95,6 +95,7 @@ public:
+     virtual bool supportsInitData(const String&, const SharedBuffer&) const = 0;
+     virtual RefPtr<SharedBuffer> sanitizeResponse(const SharedBuffer&) const = 0;
+     virtual std::optional<String> sanitizeSessionId(const String&) const = 0;
++    virtual bool decodesVideoContentType(const ContentType&) const { return false; }
+ 
+ protected:
+     WEBCORE_EXPORT CDMPrivate();

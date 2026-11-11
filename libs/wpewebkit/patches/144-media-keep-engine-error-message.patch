@@ -1,0 +1,45 @@
+From c27850bc9a252991bb5b98be5f63939b64e10cd3 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 10 Nov 2026 11:22:47 +0200
+Subject: [PATCH] MediaError.message is empty when a fallback media engine
+ fails after the first
+
+Need the bug URL (OOPS!).
+
+Reviewed by NOBODY (OOPS!).
+
+When the media engine that loads a resource fails before metadata,
+MediaPlayer::networkStateChanged() records the engine's error message
+and then lets the next installed engine try. With the GStreamer ports
+that engine is MediaPlayerPrivateGStreamerMSE, which fails any load
+without a MediaSource with FormatError and no message, and that empty
+message replaced the one from the engine that actually tried to play
+the resource. MediaError.message was therefore empty whenever the
+GStreamer engine failed to load a progressive resource before metadata.
+An error message is now recorded only when the failing engine provides
+one.
+
+* Source/WebCore/platform/graphics/MediaPlayer.cpp:
+(WebCore::MediaPlayer::networkStateChanged):
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/platform/graphics/MediaPlayer.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/MediaPlayer.cpp
++++ b/Source/WebCore/platform/graphics/MediaPlayer.cpp
+@@ -1558,8 +1558,11 @@ void MediaPlayer::setPrivateBrowsingMode
+ void MediaPlayer::networkStateChanged()
+ {
+     RefPtr playerPrivate = m_private;
+-    if (playerPrivate->networkState() >= MediaPlayer::NetworkState::FormatError)
+-        m_lastErrorMessage = playerPrivate->errorMessage();
++    if (playerPrivate->networkState() >= MediaPlayer::NetworkState::FormatError) {
++        // An engine tried after the one that failed may fail without saying why; keep the reason already known.
++        if (auto errorMessage = playerPrivate->errorMessage(); !errorMessage.isEmpty())
++            m_lastErrorMessage = WTF::move(errorMessage);
++    }
+     Ref client = this->client();
+     // If more than one media engine is installed and this one failed before finding metadata,
+     // let the next engine try. Trigger this engine-fallback only for FormatError or DecodeError

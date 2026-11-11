@@ -1,0 +1,262 @@
+From 35cbad2d661d066c2d4bee84fc8001162496853e Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:27:14 +0200
+Subject: [PATCH] [MSE] Accept a SourceBuffer type the element's CDM decodes
+
+MediaSource.isTypeSupported() cannot tell encrypted from clear media,
+so it refuses a codec that no decoder for clear media takes, or that
+only a software decoder takes under the
+media-content-types-requiring-hardware-support setting, and
+addSourceBuffer() then refuses it as well, even for a page that has set
+MediaKeys whose CDM decodes that codec itself. addSourceBuffer() now
+also accepts a type whose video the CDM of the media element's MediaKeys
+claims, asked through CDM and MediaKeys, with the container left to the
+media engine. The GStreamer append pipeline, which checks each track of
+an initialization segment for a decoder for clear media, accepts an
+encrypted video track the same way: when the CDM instance attached to
+the player claims its media type, and the protection system the demuxer
+names for the track, if any, is that instance's. isTypeSupported() keeps
+its answer, which pages use to choose formats for clear media too.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/Modules/encryptedmedia/CDM.cpp |  5 ++++
+ Source/WebCore/Modules/encryptedmedia/CDM.h   |  2 ++
+ .../Modules/encryptedmedia/MediaKeys.cpp      |  5 ++++
+ .../Modules/encryptedmedia/MediaKeys.h        |  2 ++
+ .../Modules/mediasource/MediaSource.cpp       | 23 ++++++++++++++++++-
+ .../WebCore/Modules/mediasource/MediaSource.h |  2 ++
+ .../platform/encryptedmedia/CDMProxy.h        |  1 +
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 18 +++++++++++++++
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  3 +++
+ .../graphics/gstreamer/eme/CDMExternalCDM.cpp |  5 ++++
+ .../graphics/gstreamer/eme/CDMExternalCDM.h   |  1 +
+ .../graphics/gstreamer/mse/AppendPipeline.cpp |  4 ++--
+ .../graphics/gstreamer/mse/AppendPipeline.h   |  2 +-
+ 13 files changed, 69 insertions(+), 4 deletions(-)
+
+--- a/Source/WebCore/Modules/encryptedmedia/CDM.cpp
++++ b/Source/WebCore/Modules/encryptedmedia/CDM.cpp
+@@ -164,6 +164,11 @@ std::optional<String> CDM::sanitizeSessi
+     return m_private->sanitizeSessionId(sessionId);
+ }
+ 
++bool CDM::decodesVideoContentType(const ContentType& contentType) const
++{
++    return m_private && m_private->decodesVideoContentType(contentType);
++}
++
+ String CDM::storageDirectory() const
+ {
+     RefPtr document = downcast<Document>(scriptExecutionContext());
+--- a/Source/WebCore/Modules/encryptedmedia/CDM.h
++++ b/Source/WebCore/Modules/encryptedmedia/CDM.h
+@@ -84,6 +84,8 @@ public:
+ 
+     std::optional<String> sanitizeSessionId(const String& sessionId);
+ 
++    bool decodesVideoContentType(const ContentType&) const;
++
+     String storageDirectory() const;
+ 
+     const String& mediaKeysHashSalt() const LIFETIME_BOUND { return m_mediaKeysHashSalt; }
+--- a/Source/WebCore/Modules/encryptedmedia/MediaKeys.cpp
++++ b/Source/WebCore/Modules/encryptedmedia/MediaKeys.cpp
+@@ -182,6 +182,11 @@ bool MediaKeys::hasOpenSessions() const
+         });
+ }
+ 
++bool MediaKeys::decodesVideoContentType(const ContentType& contentType) const
++{
++    return m_implementation->decodesVideoContentType(contentType);
++}
++
+ bool MediaKeys::hasOpenSessionWithIdForOrigin(const String& sessionId, const String& origin) const
+ {
+     return std::any_of(m_sessions.begin(), m_sessions.end(),
+--- a/Source/WebCore/Modules/encryptedmedia/MediaKeys.h
++++ b/Source/WebCore/Modules/encryptedmedia/MediaKeys.h
+@@ -47,6 +47,7 @@ class CDM;
+ class CDMClient;
+ class CDMInstance;
+ class BufferSource;
++class ContentType;
+ class DeferredPromise;
+ class Document;
+ class MediaKeySession;
+@@ -77,6 +78,7 @@ public:
+ 
+     bool hasOpenSessions() const;
+     bool hasOpenSessionWithIdForOrigin(const String& sessionId, const String& origin) const;
++    bool decodesVideoContentType(const ContentType&) const;
+     CDMInstance& cdmInstance() { return m_instance; }
+     const CDMInstance& cdmInstance() const { return m_instance; }
+ 
+--- a/Source/WebCore/Modules/mediasource/MediaSource.cpp
++++ b/Source/WebCore/Modules/mediasource/MediaSource.cpp
+@@ -51,6 +51,7 @@
+ #include "Logging.h"
+ #include "ManagedMediaSource.h"
+ #include "ManagedSourceBuffer.h"
++#include "MediaKeys.h"
+ #include "MediaSourceConfiguration.h"
+ #if ENABLE(MEDIA_SOURCE_IN_WORKERS)
+ #include "MediaSourceHandle.h"
+@@ -736,7 +737,7 @@ ExceptionOr<Ref<SourceBuffer>> MediaSour
+     if (document)
+         mediaContentTypesRequiringHardwareSupport.appendVector(document->settings().mediaContentTypesRequiringHardwareSupport());
+ 
+-    if (!isTypeSupported(*context, type, WTF::move(mediaContentTypesRequiringHardwareSupport)))
++    if (!isTypeSupported(*context, type, WTF::move(mediaContentTypesRequiringHardwareSupport)) && !(document && mediaKeysDecodeVideoType(*document, type)))
+         return Exception { ExceptionCode::NotSupportedError };
+ 
+     // 4. If the readyState attribute is not in the "open" state then throw an
+@@ -1052,6 +1053,26 @@ bool MediaSource::isTypeSupported(Script
+     return isSupported;
+ }
+ 
++bool MediaSource::mediaKeysDecodeVideoType(Document& document, const String& type) const
++{
++#if ENABLE(ENCRYPTED_MEDIA)
++    RefPtr mediaElement = m_mediaElement.get();
++    if (!mediaElement)
++        return false;
++
++    RefPtr mediaKeys = mediaElement->mediaKeys();
++    if (!mediaKeys)
++        return false;
++
++    ContentType contentType(type);
++    return mediaKeys->decodesVideoContentType(contentType) && isTypeSupported(document, contentType.containerType());
++#else
++    UNUSED_PARAM(document);
++    UNUSED_PARAM(type);
++    return false;
++#endif
++}
++
+ bool MediaSource::isOpen() const
+ {
+     return readyState() == ReadyState::Open;
+--- a/Source/WebCore/Modules/mediasource/MediaSource.h
++++ b/Source/WebCore/Modules/mediasource/MediaSource.h
+@@ -53,6 +53,7 @@ namespace WebCore {
+ class AudioTrack;
+ class AudioTrackPrivate;
+ class ContentType;
++class Document;
+ class InbandTextTrackPrivate;
+ class HTMLMediaElement;
+ class MediaSourceClientImpl;
+@@ -192,6 +193,7 @@ private:
+     bool NODELETE virtualHasPendingActivity() const final;
+ 
+     static bool isTypeSupported(ScriptExecutionContext&, const String& type, Vector<ContentType>&& contentTypesRequiringHardwareSupport);
++    bool mediaKeysDecodeVideoType(Document&, const String& type) const;
+ 
+     void setPrivate(RefPtr<MediaSourcePrivate>&&);
+     void setPrivateAndOpen(Ref<MediaSourcePrivate>&&);
+--- a/Source/WebCore/platform/encryptedmedia/CDMProxy.h
++++ b/Source/WebCore/platform/encryptedmedia/CDMProxy.h
+@@ -341,6 +341,7 @@ public:
+     const RefPtr<CDMProxy>& proxy() const { ASSERT(isMainThread()); return m_cdmProxy; }
+     virtual bool isWaitingForKey() const { ASSERT(isMainThread()); return m_numDecryptorsWaitingForKey > 0; }
+     void setPlayer(ThreadSafeWeakPtr<MediaPlayer>&& player) { ASSERT(isMainThread()); m_player = WTF::move(player); }
++    virtual bool decodesVideoMediaType(const String&) const { return false; }
+ 
+     // Proxy methods - must be thread-safe.
+     void startedWaitingForKey();
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -5099,6 +5099,24 @@ bool MediaPlayerPrivateGStreamer::waitin
+ 
+     return m_cdmInstance->isWaitingForKey();
+ }
++
++bool MediaPlayerPrivateGStreamer::cdmDecodesVideo(const GstCaps* caps) const
++{
++    ASSERT(isMainThread());
++
++    if (!m_cdmInstance)
++        return false;
++
++    auto* structure = gst_caps_get_structure(caps, 0);
++    if (!structure || !gst_structure_has_name(structure, "application/x-cenc"))
++        return false;
++
++    auto protectionSystem = gstStructureGetString(structure, "protection-system"_s);
++    if (protectionSystem && !equalIgnoringASCIICase(protectionSystem.span(), GStreamerEMEUtilities::keySystemToUuid(m_cdmInstance->keySystem())))
++        return false;
++
++    return m_cdmInstance->decodesVideoMediaType(String::fromUTF8(capsMediaType(caps).span()));
++}
+ #endif
+ 
+ bool MediaPlayerPrivateGStreamer::supportsKeySystem(const String& keySystem, [[maybe_unused]] const String& mimeType)
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -202,6 +202,9 @@ public:
+     bool waitingForKey() const final;
+ 
+     void handleProtectionEvent(GstEvent*);
++    bool cdmDecodesVideo(const GstCaps*) const;
++#else
++    bool cdmDecodesVideo(const GstCaps*) const { return false; }
+ #endif
+ 
+     RefPtr<VideoFrame> videoFrameForCurrentTime() override;
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
+@@ -437,6 +437,11 @@ bool CDMInstanceExternalCDM::isWidevine(
+     return GStreamerEMEUtilities::isWidevineKeySystem(m_keySystem);
+ }
+ 
++bool CDMInstanceExternalCDM::decodesVideoMediaType(const String& mediaType) const
++{
++    return isWidevine() && widevineDecodesVideoMediaType(mediaType);
++}
++
+ std::shared_ptr<media::CdmAdapter> CDMInstanceExternalCDM::ensureAdapter()
+ {
+     ASSERT(isMainThread());
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.h
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.h
+@@ -139,6 +139,7 @@ public:
+ 
+     uint32_t getNextSessionIdValue() { return m_nextSessionIdValue++; }
+     bool isWidevine() const;
++    bool decodesVideoMediaType(const String&) const final;
+ 
+     // CDMInstance
+     ImplementationType implementationType() const final { return ImplementationType::ExternalCDM; }
+--- a/Source/WebCore/platform/graphics/gstreamer/mse/AppendPipeline.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/mse/AppendPipeline.cpp
+@@ -428,7 +428,7 @@ void AppendPipeline::handleNeedContextSy
+     removeParserForDemuxerPad(pad);
+ }
+ 
+-std::tuple<GRefPtr<GstCaps>, StreamType, FloatSize> AppendPipeline::parseDemuxerSrcPadCaps(GstCaps* demuxerSrcPadCaps)
++std::tuple<GRefPtr<GstCaps>, StreamType, FloatSize> AppendPipeline::parseDemuxerSrcPadCaps(GstCaps* demuxerSrcPadCaps) const
+ {
+     ASSERT(isMainThread());
+ 
+@@ -440,7 +440,7 @@ std::tuple<GRefPtr<GstCaps>, StreamType,
+     auto& gstRegistryScanner = GStreamerRegistryScannerMSE::singleton();
+     if (doCapsHaveType(demuxerSrcPadCaps, GST_TEXT_CAPS_TYPE_PREFIX) || originalMediaType == "application/x-subtitle-vtt"_s || originalMediaType == "closedcaption/x-cea-608"_s) {
+         streamType = StreamType::Text;
+-    } else if (!gstRegistryScanner.isCodecSupported(GStreamerRegistryScanner::Configuration::Decoding, originalMediaType.span())) {
++    } else if (!gstRegistryScanner.isCodecSupported(GStreamerRegistryScanner::Configuration::Decoding, originalMediaType.span()) && !m_playerPrivate->cdmDecodesVideo(demuxerSrcPadCaps)) {
+         streamType = StreamType::Invalid;
+     } else if (doCapsHaveType(demuxerSrcPadCaps, GST_VIDEO_CAPS_TYPE_PREFIX)) {
+         presentationSize = getVideoResolutionFromCaps(demuxerSrcPadCaps).value_or(FloatSize());
+--- a/Source/WebCore/platform/graphics/gstreamer/mse/AppendPipeline.h
++++ b/Source/WebCore/platform/graphics/gstreamer/mse/AppendPipeline.h
+@@ -121,7 +121,7 @@ private:
+     void handleErrorConditionFromStreamingThread();
+ 
+     void hookTrackEvents(Track&);
+-    static std::tuple<GRefPtr<GstCaps>, StreamType, FloatSize> parseDemuxerSrcPadCaps(GstCaps*);
++    std::tuple<GRefPtr<GstCaps>, StreamType, FloatSize> parseDemuxerSrcPadCaps(GstCaps*) const;
+     Ref<WebCore::TrackPrivateBase> makeWebKitTrack(Track& appendPipelineTrack, int trackIndex, TrackID);
+     void appsinkCapsChanged(Track&);
+     void appsinkNewSample(const Track&, GRefPtr<GstSample>&&);

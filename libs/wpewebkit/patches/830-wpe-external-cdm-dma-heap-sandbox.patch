@@ -1,0 +1,38 @@
+From b3faf029dfb1886048af7f76e21c36307b7aae82 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 10 Nov 2026 16:16:09 +0200
+Subject: [PATCH] [WPE] Let the web process allocate from dma-heaps for an
+ external CDM
+
+https://bugs.webkit.org/show_bug.cgi?id=328385
+
+Reviewed by NOBODY (OOPS!).
+
+The external CDM video decoder puts its pictures into buffers it
+allocates from the dma-heap the video sink names, and the GL video sink
+tries the heaps to find one EGL imports from. Both run in the web
+process, so wherever the CDM blob is bound into the sandbox, bind
+/dev/dma_heap as well. This lets the web process allocate system-heap
+and physically contiguous memory directly, which is why it comes only
+with the external CDM.
+
+* Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp:
+(WebKit::bindExternalCDM):
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
++++ b/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
+@@ -478,6 +478,9 @@ static void bindExternalCDM(Vector<CStri
+         return;
+     bindIfExists(args, cdmPath);
+ 
++    // The video the CDM decodes goes into buffers from the dma-heap the video sink can import from.
++    args.appendList({ "--dev-bind-try", "/dev/dma_heap", "/dev/dma_heap" });
++
+     // An optional preload (e.g. an ifunc resolver) is injected into the web
+     // process only, so a glibc CDM blob loads under a libc without ifunc.
+     const char* cdmPreload = g_getenv("WPE_WIDEVINE_CDM_PRELOAD");

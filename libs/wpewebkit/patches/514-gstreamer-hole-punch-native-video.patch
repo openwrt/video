@@ -1,0 +1,113 @@
+From 8ad7df147aea3858676295c28e8be0415aa06764 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 03:16:22 +0200
+Subject: [PATCH] [GStreamer] Let a hole-punch quirk keep playsink's converters
+ out
+
+playbin's video chain puts a videoconvert ahead of its queue for
+deinterlacing and another with a videoscale after it, unless the
+native-video flag is set. On a hole-punch path the sink takes the
+decoder's dma-bufs as they are, so the converters pass every frame
+through, but their QoS still drops late frames before the sink, where
+the player's statistics never count them. A hole-punch quirk can now
+request playbin flags, as the other quirks can, and the Kodi quirk asks
+for native-video and text. Under native-video, legacy playbin plugs a
+decoder only if the video sink takes its output, so until a software
+decoder has swapped the GL sink in, the hole-punch bin answers caps
+queries also with the GL sink's system-memory caps, the caps that move
+the bin to it. Dma-buf caps stay with the hole-punch sink, so its answer
+alone counts for them.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 27 ++++++++++++++++++-
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  1 +
+ .../gstreamer/GStreamerHolePunchQuirkKodi.h   |  4 +++
+ .../platform/gstreamer/GStreamerQuirks.cpp    |  6 +++++
+ .../platform/gstreamer/GStreamerQuirks.h      |  1 +
+ 5 files changed, 38 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -4708,7 +4708,32 @@ GstElement* MediaPlayerPrivateGStreamer:
+ 
+     gst_bin_add(bin, m_videoSink.get());
+     GRefPtr pad = adoptGRef(gst_element_get_static_pad(m_videoSink.get(), "sink"));
+-    gst_element_add_pad(m_holePunchVideoSinkBin.get(), gst_ghost_pad_new("sink", pad.get()));
++    GRefPtr<GstPad> ghostPad = gst_ghost_pad_new("sink", pad.get());
++    gst_element_add_pad(m_holePunchVideoSinkBin.get(), ghostPad.get());
++
++    // Under the native-video playbin flag, playbin plugs only decoders whose output the video sink takes. Until a
++    // software decoder swaps the GL sink in, the bin also takes the GL sink's system-memory caps, the only caps
++    // that would switch to it.
++    m_holePunchVideoSinkBinCapsProbe = PadProbeHandle<MediaPlayerPrivateGStreamer>::create(*this, WTF::move(ghostPad), GST_PAD_PROBE_TYPE_QUERY_DOWNSTREAM, [](const auto& player, const auto&, auto info) -> GstPadProbeReturn {
++        auto* query = GST_PAD_PROBE_INFO_QUERY(info);
++        if (GST_QUERY_TYPE(query) != GST_QUERY_CAPS || !(GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_PULL))
++            return GST_PAD_PROBE_OK;
++        if (player->m_hasLeftHolePunch)
++            return GST_PAD_PROBE_REMOVE;
++
++        GstCaps* filter;
++        GstCaps* caps;
++        gst_query_parse_caps(query, &filter);
++        gst_query_parse_caps_result(query, &caps);
++        GRefPtr glSinkPad = adoptGRef(gst_element_get_static_pad(player->m_softwareDecodedVideoSink.get(), "sink"));
++        GstCaps* glCaps = gst_caps_make_writable(gst_pad_query_caps(glSinkPad.get(), filter));
++        gst_caps_filter_and_map_in_place(glCaps, [](GstCapsFeatures* features, GstStructure*, gpointer) -> gboolean {
++            return !capsFeaturesContainDMABuf(features);
++        }, nullptr);
++        GRefPtr<GstCaps> result = adoptGRef(caps ? gst_caps_merge(gst_caps_ref(caps), glCaps) : glCaps);
++        gst_query_set_caps_result(query, result.get());
++        return GST_PAD_PROBE_OK;
++    });
+     return m_holePunchVideoSinkBin.get();
+ }
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -444,6 +444,7 @@ protected:
+     GRefPtr<GstElement> m_softwareDecodedVideoSink;
+     // The video sink playbin holds: it contains the hole-punch sink, or the GL sink once a decoder puts out system memory.
+     GRefPtr<GstElement> m_holePunchVideoSinkBin;
++    RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_holePunchVideoSinkBinCapsProbe;
+     std::atomic<bool> m_hasLeftHolePunch { false };
+     bool m_isCreatingSoftwareDecodedVideoSink { false };
+     GRefPtr<GstElement> m_pipeline;
+--- a/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
+@@ -44,6 +44,10 @@ public:
+     // Kodi shows the video in the rectangle it is given, so that rectangle carries the page's object-fit.
+     bool placesVideoByObjectFit() const final { return true; }
+ 
++    // Kodi's planes and the GL sink take the decoders' formats as they are; playsink's converters would only
++    // pass the frames through, and their QoS drops late frames before the sink counts them.
++    unsigned getAdditionalPlaybinFlags() const final { return getGstPlayFlag("text") | getGstPlayFlag("native-video"); }
++
+     bool setHolePunchVideoRectangle(GstElement* videoSink, const IntRect& rect) final
+     {
+         if (!gstObjectHasProperty(videoSink, "rectangle"_s)) [[unlikely]]
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
+@@ -312,6 +312,12 @@ unsigned GStreamerQuirksManager::getAddi
+         flags |= quirkFlags;
+     }
+ 
++    if (m_holePunchQuirk) {
++        auto quirkFlags = m_holePunchQuirk->getAdditionalPlaybinFlags();
++        GST_DEBUG("Hole-punch quirk %s requests these playbin flags: %u", m_holePunchQuirk->identifier().characters(), quirkFlags);
++        flags |= quirkFlags;
++    }
++
+     if (flags)
+         GST_DEBUG("Final quirk flags: %u", flags);
+     else {
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
+@@ -116,6 +116,7 @@ public:
+     virtual bool requiresClockSynchronization() const { return true; }
+     virtual bool leavesSoftwareDecodedVideoToGL() const { return false; }
+     virtual bool placesVideoByObjectFit() const { return false; }
++    virtual unsigned getAdditionalPlaybinFlags() const { return 0; }
+ };
+ 
+ class GStreamerQuirksManager : public RefCounted<GStreamerQuirksManager> {

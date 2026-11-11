@@ -1,0 +1,287 @@
+From f7ca00b47dfff3c19180591e3d7a8a6e9d71c47a Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:53:40 +0200
+Subject: [PATCH] [GStreamer][MSE] Hold video decoding to the hardware-support
+ setting
+
+The media-content-types-requiring-hardware-support setting only shapes
+what canPlayType(), MediaSource.isTypeSupported() and
+requestMediaKeySystemAccess() report; whatever reaches the player is
+decoded by the decoder playbin plugs, software included. A
+SourceBuffer accepted because the CDM of the element's MediaKeys
+decodes its video can still carry clear video. The MSE player now
+fails a stream whose codec the setting reserves for hardware when a
+software decoder receives it in the clear, with the codec matched by
+its RFC 6381 and its WebM name. Encrypted input goes to a decoder
+inside a CDM and stays allowed. Progressive playback is unchanged.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../graphics/gstreamer/GStreamerCommon.cpp    | 20 +++++++
+ .../graphics/gstreamer/GStreamerCommon.h      |  1 +
+ .../gstreamer/GStreamerRegistryScanner.cpp    | 55 ++++++++++--------
+ .../gstreamer/GStreamerRegistryScanner.h      |  2 +
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 57 +++++++++++++++++++
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  7 +++
+ .../mse/MediaPlayerPrivateGStreamerMSE.cpp    |  1 +
+ 7 files changed, 119 insertions(+), 24 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
+@@ -459,6 +459,26 @@ GRefPtr<GstCaps> capsFromMimeCodec(const
+ #endif
+ }
+ 
++Vector<String> mimeCodecsFromCaps(GstCaps* caps)
++{
++#if GST_CHECK_VERSION(1, 20, 0)
++    auto mimeCodec = GMallocString::unsafeAdoptFromUTF8(gst_codec_utils_caps_get_mime_codec(caps));
++    if (!mimeCodec)
++        return { };
++
++    String codec(mimeCodec.span());
++    Vector<String> codecs { codec };
++    for (auto& [webMName, fourCC] : s_webMCodecNames) {
++        if (codec.startsWith(fourCC))
++            codecs.append(webMName);
++    }
++    return codecs;
++#else
++    UNUSED_PARAM(caps);
++    return { };
++#endif
++}
++
+ static std::optional<Vector<String>> s_UIProcessCommandLineOptions;
+ void setGStreamerOptionsFromUIProcess(Vector<String>&& options)
+ {
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.h
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.h
+@@ -94,6 +94,7 @@ std::optional<TrackID> parseStreamId(con
+ bool doCapsHaveType(const GstCaps*, ASCIILiteral);
+ bool areEncryptedCaps(const GstCaps*);
+ GRefPtr<GstCaps> capsFromMimeCodec(const String& codec);
++Vector<String> mimeCodecsFromCaps(GstCaps*);
+ Vector<String> extractGStreamerOptionsFromCommandLine();
+ void setGStreamerOptionsFromUIProcess(Vector<String>&&);
+ bool ensureGStreamerInitializedNonWebProcess();
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
+@@ -325,6 +325,19 @@ static Vector<GRefPtr<GstElementFactory>
+     return results;
+ }
+ 
++bool GStreamerRegistryScanner::isFactoryUsingHardware(GstElementFactory* factory)
++{
++    auto& quirksManager = GStreamerQuirksManager::singleton();
++    if (quirksManager.isEnabled()) {
++        auto isAccelerated = quirksManager.isHardwareAccelerated(factory);
++        if (isAccelerated && *isAccelerated)
++            return true;
++    }
++
++    auto metadata = String::fromLatin1(gst_element_factory_get_metadata(factory, GST_ELEMENT_METADATA_KLASS));
++    return metadata.split('/').contains("Hardware"_s);
++}
++
+ GStreamerRegistryScanner::RegistryLookupResult GStreamerRegistryScanner::ElementFactories::hasElementForCaps(ElementFactories::Type factoryType, const GRefPtr<GstCaps>& caps, ElementFactories::CheckHardwareClassifier shouldCheckHardwareClassifier, std::optional<Vector<String>> disallowedList) const
+ {
+     auto* elementFactories = factory(factoryType);
+@@ -348,18 +361,7 @@ GStreamerRegistryScanner::RegistryLookup
+ 
+     if (shouldCheckHardwareClassifier == CheckHardwareClassifier::Yes) {
+         for (auto& factory : candidates) {
+-            auto metadata = String::fromLatin1(gst_element_factory_get_metadata(factory.get(), GST_ELEMENT_METADATA_KLASS));
+-            auto components = metadata.split('/');
+-            auto& quirksManager = GStreamerQuirksManager::singleton();
+-            if (quirksManager.isEnabled()) {
+-                auto isAccelerated = quirksManager.isHardwareAccelerated(factory.get());
+-                if (isAccelerated && *isAccelerated) {
+-                    isUsingHardware = true;
+-                    selectedFactory = factory;
+-                    break;
+-                }
+-            }
+-            if (components.contains("Hardware"_s)) {
++            if (isFactoryUsingHardware(factory.get())) {
+                 isUsingHardware = true;
+                 selectedFactory = factory;
+                 break;
+@@ -878,6 +880,22 @@ bool GStreamerRegistryScanner::supportsF
+     return false;
+ }
+ 
++// A null container type matches every container pattern.
++bool GStreamerRegistryScanner::isHardwareSupportRequired(const Vector<ContentType>& contentTypesRequiringHardwareSupport, const String& containerType, const String& codec)
++{
++    return contentTypesRequiringHardwareSupport.findIf([&](auto& hardwareContentType) -> bool {
++        auto hardwareContainer = hardwareContentType.containerType();
++        if (!containerType.isNull() && !hardwareContainer.isEmpty()
++            && fnmatch(hardwareContainer.utf8().data(), containerType.utf8().data(), 0))
++            return false;
++        auto hardwareCodecs = hardwareContentType.codecs();
++        return hardwareCodecs.isEmpty()
++            || hardwareCodecs.findIf([&](auto& hardwareCodec) -> bool {
++                return !fnmatch(hardwareCodec.utf8().data(), codec.utf8().data(), 0);
++            }) != notFound;
++    }) != notFound;
++}
++
+ MediaPlayerEnums::SupportsType GStreamerRegistryScanner::isContentTypeSupported(Configuration configuration, const ContentType& contentType, const Vector<ContentType>& contentTypesRequiringHardwareSupport, CaseSensitiveCodecName caseSensitive) const
+ {
+     VideoDecodingLimits* videoDecodingLimits = nullptr;
+@@ -955,18 +973,7 @@ MediaPlayerEnums::SupportsType GStreamer
+         return SupportsType::MayBeSupported;
+ 
+     for (const auto& codec : codecs) {
+-        bool requiresHardwareSupport = contentTypesRequiringHardwareSupport
+-            .findIf([containerType, codec](auto& hardwareContentType) -> bool {
+-            auto hardwareContainer = hardwareContentType.containerType();
+-            if (!hardwareContainer.isEmpty()
+-                && fnmatch(hardwareContainer.utf8().data(), containerType.utf8().data(), 0))
+-                return false;
+-            auto hardwareCodecs = hardwareContentType.codecs();
+-            return hardwareCodecs.isEmpty()
+-                || hardwareCodecs.findIf([codec](auto& hardwareCodec) -> bool {
+-                    return !fnmatch(hardwareCodec.utf8().data(), codec.utf8().data(), 0);
+-            }) != notFound;
+-        }) != notFound;
++        bool requiresHardwareSupport = isHardwareSupportRequired(contentTypesRequiringHardwareSupport, containerType, codec);
+         if (!isCodecSupported(configuration, codec, requiresHardwareSupport, caseSensitive))
+             return SupportsType::IsNotSupported;
+     }
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.h
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.h
+@@ -49,6 +49,8 @@ public:
+     static bool singletonWasInitialized();
+     static GStreamerRegistryScanner& singleton();
+     static void getSupportedDecodingTypes(HashSet<String>&);
++    static bool isFactoryUsingHardware(GstElementFactory*);
++    static bool isHardwareSupportRequired(const Vector<ContentType>& contentTypesRequiringHardwareSupport, const String& containerType, const String& codec);
+ 
+     explicit GStreamerRegistryScanner(bool isMediaSource = false);
+     ~GStreamerRegistryScanner() = default;
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -90,6 +90,7 @@
+ #include <gst/pbutils/pbutils.h>
+ #include <gst/video/gstvideometa.h>
+ #include <limits>
++#include <wtf/CrossThreadCopier.h>
+ #include <wtf/FileSystem.h>
+ #include <wtf/glib/WTFGType.h>
+ #include <wtf/MathExtras.h>
+@@ -233,6 +234,7 @@ void MediaPlayerPrivateGStreamer::tearDo
+     {
+         Locker locker { m_decoderConfigurationLock };
+         m_codecProbes.clear();
++        m_hardwareSupportProbes.clear();
+         m_videoFrameInputProbe = nullptr;
+         m_videoFrameOutputProbe = nullptr;
+     }
+@@ -3953,10 +3955,65 @@ void MediaPlayerPrivateGStreamer::leaveH
+     });
+ }
+ 
++void MediaPlayerPrivateGStreamer::updateContentTypesRequiringHardwareSupport()
++{
++    RefPtr player = m_player.get();
++    if (!player)
++        return;
++
++    Locker locker { m_contentTypesRequiringHardwareSupportLock };
++    m_contentTypesRequiringHardwareSupport = crossThreadCopy(player->mediaContentTypesRequiringHardwareSupport());
++}
++
++bool MediaPlayerPrivateGStreamer::isHardwareSupportRequired(const Vector<String>& codecs)
++{
++    Locker locker { m_contentTypesRequiringHardwareSupportLock };
++    const auto& contentTypes = m_contentTypesRequiringHardwareSupport;
++    return std::ranges::any_of(codecs, [&](auto& codec) {
++        return GStreamerRegistryScanner::isHardwareSupportRequired(contentTypes, String(), codec);
++    });
++}
++
++// Called from the streaming thread that adds the decoder. An encrypted stream goes to a decoder inside a CDM, which the
++// setting does not cover.
++void MediaPlayerPrivateGStreamer::refuseSoftwareDecodingRequiringHardware(GstElement* decoder)
++{
++    auto* factory = gst_element_get_factory(decoder);
++    if (!factory || GStreamerRegistryScanner::isFactoryUsingHardware(factory))
++        return;
++
++    GRefPtr sinkPad = adoptGRef(gst_element_get_static_pad(decoder, "sink"));
++    auto probe = PadProbeHandle<MediaPlayerPrivateGStreamer>::create(*this, WTF::move(sinkPad), GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, [](const auto& player, const auto& pad, auto info) -> GstPadProbeReturn {
++        auto* event = gst_pad_probe_info_get_event(info);
++        if (GST_EVENT_TYPE(event) != GST_EVENT_CAPS)
++            return GST_PAD_PROBE_OK;
++
++        GstCaps* caps;
++        gst_event_parse_caps(event, &caps);
++        if (areEncryptedCaps(caps))
++            return GST_PAD_PROBE_REMOVE;
++
++        auto codecs = mimeCodecsFromCaps(caps);
++        if (!player->isHardwareSupportRequired(codecs))
++            return GST_PAD_PROBE_OK;
++
++        GRefPtr decoder = adoptGRef(gst_pad_get_parent_element(pad.get()));
++        GST_ELEMENT_ERROR(decoder.get(), STREAM, CODEC_NOT_FOUND, ("Decoding %s in software is not allowed", codecs.first().utf8().data()),
++            ("%s takes no hardware", GST_ELEMENT_NAME(decoder.get())));
++        return GST_PAD_PROBE_DROP;
++    });
++
++    Locker locker { m_decoderConfigurationLock };
++    m_hardwareSupportProbes.append(WTF::move(probe));
++}
++
+ void MediaPlayerPrivateGStreamer::configureVideoDecoder(GstElement* decoder)
+ {
+     leaveHolePunchForSoftwareDecoder(decoder);
+ 
++    if (isMediaSource())
++        refuseSoftwareDecodingRequiringHardware(decoder);
++
+     auto name = GMallocString::unsafeAdoptFromUTF8(gst_element_get_name(decoder));
+     if (startsWith(name.span(), "v4l2"_s))
+         m_videoDecoderPlatform = GstVideoDecoderPlatform::Video4Linux;
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -386,6 +386,8 @@ protected:
+ 
+     URL m_url;
+     Ref<MainThreadNotifier<MainThreadNotification>> m_notifier;
++    void updateContentTypesRequiringHardwareSupport();
++
+     ThreadSafeWeakPtr<MediaPlayer> m_player;
+     String m_referrer;
+     mutable MediaTime m_cachedPosition;
+@@ -588,6 +590,8 @@ private:
+ 
+     void configureAudioDecoder(GstElement*);
+     void configureVideoDecoder(GstElement*);
++    void refuseSoftwareDecodingRequiringHardware(GstElement*);
++    bool isHardwareSupportRequired(const Vector<String>& codecs);
+     void configureElement(GstElement*);
+     void configureParsebin(GstElement*);
+     void configureUriDecodebin2(GstElement*);
+@@ -752,6 +756,9 @@ private:
+     RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameInputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
+     RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameOutputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
+     RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_decoderOutputMemoryProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
++    Vector<RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>>> m_hardwareSupportProbes WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
++    Lock m_contentTypesRequiringHardwareSupportLock;
++    Vector<ContentType> m_contentTypesRequiringHardwareSupport WTF_GUARDED_BY_LOCK(m_contentTypesRequiringHardwareSupportLock);
+ 
+     bool m_volumeLocked { false };
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/mse/MediaPlayerPrivateGStreamerMSE.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/mse/MediaPlayerPrivateGStreamerMSE.cpp
+@@ -135,6 +135,7 @@ void MediaPlayerPrivateGStreamerMSE::loa
+     } else
+         m_mediaSourcePrivate = MediaSourcePrivateGStreamer::open(mediaSource, *this);
+ 
++    updateContentTypesRequiringHardwareSupport();
+     MediaPlayerPrivateGStreamer::load(urlString);
+ }
+ 

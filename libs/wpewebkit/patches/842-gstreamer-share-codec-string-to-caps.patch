@@ -1,0 +1,96 @@
+From 2a60ee5ee10e80027e8f64fe8a56aab8270d2672 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:53:02 +0200
+Subject: [PATCH] [GStreamer] Share the conversion of a codec string to caps
+
+The registry scanner turns an RFC 6381 codec string into caps for its
+cryptoblockformat check, mapping the short WebM names vp8, vp9 and av1
+to the four-character codes gst_codec_utils_caps_from_mime_codec()
+expects. The conversion moves to GStreamerCommon as
+capsFromMimeCodec(), so that the external CDM can map codec strings the
+same way.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../graphics/gstreamer/GStreamerCommon.cpp    | 25 +++++++++++++++++++
+ .../graphics/gstreamer/GStreamerCommon.h      |  1 +
+ .../gstreamer/GStreamerRegistryScanner.cpp    | 14 ++---------
+ 3 files changed, 28 insertions(+), 12 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
+@@ -38,8 +38,11 @@
+ #include "SharedBuffer.h"
+ #include "VideoSinkGStreamer.h"
+ #include "WebKitAudioSinkGStreamer.h"
++#include <array>
+ #include <fnmatch.h>
++#include <gst/pbutils/codec-utils.h>
+ #include <mutex>
++#include <utility>
+ #include <wtf/FileSystem.h>
+ #include <wtf/HashMap.h>
+ #include <wtf/MallocSpan.h>
+@@ -434,6 +437,28 @@ bool areEncryptedCaps(const GstCaps* cap
+ #endif
+ }
+ 
++// WebM codec names and the four-character codes of RFC 6381 section 3.3, which GStreamer's codec utilities use.
++static constexpr std::array<std::pair<ASCIILiteral, ASCIILiteral>, 3> s_webMCodecNames { {
++    { "vp8"_s, "vp08"_s },
++    { "vp9"_s, "vp09"_s },
++    { "av1"_s, "av01"_s },
++} };
++
++GRefPtr<GstCaps> capsFromMimeCodec(const String& codec)
++{
++#if GST_CHECK_VERSION(1, 22, 0)
++    String mimeCodec = codec;
++    for (auto& [webMName, fourCC] : s_webMCodecNames) {
++        if (codec == webMName)
++            mimeCodec = fourCC;
++    }
++    return adoptGRef(gst_codec_utils_caps_from_mime_codec(mimeCodec.ascii().data()));
++#else
++    UNUSED_PARAM(codec);
++    return nullptr;
++#endif
++}
++
+ static std::optional<Vector<String>> s_UIProcessCommandLineOptions;
+ void setGStreamerOptionsFromUIProcess(Vector<String>&& options)
+ {
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.h
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.h
+@@ -93,6 +93,7 @@ std::optional<TrackID> getStreamIdFromSt
+ std::optional<TrackID> parseStreamId(const String& stringId);
+ bool doCapsHaveType(const GstCaps*, ASCIILiteral);
+ bool areEncryptedCaps(const GstCaps*);
++GRefPtr<GstCaps> capsFromMimeCodec(const String& codec);
+ Vector<String> extractGStreamerOptionsFromCommandLine();
+ void setGStreamerOptionsFromUIProcess(Vector<String>&&);
+ bool ensureGStreamerInitializedNonWebProcess();
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
+@@ -932,19 +932,9 @@ MediaPlayerEnums::SupportsType GStreamer
+ 
+ #if GST_CHECK_VERSION(1, 22, 0)
+         for (const auto& codec : codecs) {
+-            // gst_codec_utils_caps_from_mime_codec() expects a four characters string. See also RFC 6381 section 3.3.
+-            auto mimeCodec = codec;
+-            if (mimeCodec.length() < 4) {
+-                if (mimeCodec == "vp8"_s)
+-                    mimeCodec = "vp08"_s;
+-                else if (mimeCodec == "vp9"_s)
+-                    mimeCodec = "vp09"_s;
+-                else if (mimeCodec == "av1"_s)
+-                    mimeCodec = "av01"_s;
+-            }
+-            GRefPtr codecCaps = adoptGRef(gst_codec_utils_caps_from_mime_codec(mimeCodec.ascii().data()));
++            auto codecCaps = capsFromMimeCodec(codec);
+             if (!codecCaps) {
+-                GST_WARNING("Unable to convert codec %s to caps", mimeCodec.ascii().data());
++                GST_WARNING("Unable to convert codec %s to caps", codec.ascii().data());
+                 continue;
+             }
+             auto structure = gst_caps_get_structure(codecCaps.get(), 0);

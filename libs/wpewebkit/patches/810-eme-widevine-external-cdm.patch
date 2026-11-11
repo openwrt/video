@@ -1,7 +1,7 @@
-From 2df2bec6597fd13eea00c011953aaa463d86734b Mon Sep 17 00:00:00 2001
+From e60270ba142ec43f1c2be58898b9b9201c66b495 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
 Date: Sun, 25 Oct 2026 13:00:15 +0200
-Subject: [EME] Add Widevine to the external CDM backend
+Subject: [PATCH] [EME] Add Widevine to the external CDM backend
 
 https://bugs.webkit.org/show_bug.cgi?id=328385
 
@@ -176,13 +176,15 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
 * Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp:
 (WebKit::bindExternalCDM):
 (WebKit::bubblewrapSpawn):
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 ---
  Source/WebCore/platform/GStreamer.cmake       |   25 +
  Source/WebCore/platform/SourcesGStreamer.txt  |    5 +-
  .../encryptedmedia/CDMExternalCDMTypes.h      |   53 +
  .../platform/encryptedmedia/CDMProxy.h        |    7 +
  .../graphics/gstreamer/GStreamerCommon.cpp    |    4 +
- .../graphics/gstreamer/eme/CDMExternalCDM.cpp |  472 ++++-
+ .../graphics/gstreamer/eme/CDMExternalCDM.cpp |  473 ++++-
  .../graphics/gstreamer/eme/CDMExternalCDM.h   |   87 +-
  .../gstreamer/eme/CDMProxyExternalCDM.cpp     |  231 ++-
  .../gstreamer/eme/CDMProxyExternalCDM.h       |   93 +-
@@ -190,7 +192,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  ...WebKitCommonEncryptionDecryptorGStreamer.h |   15 +
  .../WebKitExternalCDMDecryptorGStreamer.cpp   |   86 +-
  .../eme/WebKitExternalCDMDecryptorGStreamer.h |   16 +
- ...WebKitExternalCDMVideoDecoderGStreamer.cpp |  808 ++++++++
+ ...WebKitExternalCDMVideoDecoderGStreamer.cpp |  811 ++++++++
  .../WebKitExternalCDMVideoDecoderGStreamer.h  |   50 +
  .../gstreamer/eme/cdm/base/base_export.h      |   33 +
  .../gstreamer/eme/cdm/base/basictypes.h       |   37 +
@@ -206,10 +208,10 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  .../gstreamer/eme/cdm/media/base/limits.h     |   68 +
  .../media/cdm/api/content_decryption_module.h | 1793 +++++++++++++++++
  .../api/content_decryption_module_export.h    |   42 +
- .../eme/cdm/media/cdm/cdm_adapter.cc          | 1051 ++++++++++
+ .../eme/cdm/media/cdm/cdm_adapter.cc          | 1053 ++++++++++
  .../gstreamer/eme/cdm/media/cdm/cdm_adapter.h |  330 +++
  .../Launcher/glib/BubblewrapLauncher.cpp      |   15 +
- 32 files changed, 6245 insertions(+), 141 deletions(-)
+ 32 files changed, 6251 insertions(+), 141 deletions(-)
  create mode 100644 Source/WebCore/platform/encryptedmedia/CDMExternalCDMTypes.h
  create mode 100644 Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
  create mode 100644 Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.h
@@ -266,7 +268,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
          list(APPEND WebCore_SOURCES
 --- a/Source/WebCore/platform/SourcesGStreamer.txt
 +++ b/Source/WebCore/platform/SourcesGStreamer.txt
-@@ -82,14 +82,15 @@ platform/graphics/gstreamer/VideoTrackPr
+@@ -83,14 +83,15 @@ platform/graphics/gstreamer/VideoTrackPr
  platform/graphics/gstreamer/WebKitAudioSinkGStreamer.cpp
  platform/graphics/gstreamer/WebKitWebSourceGStreamer.cpp
  
@@ -541,7 +543,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
      if (!CDMUtilities::parseJSONObject(response))
          return nullptr;
      return response.makeContiguous();
-@@ -207,31 +265,183 @@ RefPtr<SharedBuffer> CDMPrivateExternalC
+@@ -207,31 +265,184 @@ RefPtr<SharedBuffer> CDMPrivateExternalC
  
  std::optional<String> CDMPrivateExternalCDM::sanitizeSessionId(const String& sessionId) const
  {
@@ -623,7 +625,8 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
 +        m_adapter->RemoveClient();
 +    if (m_client)
 +        m_client->clearInstance();
-+    for (auto& callback : std::exchange(m_pendingPromises, { }).values())
++    auto pendingPromises = std::exchange(m_pendingPromises, { });
++    for (auto& callback : pendingPromises.values())
 +        callback(false);
 +}
 +
@@ -728,7 +731,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  }
  
  RefPtr<CDMInstanceSession> CDMInstanceExternalCDM::createSession()
-@@ -239,6 +449,84 @@ RefPtr<CDMInstanceSession> CDMInstanceEx
+@@ -239,6 +450,84 @@ RefPtr<CDMInstanceSession> CDMInstanceEx
      return adoptRef(new CDMInstanceSessionExternalCDM(*this));
  }
  
@@ -813,7 +816,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  CDMInstanceSessionExternalCDM::CDMInstanceSessionExternalCDM(CDMInstanceExternalCDM& instance)
      : CDMInstanceSessionProxy(instance)
  {
-@@ -249,7 +537,65 @@ CDMInstanceExternalCDM* CDMInstanceSessi
+@@ -249,7 +538,65 @@ CDMInstanceExternalCDM* CDMInstanceSessi
      return dynamicDowncast<CDMInstanceExternalCDM>(cdmInstanceProxy().get());
  }
  
@@ -880,7 +883,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  {
      if (RefPtr instance = cdmInstanceExternalCDM())
          m_sessionID = String::number(instance->getNextSessionIdValue());
-@@ -270,8 +616,56 @@ void CDMInstanceSessionExternalCDM::requ
+@@ -270,8 +617,56 @@ void CDMInstanceSessionExternalCDM::requ
          });
  }
  
@@ -937,7 +940,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
      auto dispatchCallback =
          [weakThis = WeakPtr { *this }, &callback](bool sessionWasClosed, std::optional<KeyStatusVector>&& changedKeys, SuccessValue succeeded) {
              callOnMainThread(
-@@ -320,6 +714,28 @@ void CDMInstanceSessionExternalCDM::upda
+@@ -320,6 +715,28 @@ void CDMInstanceSessionExternalCDM::upda
      dispatchCallback(false, std::nullopt, SuccessValue::Failed);
  }
  
@@ -966,7 +969,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  void CDMInstanceSessionExternalCDM::loadSession(LicenseType, const String& sessionID, const String&, LoadSessionCallback&& callback)
  {
      ASSERT_UNUSED(sessionID, sessionID == m_sessionID);
-@@ -333,6 +749,25 @@ void CDMInstanceSessionExternalCDM::load
+@@ -333,6 +750,25 @@ void CDMInstanceSessionExternalCDM::load
  
  void CDMInstanceSessionExternalCDM::closeSession(const String&, CloseSessionCallback&& callback)
  {
@@ -992,7 +995,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
      callOnMainThread([weakThis = WeakPtr { *this }, callback = WTF::move(callback)]() mutable {
          if (!weakThis)
              return;
-@@ -368,9 +803,24 @@ void CDMInstanceSessionExternalCDM::remo
+@@ -368,9 +804,24 @@ void CDMInstanceSessionExternalCDM::remo
          message = SharedBuffer::create(messageString.utf8().span());
      }
  
@@ -1989,7 +1992,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
  
 --- /dev/null
 +++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
-@@ -0,0 +1,808 @@
+@@ -0,0 +1,811 @@
 +/* GStreamer video decoder running inside an external CDM
 + *
 + * Copyright (C) 2026 Daniel Golle <daniel@makrotopia.org>
@@ -2551,6 +2554,9 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
 +        }
 +    }
 +
++    // The mapping holds no reference, and finishing or dropping the frame frees its input buffer before the
++    // mapping goes out of scope.
++    GRefPtr<GstBuffer> inputBuffer = frame->input_buffer;
 +    WebKitExternalCDMDecryptInput input;
 +    if (!input.map(GST_ELEMENT_CAST(self), frame->input_buffer, GST_MAP_READ, sampleInfo)) {
 +        gst_video_decoder_release_frame(decoder, frame);
@@ -5757,7 +5763,7 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
 +#endif  // CDM_CONTENT_DECRYPTION_MODULE_EXPORT_H_
 --- /dev/null
 +++ b/Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.cc
-@@ -0,0 +1,1051 @@
+@@ -0,0 +1,1053 @@
 +/*
 + *  Copyright (C) 2015 The Chromium Authors. All rights reserved.
 + *  This file is part of Kodi - https://kodi.tv
@@ -6451,6 +6457,8 @@ ClearKey is unchanged and the feature stays behind ENABLE_EXTERNAL_CDM.
 +                                            uint32_t session_id_size)
 +{
 +  std::string sessionStr(session_id, session_id_size);
++
++  OnResolvePromise(promise_id);
 +
 +  std::lock_guard<std::mutex> lock(m_sessionMx);
 +  auto it = m_sessionPromises.find(promise_id);

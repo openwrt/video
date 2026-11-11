@@ -110,7 +110,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #endif
 --- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
 +++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
-@@ -359,9 +359,10 @@ std::unique_ptr<CoordinatedPlatformLayer
+@@ -370,9 +370,10 @@ std::unique_ptr<CoordinatedPlatformLayer
      auto format = yuvFormatFromDRMFourcc(attributes.fourcc.value);
      auto yuvToRgbColorSpace = m_dmabuf->colorSpace().value_or(DMABufBuffer::ColorSpace::Bt601);
      auto transferFunction = m_dmabuf->transferFunction().value_or(DMABufBuffer::TransferFunction::Bt709);

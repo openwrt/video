@@ -1,0 +1,1890 @@
+From 5a0de60b2362c9aecc419a93286ba7c74c66a1d3 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 10 Nov 2026 16:15:50 +0200
+Subject: [PATCH] [EME] Decode external CDM video into dma-bufs
+
+https://bugs.webkit.org/show_bug.cgi?id=328385
+
+Reviewed by NOBODY (OOPS!).
+
+webkitexternalcdmvideodec puts the CDM's I420 pictures out in system
+memory, so a sink that shows dma-bufs, a display plane or the
+compositor's EGL import, needs them uploaded or copied first, which
+costs a core at 720p50 on small boards. The decoder now offers DMA_DRM
+caps as well. For an 8-bit 4:2:0 stream whose sink names a dma-heap
+and its held frames through the webkit.dma-heap context and takes
+YUV420 or NV12, it puts the pictures out in buffers from that heap:
+before each CDM call it takes buffers from a pool and hands them to
+the CdmAdapter as the call's video output, whose Allocate() gives them
+to whichever CDM thread asks for picture memory during the call.
+The CDM thus decodes straight into the dma-buf, and for NV12 the chroma
+planes are interleaved behind the picture.
+
+The CDM keeps pictures across calls and returns them later, so the
+decoder registers every picture it hands out and takes the returned
+one back by its address. The pool holds the frames the sink holds, or
+the larger min-buffers an allocation query reports once the decoder is
+linked, plus the pictures the CDM has been seen to keep, plus the one
+the CDM call writes into, plus the frames queued ahead of the sink
+during 600 ms.
+The pictures the CDM keeps are counted after each output as the
+smaller of the pictures still registered and the frames still pending,
+so that neither a leaked picture nor input taken without output raises
+the count; when the count grows, the decoder negotiates a larger pool
+before it puts that picture out, so that a copy at output takes its
+buffer from the new pool. Before each call the decoder reserves the
+buffers the pool counts for the CDM and the call, less the dma-bufs
+the CDM holds, because the CDM can allocate two pictures in a call
+that follows one without output. Allocate() never waits, because the
+CDM call holds the adapter lock audio decryption shares: a picture the
+CDM asks for once the reserved buffers are used up, before the first
+pool, or after a size change, goes into heap memory and is copied into
+a pool buffer at output. The pool's picture size is the size the CDM
+asked for the first picture of a new size, and that picture drops the
+buffers still reserved from the old pool; a picture the CDM decoded
+into a dma-buf smaller than the new size is copied as well. When the
+stream or the sink rules dma-bufs out, the decoder stays with system
+memory, and under a hole-punch quirk the player then switches to the
+GL sink.
+
+The decoder runs the CDM on a thread of its own, which never takes
+GstVideoDecoder's stream lock, and an output thread makes every call
+that takes it: finishing, dropping and releasing frames, setting the
+output state and negotiating pools, in the order the CDM thread queues
+them. gst_video_decoder_finish_frame() holds the stream lock while
+downstream blocks the push, so the CDM keeps decoding while playsink's
+queue is full, up to the frames the pool queues ahead of the sink. The
+output thread also interleaves the chroma and unmaps the dma-buf, with
+the layout each picture was made in. handle_frame() maps the input and
+queues it for the CDM thread without the stream lock, as many frames as
+the queued frames cover, since upstream's next chain() waits for the
+lock while the output thread pushes; the CDM thread matches pictures
+against its own list of the frames it handed to the CDM. A new output
+state or a pool for more held pictures is set up on the output thread
+after the pictures queued before it, while the CDM thread waits.
+Flushes, drains and caps changes wait for both threads to be idle.
+
+The queued frames, ceil(s_slowCdmCallCover / frame period) with
+s_slowCdmCallCover 600 ms, cover the longest CDM call: 15 frames at
+25 fps, 30 at 50 fps. Widevine's software CDM spends most of a call
+decrypting, at 0.4 to 0.9 ms per KB of encrypted data on Cortex-A72
+and Cortex-A55 boards, so a keyframe takes several frame periods; the
+longest call measured was 578 ms, a 1080p25 keyframe on an RK3568, and
+486 ms at 720p50. The frame period comes from the caps' frame rate, or
+without one from the duration of the frame being put out. The pool
+allocates a buffer only when none is free, so the queue costs only the
+buffers downstream actually holds.
+
+The decoder turns off GstVideoDecoder's QoS handling. The CDM decodes
+every frame, since later frames refer to it, so dropping a late frame
+saves no work and only discards a decoded picture; and the base class
+drops every frame due within twice the lateness after a late one, so
+that one slow call also costs frames decoded in time. The sink still
+drops frames later than its max-lateness.
+
+* Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.cpp:
+(WebCore::CDMProxyExternalCDM::decryptAndDecodeVideoFrame):
+* Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.h:
+* Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp:
+(ExternalCDMPictures::create):
+(ExternalCDMPictures::add):
+(ExternalCDMPictures::take):
+(ExternalCDMPictures::size const):
+(ExternalCDMPictures::dmaBufCount const):
+(ExternalCDMPictureRegistration::ExternalCDMPictureRegistration):
+(ExternalCDMPictureRegistration::~ExternalCDMPictureRegistration):
+(ExternalCDMHeapPicture::ExternalCDMHeapPicture):
+(ExternalCDMDmaBuffer::create):
+(ExternalCDMDmaBuffer::~ExternalCDMDmaBuffer):
+(ExternalCDMDmaBuffer::registerWith):
+(ExternalCDMDmaBuffer::takeBuffer):
+(ExternalCDMDecodeJob::~ExternalCDMDecodeJob):
+(ExternalCDMOutputItem::ExternalCDMOutputItem):
+(ExternalCDMOutputItem::~ExternalCDMOutputItem):
+(canHoldPicture):
+(ExternalCDMVideoDecoderOutput::Allocate):
+(ExternalCDMVideoDecoderClient::isAborting):
+(outputPool):
+(setOutputPool):
+(setOutputPoolFlushing):
+(abortWaits):
+(isPictureItem):
+(queueOutputItem):
+(queueFrameItem):
+(setOutputFlow):
+(queryDmaHeap):
+(ensureDmaHeapAllocator):
+(setDmaBufOutputState):
+(ensureOutputState):
+(takePendingFrame):
+(clearCdmFrames):
+(acquireDmaBuffers):
+(reserveDmaBuffers):
+(copyPictureIntoDmaBuffer):
+(interleaveChroma):
+(takeDmaBufPicture):
+(finishDmaBufPicture):
+(isInterrupted):
+(configureOnOutputThread):
+(ensureOutputStateOnOutputThread):
+(ensurePoolCoversCdm):
+(slowCdmCallCoverFrames):
+(waitForSystemMemoryRoom):
+(pushDecodedFrame):
+(decodeFrame):
+(drainOneFrame):
+(runDecodeJob):
+(decodeLoop):
+(finishSystemMemoryPicture):
+(completeConfiguration):
+(processOutputItem):
+(outputLoop):
+(startThreads):
+(stopThreads):
+(parkThreads):
+(unparkThreads):
+(submitDecodeJob):
+(prepareDecodeJob):
+(handleFrame):
+(drainCdm):
+(setFormat):
+(decideDmaBufAllocation):
+(decideAllocation):
+(flush):
+(finish):
+(stop):
+(sinkEvent):
+(changeState):
+(setContext):
+(constructed):
+* Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.cc:
+(media::CdmAdapter::SetVideoOutput):
+(media::CdmAdapter::DecryptAndDecodeFrame):
+(media::CdmAdapter::AllocateFromVideoOutput):
+(media::CdmAdapter::Allocate):
+* Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.h:
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../gstreamer/eme/CDMProxyExternalCDM.cpp     |    4 +-
+ .../gstreamer/eme/CDMProxyExternalCDM.h       |    4 +-
+ ...WebKitExternalCDMVideoDecoderGStreamer.cpp | 1306 +++++++++++++++--
+ .../eme/cdm/media/cdm/cdm_adapter.cc          |   21 +-
+ .../gstreamer/eme/cdm/media/cdm/cdm_adapter.h |   16 +-
+ 5 files changed, 1254 insertions(+), 97 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.cpp
+@@ -365,7 +365,7 @@ std::shared_ptr<media::CdmAdapter> CDMPr
+     return session->get()->sharedAdapter();
+ }
+ 
+-cdm::Status CDMProxyExternalCDM::decryptAndDecodeVideoFrame(media::CdmAdapter& adapter, const cencDecryptContext* input, media::CdmVideoFrame& frame)
++cdm::Status CDMProxyExternalCDM::decryptAndDecodeVideoFrame(media::CdmAdapter& adapter, const cencDecryptContext* input, media::CdmVideoFrame& frame, media::CdmVideoOutput* output)
+ {
+     ExternalCdmInput cdmInput;
+ 
+@@ -379,7 +379,7 @@ cdm::Status CDMProxyExternalCDM::decrypt
+         cdmInput.buffer.timestamp = input->timestampUs;
+     }
+ 
+-    return adapter.DecryptAndDecodeFrame(cdmInput.buffer, &frame);
++    return adapter.DecryptAndDecodeFrame(cdmInput.buffer, &frame, output);
+ }
+ 
+ void CDMProxyExternalCDM::closeGCryptHandle()
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.h
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMProxyExternalCDM.h
+@@ -46,7 +46,7 @@ namespace WebCore {
+ // Heap-backed cdm::Buffer, as proven by the de-risk harness: a thin owner over
+ // a plain allocation the CDM fills, used for the decrypt output and as the
+ // fallback the CDM host Allocate() falls back to.
+-class ExternalCdmHeapBuffer final : public cdm::Buffer {
++class ExternalCdmHeapBuffer : public cdm::Buffer {
+ public:
+     explicit ExternalCdmHeapBuffer(size_t capacity)
+         : m_capacity(capacity)
+@@ -133,7 +133,7 @@ public:
+ 
+     // The Widevine CDM does not hand decrypted video back to the host.
+     std::shared_ptr<media::CdmAdapter> getOrWaitForVideoAdapter(const cencDecryptContext&, DecryptionResult&);
+-    static cdm::Status decryptAndDecodeVideoFrame(media::CdmAdapter&, const cencDecryptContext*, media::CdmVideoFrame&);
++    static cdm::Status decryptAndDecodeVideoFrame(media::CdmAdapter&, const cencDecryptContext*, media::CdmVideoFrame&, media::CdmVideoOutput* = nullptr);
+     void abortWaitingForAdapter();
+ 
+ private:
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
+@@ -25,15 +25,25 @@
+ 
+ #include "CDMProxyExternalCDM.h"
+ #include "GStreamerCommon.h"
++#include "GStreamerDmaHeap.h"
+ #include "GStreamerEMEUtilities.h"
+ #include "WebKitCommonEncryptionDecryptorGStreamer.h"
+ #include "WebKitExternalCDMDecryptorGStreamer.h"
+ #include <gst/video/video.h>
+ #include <wtf/Condition.h>
++#include <wtf/Deque.h>
+ #include <wtf/Lock.h>
++#include <wtf/MathExtras.h>
++#include <wtf/PageBlock.h>
+ #include <wtf/TZoneMallocInlines.h>
++#include <wtf/ThreadSafeRefCounted.h>
++#include <wtf/Threading.h>
+ #include <wtf/glib/WTFGType.h>
+ 
++#if CPU(ARM64)
++#include <arm_neon.h>
++#endif
++
+ using namespace WebCore;
+ 
+ GST_DEBUG_CATEGORY_STATIC(webkitExternalCDMVideoDecoderDebugCategory);
+@@ -43,7 +53,13 @@ static constexpr std::array<ASCIILiteral
+ static constexpr std::array<uint8_t, 4> s_annexBStartCode = { 0, 0, 0, 1 };
+ 
+ static GstStaticPadTemplate externalCDMVideoDecoderSrcTemplate = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
+-    GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE("{ I420, I420_10LE, I420_12LE, I422_10LE, I422_12LE, Y444_10LE, Y444_12LE }")));
++    GST_STATIC_CAPS(GST_VIDEO_DMA_DRM_CAPS_MAKE "; " GST_VIDEO_CAPS_MAKE("{ I420, I420_10LE, I420_12LE, I422_10LE, I422_12LE, Y444_10LE, Y444_12LE }")));
++
++// The picture of the CDM call in progress needs a buffer of its own beside those downstream holds.
++static constexpr unsigned s_framesInDecoder = 1;
++// Frames queued ahead of the sink cover one CDM call that decrypts a large frame, which takes a software CDM up
++// to this long.
++static constexpr GstClockTime s_slowCdmCallCover = 600 * GST_MSECOND;
+ 
+ class ExternalCDMVideoDecoderClient final : public CDMProxyDecryptionClient {
+     WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMVideoDecoderClient);
+@@ -65,6 +81,241 @@ struct CdmBufferDestroyer {
+ };
+ using CdmBufferPtr = std::unique_ptr<cdm::Buffer, CdmBufferDestroyer>;
+ 
++enum class CDMPictureMemory : uint8_t {
++    DmaBuf,
++    Heap
++};
++
++// The pictures the CDM holds. Pictures outlive the decoder when the CDM keeps them, so they share this with it.
++class ExternalCDMPictures final : public ThreadSafeRefCounted<ExternalCDMPictures> {
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMPictures);
++public:
++    static Ref<ExternalCDMPictures> create() { return adoptRef(*new ExternalCDMPictures); }
++
++    void add(cdm::Buffer* picture, CDMPictureMemory memory)
++    {
++        Locker locker { m_lock };
++        m_pictures.append({ picture, memory });
++    }
++
++    std::optional<CDMPictureMemory> take(cdm::Buffer* picture)
++    {
++        Locker locker { m_lock };
++        size_t index = m_pictures.findIf([picture](const auto& entry) {
++            return entry.picture == picture;
++        });
++        if (index == notFound)
++            return std::nullopt;
++        auto memory = m_pictures[index].memory;
++        m_pictures.removeAt(index);
++        return memory;
++    }
++
++    size_t size() const
++    {
++        Locker locker { m_lock };
++        return m_pictures.size();
++    }
++
++    size_t dmaBufCount() const
++    {
++        Locker locker { m_lock };
++        return std::ranges::count_if(m_pictures, [](const auto& entry) {
++            return entry.memory == CDMPictureMemory::DmaBuf;
++        });
++    }
++
++private:
++    struct Entry {
++        cdm::Buffer* picture;
++        CDMPictureMemory memory;
++    };
++
++    mutable Lock m_lock;
++    Vector<Entry> m_pictures WTF_GUARDED_BY_LOCK(m_lock);
++};
++
++// The CDM may destroy a picture on any of its threads, and a later allocation may reuse its address, so a
++// picture leaves the registry before its memory is freed.
++class ExternalCDMPictureRegistration {
++    WTF_MAKE_NONCOPYABLE(ExternalCDMPictureRegistration);
++public:
++    ExternalCDMPictureRegistration(ExternalCDMPictures& pictures, cdm::Buffer& picture, CDMPictureMemory memory)
++        : m_pictures(pictures)
++        , m_picture(picture)
++    {
++        pictures.add(&picture, memory);
++    }
++
++    ~ExternalCDMPictureRegistration() { m_pictures->take(&m_picture); }
++
++private:
++    const Ref<ExternalCDMPictures> m_pictures;
++    cdm::Buffer& m_picture;
++};
++
++class ExternalCDMHeapPicture final : public ExternalCdmHeapBuffer {
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMHeapPicture);
++public:
++    ExternalCDMHeapPicture(size_t capacity, ExternalCDMPictures& pictures)
++        : ExternalCdmHeapBuffer(capacity)
++        , m_registration(pictures, *this, CDMPictureMemory::Heap)
++    {
++    }
++
++private:
++    ExternalCDMPictureRegistration m_registration;
++};
++
++// A dma-buf from the decoder's pool, mapped for the CDM or for the decoder to write the picture into. Its
++// capacity is the size the picture was asked for, which sizes the pool when the picture size changes.
++class ExternalCDMDmaBuffer final : public cdm::Buffer {
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMDmaBuffer);
++public:
++    static ExternalCDMDmaBuffer* create(GRefPtr<GstBuffer>&& buffer, size_t capacity)
++    {
++        auto* dmaBuffer = new ExternalCDMDmaBuffer(WTF::move(buffer), capacity);
++        if (!gst_buffer_map(dmaBuffer->m_buffer.get(), &dmaBuffer->m_map, GST_MAP_READWRITE)) {
++            delete dmaBuffer;
++            return nullptr;
++        }
++        dmaBuffer->m_isMapped = true;
++        return dmaBuffer;
++    }
++
++    ~ExternalCDMDmaBuffer() override { unmap(); }
++
++    void registerWith(ExternalCDMPictures& pictures) { m_registration.emplace(pictures, *this, CDMPictureMemory::DmaBuf); }
++
++    void Destroy() override { delete this; }
++    uint32_t Capacity() const override { return static_cast<uint32_t>(m_capacity); }
++    uint8_t* Data() override { return m_map.data; }
++    void SetSize(uint32_t size) override { m_size = size; }
++    uint32_t Size() const override { return m_size; }
++
++    std::span<uint8_t> mappedSpan() { return unsafeMakeSpan(m_map.data, m_map.size); }
++
++    GRefPtr<GstBuffer> takeBuffer()
++    {
++        unmap();
++        return WTF::move(m_buffer);
++    }
++
++private:
++    ExternalCDMDmaBuffer(GRefPtr<GstBuffer>&& buffer, size_t capacity)
++        : m_buffer(WTF::move(buffer))
++        , m_capacity(capacity)
++    {
++    }
++
++    void unmap()
++    {
++        if (!m_isMapped)
++            return;
++        gst_buffer_unmap(m_buffer.get(), &m_map);
++        m_isMapped = false;
++    }
++
++    GRefPtr<GstBuffer> m_buffer;
++    GstMapInfo m_map { };
++    std::optional<ExternalCDMPictureRegistration> m_registration;
++    bool m_isMapped { false };
++    size_t m_capacity;
++    uint32_t m_size { 0 };
++};
++
++class ExternalCDMVideoDecoderOutput final : public media::CdmVideoOutput {
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMVideoDecoderOutput);
++public:
++    explicit ExternalCDMVideoDecoderOutput(WebKitExternalCDMVideoDecoder* decoder)
++        : m_decoder(decoder)
++    {
++    }
++
++    cdm::Buffer* Allocate(uint32_t capacity) final;
++
++private:
++    WebKitExternalCDMVideoDecoder* m_decoder;
++};
++
++enum class OutputMemory : uint8_t {
++    Undecided,
++    SystemMemory,
++    DMABuf
++};
++
++// A frame with its sample mapped for the CDM thread, or a request to drain the CDM when drainNumber is set.
++class ExternalCDMDecodeJob {
++    WTF_MAKE_NONCOPYABLE(ExternalCDMDecodeJob);
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMDecodeJob);
++public:
++    ExternalCDMDecodeJob() = default;
++
++    ~ExternalCDMDecodeJob()
++    {
++        if (frame)
++            gst_video_codec_frame_unref(frame);
++    }
++
++    GstVideoCodecFrame* frame { nullptr };
++    // The mapping in input holds no reference, and the frame may be finished or dropped before the job goes,
++    // so the job holds the buffer itself, declared first so that it is released after input is unmapped.
++    GRefPtr<GstBuffer> inputBuffer;
++    WebKitExternalCDMDecryptInput input;
++    Vector<uint8_t> annexBSample;
++    Vector<uint8_t> annexBSubsamples;
++    std::shared_ptr<media::CdmAdapter> adapter;
++    uint64_t drainNumber { 0 };
++};
++
++struct ExternalCDMPictureLayout {
++    GstVideoFormat format { GST_VIDEO_FORMAT_UNKNOWN };
++    int width { 0 };
++    int height { 0 };
++    std::array<gsize, GST_VIDEO_MAX_PLANES> offsets { };
++    std::array<gint, GST_VIDEO_MAX_PLANES> strides { };
++    size_t chromaOffset { 0 };
++};
++
++enum class OutputItemType : uint8_t {
++    DmaBufPicture,
++    SystemMemoryPicture,
++    DropFrame,
++    ReleaseFrame,
++    OutputState,
++    PoolForCdm,
++    DrainMarker
++};
++
++// Work for the output thread, which makes every GstVideoDecoder call that takes the stream lock, in the order
++// the CDM thread queued it.
++class ExternalCDMOutputItem {
++    WTF_MAKE_NONCOPYABLE(ExternalCDMOutputItem);
++    WTF_MAKE_TZONE_ALLOCATED_INLINE(ExternalCDMOutputItem);
++public:
++    explicit ExternalCDMOutputItem(OutputItemType itemType)
++        : type(itemType)
++    {
++    }
++
++    ~ExternalCDMOutputItem()
++    {
++        if (frame)
++            gst_video_codec_frame_unref(frame);
++    }
++
++    OutputItemType type;
++    GstVideoCodecFrame* frame { nullptr };
++    std::unique_ptr<ExternalCDMDmaBuffer> dmaBuffer;
++    GRefPtr<GstBuffer> buffer;
++    ExternalCDMPictureLayout layout;
++    GstVideoFormat format { GST_VIDEO_FORMAT_UNKNOWN };
++    cdm::Size size { };
++    uint32_t capacity { 0 };
++    size_t lumaStride { 0 };
++    uint64_t number { 0 };
++};
++
+ struct WebKitExternalCDMVideoDecoderPrivate {
+     Lock lock;
+     Condition condition;
+@@ -81,15 +332,76 @@ struct WebKitExternalCDMVideoDecoderPriv
+     Vector<uint8_t> h264ParameterSets;
+     GstVideoCodecState* inputState { nullptr };
+     bool canAttachVideoMeta { false };
++
++    GstVideoFormat outputCdmFormat { GST_VIDEO_FORMAT_UNKNOWN };
++    cdm::Size outputSize { };
++    OutputMemory outputMemory { OutputMemory::Undecided };
++    std::unique_ptr<ExternalCDMVideoDecoderOutput> output;
++    std::optional<DmaHeapContext> dmaHeap WTF_GUARDED_BY_LOCK(lock);
++    GRefPtr<GstAllocator> dmaHeapAllocator;
++    unsigned sinkHeldFrames { 0 };
++    std::atomic<unsigned> cdmHeldFrames { 0 };
++    std::atomic<unsigned> poolCdmHeldFrames { 0 };
++    GstVideoFormat dmaBufFormat { GST_VIDEO_FORMAT_UNKNOWN };
++    size_t dmaBufPictureSize { 0 };
++    size_t dmaBufSize { 0 };
++    std::atomic<GstClockTime> outputFrameDuration { GST_CLOCK_TIME_NONE };
++    Vector<GRefPtr<GstBuffer>> reservedBuffers;
++    const Ref<ExternalCDMPictures> pictures { ExternalCDMPictures::create() };
++
++    // The CDM thread runs the CDM and never takes the stream lock, which the output thread holds while it
++    // pushes, so that the CDM keeps decoding while downstream is full. The state they share is guarded by lock.
++    RefPtr<Thread> decodeThread;
++    RefPtr<Thread> outputThread;
++    bool isParking { false };
++    bool isDecodeBusy { false };
++    bool isOutputBusy { false };
++    Deque<std::unique_ptr<ExternalCDMDecodeJob>> decodeJobs;
++    Deque<std::unique_ptr<ExternalCDMOutputItem>> outputItems;
++    unsigned queuedPictures { 0 };
++    GstFlowReturn outputFlow { GST_FLOW_OK };
++    uint64_t drainsRequested { 0 };
++    uint64_t drainsCompleted { 0 };
++    uint64_t configuresRequested { 0 };
++    uint64_t configuresCompleted { 0 };
++    bool isConfigured { false };
++    GRefPtr<GstBufferPool> outputPool;
++
++    // Frames handed to the CDM, in decode order; the CDM thread's own, so it needs no stream lock to match them.
++    Deque<GstVideoCodecFrame*> cdmFrames;
+ };
+ 
+ WEBKIT_DEFINE_TYPE(WebKitExternalCDMVideoDecoder, webkit_external_cdm_video_decoder, GST_TYPE_VIDEO_DECODER)
+ 
++static bool canHoldPicture(const cdm::VideoDecoderConfig_3& config, uint32_t capacity)
++{
++    uint64_t lumaPlaneSize = static_cast<uint64_t>(std::max(config.coded_size.width, 0)) * std::max(config.coded_size.height, 0);
++    return capacity >= lumaPlaneSize;
++}
++
++// Runs on whichever CDM thread asks, while the decoder's CDM thread waits in DecryptAndDecodeFrame(); the
++// adapter's video output mutex orders it with that thread's accesses to config and reservedBuffers.
++cdm::Buffer* ExternalCDMVideoDecoderOutput::Allocate(uint32_t capacity)
++{
++    auto* priv = m_decoder->priv;
++    if (!canHoldPicture(priv->config, capacity))
++        return nullptr;
++
++    if (!priv->reservedBuffers.isEmpty() && capacity <= priv->dmaBufPictureSize) {
++        if (auto* buffer = ExternalCDMDmaBuffer::create(priv->reservedBuffers.takeLast(), capacity)) {
++            buffer->registerWith(priv->pictures.get());
++            return buffer;
++        }
++    }
++
++    return new ExternalCDMHeapPicture(capacity, priv->pictures.get());
++}
++
+ bool ExternalCDMVideoDecoderClient::isAborting()
+ {
+     auto* priv = m_decoder->priv;
+     Locker locker { priv->lock };
+-    return priv->isFlushing || priv->isStopped;
++    return priv->isFlushing || priv->isStopped || priv->isParking;
+ }
+ 
+ static GRefPtr<GstCaps> createSinkPadTemplateCaps()
+@@ -275,11 +587,34 @@ static bool h264SampleToAnnexB(WebKitExt
+     return true;
+ }
+ 
++// GstVideoDecoder replaces its pool without a lock that other threads could take, so the decoder keeps its own
++// reference to the pool it negotiated.
++static GRefPtr<GstBufferPool> outputPool(WebKitExternalCDMVideoDecoder* self)
++{
++    Locker locker { self->priv->lock };
++    return self->priv->outputPool;
++}
++
++static void setOutputPool(WebKitExternalCDMVideoDecoder* self, GstBufferPool* pool)
++{
++    Locker locker { self->priv->lock };
++    self->priv->outputPool = pool;
++}
++
++static void setOutputPoolFlushing(WebKitExternalCDMVideoDecoder* self, bool isFlushing)
++{
++    GRefPtr<GstBufferPool> pool = outputPool(self);
++    if (pool && gst_buffer_pool_is_active(pool.get()))
++        gst_buffer_pool_set_flushing(pool.get(), isFlushing);
++}
++
+ static void abortWaits(WebKitExternalCDMVideoDecoder* self)
+ {
+     auto* priv = self->priv;
+     RefPtr<CDMProxyExternalCDM> cdmProxy;
+ 
++    setOutputPoolFlushing(self, true);
++
+     {
+         Locker locker { priv->lock };
+         priv->condition.notifyAll();
+@@ -292,6 +627,37 @@ static void abortWaits(WebKitExternalCDM
+     cdmProxy->abortWaitingForAdapter();
+ }
+ 
++static bool isPictureItem(const ExternalCDMOutputItem& item)
++{
++    return item.type == OutputItemType::DmaBufPicture || item.type == OutputItemType::SystemMemoryPicture;
++}
++
++static void queueOutputItem(WebKitExternalCDMVideoDecoder* self, std::unique_ptr<ExternalCDMOutputItem>&& item)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    if (isPictureItem(*item))
++        priv->queuedPictures++;
++    priv->outputItems.append(WTF::move(item));
++    priv->condition.notifyAll();
++}
++
++static void queueFrameItem(WebKitExternalCDMVideoDecoder* self, OutputItemType type, GstVideoCodecFrame* frame)
++{
++    auto item = makeUnique<ExternalCDMOutputItem>(type);
++    item->frame = frame;
++    queueOutputItem(self, WTF::move(item));
++}
++
++static void setOutputFlow(WebKitExternalCDMVideoDecoder* self, GstFlowReturn ret)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    if (priv->outputFlow == GST_FLOW_OK)
++        priv->outputFlow = ret;
++    priv->condition.notifyAll();
++}
++
+ static void attachCDMProxyFromContext(WebKitExternalCDMVideoDecoder* self)
+ {
+     auto* priv = self->priv;
+@@ -358,51 +724,190 @@ static bool ensureDecoder(WebKitExternal
+     return true;
+ }
+ 
+-static bool ensureOutputState(WebKitExternalCDMVideoDecoder* self, GstVideoFormat format, const cdm::Size& size)
++static std::optional<DmaHeapContext> queryDmaHeap(WebKitExternalCDMVideoDecoder* self)
+ {
+-    auto* decoder = GST_VIDEO_DECODER(self);
+     auto* priv = self->priv;
+ 
+-    GstVideoCodecState* current = gst_video_decoder_get_output_state(decoder);
+-    bool matches = current && GST_VIDEO_INFO_FORMAT(&current->info) == format
+-        && GST_VIDEO_INFO_WIDTH(&current->info) == size.width && GST_VIDEO_INFO_HEIGHT(&current->info) == size.height;
+-    if (current)
+-        gst_video_codec_state_unref(current);
+-    if (matches)
++    GRefPtr query = adoptGRef(gst_query_new_context(WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters()));
++    if (gst_pad_peer_query(GST_VIDEO_DECODER_SRC_PAD(self), query.get())) {
++        GstContext* context = nullptr;
++        gst_query_parse_context(query.get(), &context);
++        if (auto heap = dmaHeapFromContext(context))
++            return heap;
++    }
++
++    gst_element_post_message(GST_ELEMENT_CAST(self), gst_message_new_need_context(GST_OBJECT_CAST(self), WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters()));
++    Locker locker { priv->lock };
++    return priv->dmaHeap;
++}
++
++static bool ensureDmaHeapAllocator(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    if (priv->dmaHeapAllocator)
+         return true;
+ 
+-    GST_DEBUG_OBJECT(self, "output %s %dx%d", gst_video_format_to_string(format), size.width, size.height);
+-    gst_video_codec_state_unref(gst_video_decoder_set_output_state(decoder, format, size.width, size.height, priv->inputState));
+-    return gst_video_decoder_negotiate(decoder);
++    auto heap = queryDmaHeap(self);
++    if (!heap) {
++        GST_DEBUG_OBJECT(self, "downstream names no dma-heap");
++        return false;
++    }
++
++    GST_DEBUG_OBJECT(self, "%s, the sink holds %u frames", heap->device.data(), heap->heldFrames);
++    priv->dmaHeapAllocator = createDmaHeapAllocator(heap->device);
++    priv->sinkHeldFrames = heap->heldFrames;
++    return !!priv->dmaHeapAllocator;
+ }
+ 
+-static GstVideoCodecFrame* takePendingFrame(WebKitExternalCDMVideoDecoder* self, int64_t timestampUs)
++// The picture stays in the dma-buf the CDM decoded into: as YUV420 where the sink takes three planes, or
++// as NV12 with the chroma planes interleaved behind it, which is what Rockchip's VOP2 planes scan out.
++static bool setDmaBufOutputState(WebKitExternalCDMVideoDecoder* self, const cdm::Size& size, uint32_t capacity, size_t lumaStride)
+ {
++    static constexpr std::array<GstVideoFormat, 2> candidates = { GST_VIDEO_FORMAT_I420, GST_VIDEO_FORMAT_NV12 };
+     auto* decoder = GST_VIDEO_DECODER(self);
++    auto* priv = self->priv;
++
++    if (!ensureDmaHeapAllocator(self))
++        return false;
++
++    // The interleaved chroma plane starts on the page after the CDM's picture, an offset that meets any
++    // plane alignment an importer asks for.
++    size_t pictureSize = roundUpToMultipleOf(pageSize(), static_cast<size_t>(capacity));
++    size_t chromaWidth = (size.width + 1) / 2;
++    size_t chromaHeight = (size.height + 1) / 2;
++
++    for (auto candidate : candidates) {
++        size_t chromaSize = 0;
++        if (candidate == GST_VIDEO_FORMAT_NV12) {
++            if (lumaStride < 2 * chromaWidth)
++                continue;
++            chromaSize = lumaStride * chromaHeight;
++        }
++
++        GstVideoInfoDmaDrm drmInfo;
++        guint64 modifier = 0;
++        gst_video_info_dma_drm_init(&drmInfo);
++        if (!gst_video_info_set_format(&drmInfo.vinfo, candidate, size.width, size.height))
++            continue;
++        if (priv->inputState) {
++            drmInfo.vinfo.fps_n = priv->inputState->info.fps_n;
++            drmInfo.vinfo.fps_d = priv->inputState->info.fps_d;
++            drmInfo.vinfo.par_n = priv->inputState->info.par_n;
++            drmInfo.vinfo.par_d = priv->inputState->info.par_d;
++            drmInfo.vinfo.colorimetry = priv->inputState->info.colorimetry;
++            drmInfo.vinfo.chroma_site = priv->inputState->info.chroma_site;
++        }
++        drmInfo.drm_fourcc = gst_video_dma_drm_format_from_gst_format(candidate, &modifier);
++        drmInfo.drm_modifier = modifier;
++        if (!drmInfo.drm_fourcc)
++            continue;
++
++        GRefPtr<GstCaps> caps = adoptGRef(gst_video_info_dma_drm_to_caps(&drmInfo));
++        if (!caps)
++            continue;
++        GRefPtr<GstCaps> peerCaps = adoptGRef(gst_pad_peer_query_caps(GST_VIDEO_DECODER_SRC_PAD(decoder), caps.get()));
++        if (!peerCaps || gst_caps_is_empty(peerCaps.get())) {
++            GST_DEBUG_OBJECT(self, "downstream refuses %" GST_PTR_FORMAT, caps.get());
++            continue;
++        }
++
++        GstMemory* memory = gst_allocator_alloc(priv->dmaHeapAllocator.get(), pictureSize + chromaSize, nullptr);
++        if (!memory) {
++            GST_WARNING_OBJECT(self, "cannot allocate a %" G_GSIZE_FORMAT " byte dma-buf", pictureSize + chromaSize);
++            return false;
++        }
++        gst_memory_unref(memory);
++
++        GstVideoCodecState* state = gst_video_decoder_set_output_state(decoder, candidate, size.width, size.height, priv->inputState);
++        state->info.colorimetry = drmInfo.vinfo.colorimetry;
++        state->info.chroma_site = drmInfo.vinfo.chroma_site;
++        if (state->caps)
++            gst_caps_unref(state->caps);
++        state->caps = caps.leakRef();
++        gst_video_codec_state_unref(state);
++
++        GST_DEBUG_OBJECT(self, "output %s %dx%d in dma-bufs", gst_video_format_to_string(candidate), size.width, size.height);
++        priv->dmaBufFormat = candidate;
++        priv->dmaBufPictureSize = pictureSize;
++        priv->dmaBufSize = pictureSize + chromaSize;
++        priv->reservedBuffers.clear();
++        return true;
++    }
++    return false;
++}
++
++static bool ensureOutputState(WebKitExternalCDMVideoDecoder* self, GstVideoFormat format, const cdm::Size& size, uint32_t capacity, size_t lumaStride)
++{
++    auto* decoder = GST_VIDEO_DECODER(self);
++    auto* priv = self->priv;
++
++    if (priv->outputCdmFormat == format && priv->outputSize.width == size.width && priv->outputSize.height == size.height)
++        return true;
++
++    // The player picks the video sink by the first output caps only, so dma-buf output has no fallback later on.
++    bool canUseDmaBuf = format == GST_VIDEO_FORMAT_I420 && priv->outputMemory != OutputMemory::SystemMemory;
++    bool isDmaBuf = canUseDmaBuf && setDmaBufOutputState(self, size, capacity, lumaStride);
++    if (!isDmaBuf && priv->outputMemory == OutputMemory::DMABuf) {
++        GST_ELEMENT_ERROR(self, STREAM, FORMAT, ("The video changed to a picture format the dma-buf output cannot carry"),
++            ("%s %dx%d", gst_video_format_to_string(format), size.width, size.height));
++        return false;
++    }
++
++    priv->outputMemory = isDmaBuf ? OutputMemory::DMABuf : OutputMemory::SystemMemory;
++    if (!isDmaBuf) {
++        GST_DEBUG_OBJECT(self, "output %s %dx%d", gst_video_format_to_string(format), size.width, size.height);
++        gst_video_codec_state_unref(gst_video_decoder_set_output_state(decoder, format, size.width, size.height, priv->inputState));
++    }
++
++    priv->outputCdmFormat = format;
++    priv->outputSize = size;
++    if (gst_video_decoder_negotiate(decoder))
++        return true;
++
++    priv->outputCdmFormat = GST_VIDEO_FORMAT_UNKNOWN;
++    return false;
++}
++
++static GstVideoCodecFrame* takePendingFrame(WebKitExternalCDMVideoDecoder* self, int64_t timestampUs, unsigned& laterFrames)
++{
++    auto& frames = self->priv->cdmFrames;
+     GstVideoCodecFrame* match = nullptr;
+-    GList* frames = gst_video_decoder_get_frames(decoder);
+ 
+-    for (GList* item = frames; item; item = item->next) {
+-        auto* frame = static_cast<GstVideoCodecFrame*>(item->data);
++    laterFrames = 0;
++    for (auto* frame : frames) {
+         if (GST_CLOCK_TIME_IS_VALID(frame->pts) && static_cast<int64_t>(GST_TIME_AS_USECONDS(frame->pts)) == timestampUs) {
+-            match = gst_video_codec_frame_ref(frame);
++            match = frame;
+             break;
+         }
+     }
++    if (!match)
++        return nullptr;
+ 
+     // Pictures come out in presentation order, so a frame presented before the match produced none.
+-    for (GList* item = frames; match && item; item = item->next) {
+-        auto* frame = static_cast<GstVideoCodecFrame*>(item->data);
+-        if (frame == match || !GST_CLOCK_TIME_IS_VALID(frame->pts) || frame->pts >= match->pts)
++    Deque<GstVideoCodecFrame*> remaining;
++    while (!frames.isEmpty()) {
++        auto* frame = frames.takeFirst();
++        if (frame == match)
++            continue;
++        if (!GST_CLOCK_TIME_IS_VALID(frame->pts) || frame->pts >= match->pts) {
++            laterFrames++;
++            remaining.append(frame);
+             continue;
++        }
+         GST_DEBUG_OBJECT(self, "dropping frame %u, the CDM returned no picture for it", frame->system_frame_number);
+-        gst_video_decoder_drop_frame(decoder, gst_video_codec_frame_ref(frame));
++        queueFrameItem(self, OutputItemType::DropFrame, frame);
+     }
+-
+-    g_list_free_full(frames, reinterpret_cast<GDestroyNotify>(gst_video_codec_frame_unref));
++    frames.swap(remaining);
+     return match;
+ }
+ 
++static void clearCdmFrames(WebKitExternalCDMVideoDecoder* self)
++{
++    auto& frames = self->priv->cdmFrames;
++    while (!frames.isEmpty())
++        gst_video_codec_frame_unref(frames.takeFirst());
++}
++
+ static GstBuffer* wrapCdmBuffer(CdmBufferPtr&& cdmBuffer, media::CdmVideoFrame& cdmFrame, GstVideoFormat format)
+ {
+     gsize offsets[GST_VIDEO_MAX_PLANES] = { cdmFrame.PlaneOffset(cdm::kYPlane), cdmFrame.PlaneOffset(cdm::kUPlane), cdmFrame.PlaneOffset(cdm::kVPlane), 0 };
+@@ -451,9 +956,229 @@ static GstFlowReturn copyToOutputBuffer(
+     return copied ? GST_FLOW_OK : GST_FLOW_ERROR;
+ }
+ 
++static GstFlowReturn acquireDmaBuffers(WebKitExternalCDMVideoDecoder* self, size_t count)
++{
++    auto* priv = self->priv;
++    while (priv->reservedBuffers.size() < count) {
++        GRefPtr<GstBufferPool> pool = outputPool(self);
++        if (!pool)
++            return GST_FLOW_OK;
++
++        GstBuffer* buffer = nullptr;
++        GstFlowReturn ret = gst_buffer_pool_acquire_buffer(pool.get(), &buffer, nullptr);
++        if (ret == GST_FLOW_OK) {
++            priv->reservedBuffers.append(adoptGRef(buffer));
++            continue;
++        }
++
++        // A negotiation on the output thread deactivates the old pool, which fails an acquire waiting on it.
++        Locker locker { priv->lock };
++        if (ret != GST_FLOW_FLUSHING || priv->isFlushing || priv->isStopped || priv->isParking || priv->outputPool == pool)
++            return ret;
++    }
++    return GST_FLOW_OK;
++}
++
++// Called outside the CDM, which must not wait for a buffer while it holds the adapter's lock. One call may
++// allocate more than one picture, so the decoder reserves every buffer the pool counts for the CDM and the
++// call that the CDM does not hold. A pool buffer beyond those is one the sink may be waiting for, so the CDM
++// then gets heap memory.
++static GstFlowReturn reserveDmaBuffers(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    if (priv->outputMemory != OutputMemory::DMABuf)
++        return GST_FLOW_OK;
++
++    size_t cdmBuffers = priv->poolCdmHeldFrames + s_framesInDecoder;
++    size_t cdmDmaBufs = priv->pictures->dmaBufCount();
++    if (cdmDmaBufs >= cdmBuffers)
++        return GST_FLOW_OK;
++
++    return acquireDmaBuffers(self, cdmBuffers - cdmDmaBufs);
++}
++
++// The CDM put the picture into heap memory, before the first pool, past the pictures the pool counts for the
++// CDM or after a size change, or into a dma-buf too small for the current picture size.
++static GstFlowReturn copyPictureIntoDmaBuffer(WebKitExternalCDMVideoDecoder* self, cdm::Buffer& cdmBuffer, std::unique_ptr<ExternalCDMDmaBuffer>& dmaBuffer)
++{
++    auto* priv = self->priv;
++    GstFlowReturn ret = acquireDmaBuffers(self, 1);
++    if (ret != GST_FLOW_OK)
++        return ret;
++
++    size_t pictureSize = cdmBuffer.Size() ? cdmBuffer.Size() : cdmBuffer.Capacity();
++    if (!priv->reservedBuffers.isEmpty() && pictureSize <= priv->dmaBufPictureSize)
++        dmaBuffer.reset(ExternalCDMDmaBuffer::create(priv->reservedBuffers.takeLast(), pictureSize));
++    if (!dmaBuffer) {
++        GST_ELEMENT_ERROR(self, RESOURCE, NO_SPACE_LEFT, ("Cannot put the CDM's picture into a dma-buf"), ("%zu bytes", pictureSize));
++        return GST_FLOW_ERROR;
++    }
++
++    GST_DEBUG_OBJECT(self, "copying the CDM's %zu byte picture into a dma-buf", pictureSize);
++    memcpySpan(dmaBuffer->mappedSpan().first(pictureSize), unsafeMakeSpan(cdmBuffer.Data(), pictureSize));
++    return GST_FLOW_OK;
++}
++
++static bool interleaveChroma(std::span<uint8_t> picture, size_t uOffset, size_t uStride, size_t vOffset, size_t vStride, size_t uvOffset, size_t uvStride, size_t chromaWidth, size_t chromaHeight)
++{
++    if (!chromaHeight || !chromaWidth)
++        return true;
++
++    size_t lastRow = chromaHeight - 1;
++    if (uOffset + lastRow * uStride + chromaWidth > picture.size() || vOffset + lastRow * vStride + chromaWidth > picture.size()
++        || uvOffset + lastRow * uvStride + 2 * chromaWidth > picture.size())
++        return false;
++
++    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN;
++    uint8_t* data = picture.data();
++    for (size_t y = 0; y < chromaHeight; ++y) {
++        const uint8_t* u = data + uOffset + y * uStride;
++        const uint8_t* v = data + vOffset + y * vStride;
++        uint8_t* uv = data + uvOffset + y * uvStride;
++        size_t x = 0;
++#if CPU(ARM64)
++        // A 128-bit NEON register holds sixteen 8-bit chroma samples.
++        static constexpr size_t samplesPerRegister = 16;
++        for (; x + samplesPerRegister <= chromaWidth; x += samplesPerRegister) {
++            uint8x16x2_t pair = { { vld1q_u8(u + x), vld1q_u8(v + x) } };
++            vst2q_u8(uv + 2 * x, pair);
++        }
++#endif
++        for (; x < chromaWidth; ++x) {
++            uv[2 * x] = u[x];
++            uv[2 * x + 1] = v[x];
++        }
++    }
++    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END;
++    return true;
++}
++
++static GstFlowReturn takeDmaBufPicture(WebKitExternalCDMVideoDecoder* self, CdmBufferPtr&& cdmBuffer, std::optional<CDMPictureMemory> memory, media::CdmVideoFrame& cdmFrame, ExternalCDMOutputItem& item)
++{
++    auto* priv = self->priv;
++    std::unique_ptr<ExternalCDMDmaBuffer> dmaBuffer;
++
++    if (!memory) {
++        GST_ELEMENT_ERROR(self, STREAM, DECODE, ("The CDM returned a picture the decoder did not allocate"), ("%u bytes", cdmBuffer->Capacity()));
++        return GST_FLOW_ERROR;
++    }
++
++    if (*memory == CDMPictureMemory::DmaBuf && static_cast<ExternalCDMDmaBuffer*>(cdmBuffer.get())->mappedSpan().size() >= priv->dmaBufSize)
++        dmaBuffer.reset(static_cast<ExternalCDMDmaBuffer*>(cdmBuffer.release()));
++    else if (GstFlowReturn ret = copyPictureIntoDmaBuffer(self, *cdmBuffer, dmaBuffer); ret != GST_FLOW_OK)
++        return ret;
++
++    auto size = cdmFrame.Size();
++    item.dmaBuffer = WTF::move(dmaBuffer);
++    item.layout = {
++        priv->dmaBufFormat, size.width, size.height,
++        { cdmFrame.PlaneOffset(cdm::kYPlane), cdmFrame.PlaneOffset(cdm::kUPlane), cdmFrame.PlaneOffset(cdm::kVPlane), 0 },
++        { static_cast<gint>(cdmFrame.Stride(cdm::kYPlane)), static_cast<gint>(cdmFrame.Stride(cdm::kUPlane)), static_cast<gint>(cdmFrame.Stride(cdm::kVPlane)), 0 },
++        priv->dmaBufPictureSize
++    };
++    return GST_FLOW_OK;
++}
++
++// Runs on the output thread with the layout the picture was made in, which a later size change does not touch.
++static GstFlowReturn finishDmaBufPicture(WebKitExternalCDMVideoDecoder* self, ExternalCDMOutputItem& item, GRefPtr<GstBuffer>& result)
++{
++    const auto& layout = item.layout;
++    auto offsets = layout.offsets;
++    auto strides = layout.strides;
++    unsigned planes = 3;
++
++    if (layout.format == GST_VIDEO_FORMAT_NV12) {
++        size_t chromaWidth = (layout.width + 1) / 2;
++        size_t chromaHeight = (layout.height + 1) / 2;
++        if (!interleaveChroma(item.dmaBuffer->mappedSpan(), offsets[1], strides[1], offsets[2], strides[2], layout.chromaOffset, strides[0], chromaWidth, chromaHeight)) {
++            GST_ELEMENT_ERROR(self, STREAM, DECODE, ("CDM picture does not fit the dma-buf"), ("%dx%d", layout.width, layout.height));
++            return GST_FLOW_ERROR;
++        }
++        offsets[1] = layout.chromaOffset;
++        strides[1] = strides[0];
++        offsets[2] = 0;
++        strides[2] = 0;
++        planes = 2;
++    }
++
++    result = item.dmaBuffer->takeBuffer();
++    gst_buffer_add_video_meta_full(result.get(), GST_VIDEO_FRAME_FLAG_NONE, layout.format, layout.width, layout.height, planes, offsets.data(), strides.data());
++    return GST_FLOW_OK;
++}
++
++static bool isInterrupted(WebKitExternalCDMVideoDecoderPrivate* priv)
++{
++    return priv->isFlushing || priv->isStopped || priv->isParking;
++}
++
++// The output thread runs the configuration after the pictures queued before it, so they go out under the caps
++// they were made for, and the CDM thread makes no picture in the new layout before it is in place.
++static bool configureOnOutputThread(WebKitExternalCDMVideoDecoder* self, std::unique_ptr<ExternalCDMOutputItem>&& item)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    uint64_t number = ++priv->configuresRequested;
++    item->number = number;
++    priv->outputItems.append(WTF::move(item));
++    priv->condition.notifyAll();
++    priv->condition.wait(priv->lock, [priv, number] {
++        return priv->configuresCompleted >= number || isInterrupted(priv);
++    });
++    return priv->configuresCompleted >= number && priv->isConfigured;
++}
++
++static bool ensureOutputStateOnOutputThread(WebKitExternalCDMVideoDecoder* self, GstVideoFormat format, const cdm::Size& size, uint32_t capacity, size_t lumaStride)
++{
++    auto* priv = self->priv;
++    if (priv->outputCdmFormat == format && priv->outputSize.width == size.width && priv->outputSize.height == size.height)
++        return true;
++
++    auto item = makeUnique<ExternalCDMOutputItem>(OutputItemType::OutputState);
++    item->format = format;
++    item->size = size;
++    item->capacity = capacity;
++    item->lumaStride = lumaStride;
++    return configureOnOutputThread(self, WTF::move(item));
++}
++
++// Runs before the picture is put out, so that a copy takes its buffer from a pool that counts what the CDM holds.
++static bool ensurePoolCoversCdm(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    if (priv->cdmHeldFrames <= priv->poolCdmHeldFrames)
++        return true;
++
++    GST_DEBUG_OBJECT(self, "the CDM holds up to %u pictures, the pool counts %u", priv->cdmHeldFrames.load(), priv->poolCdmHeldFrames.load());
++    return configureOnOutputThread(self, makeUnique<ExternalCDMOutputItem>(OutputItemType::PoolForCdm));
++}
++
++// Without a frame rate in the caps, the duration of the frame being put out gives the frame period.
++static unsigned slowCdmCallCoverFrames(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    GstClockTime frameDuration = priv->outputFrameDuration;
++    if (priv->inputState && priv->inputState->info.fps_n > 0 && priv->inputState->info.fps_d > 0)
++        return static_cast<unsigned>(gst_util_uint64_scale_ceil(s_slowCdmCallCover, priv->inputState->info.fps_n, static_cast<guint64>(priv->inputState->info.fps_d) * GST_SECOND));
++    if (GST_CLOCK_TIME_IS_VALID(frameDuration) && frameDuration)
++        return static_cast<unsigned>(gst_util_uint64_scale_ceil(s_slowCdmCallCover, 1, frameDuration));
++    return 0;
++}
++
++// The system memory pictures are the CDM's own allocations, which no pool bounds; the CDM thread waits while as
++// many are queued as the dma-buf pool would let it run ahead.
++static bool waitForSystemMemoryRoom(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    unsigned maxPictures = slowCdmCallCoverFrames(self) + s_framesInDecoder;
++    Locker locker { priv->lock };
++    priv->condition.wait(priv->lock, [priv, maxPictures] {
++        return priv->queuedPictures < maxPictures || isInterrupted(priv);
++    });
++    return !isInterrupted(priv);
++}
++
+ static GstFlowReturn pushDecodedFrame(WebKitExternalCDMVideoDecoder* self, media::CdmVideoFrame& cdmFrame, CdmBufferPtr&& cdmBuffer)
+ {
+-    auto* decoder = GST_VIDEO_DECODER(self);
+     GstVideoFormat format = videoFormatFromCdm(cdmFrame.Format());
+     auto size = cdmFrame.Size();
+ 
+@@ -462,30 +1187,52 @@ static GstFlowReturn pushDecodedFrame(We
+         return GST_FLOW_ERROR;
+     }
+ 
+-    GstVideoCodecFrame* frame = takePendingFrame(self, cdmFrame.Timestamp());
++    unsigned laterFrames = 0;
++    GstVideoCodecFrame* frame = takePendingFrame(self, cdmFrame.Timestamp(), laterFrames);
+     if (!frame) {
+         GST_DEBUG_OBJECT(self, "no pending frame for timestamp %" G_GINT64_FORMAT "us", cdmFrame.Timestamp());
+         return GST_FLOW_OK;
+     }
+ 
+-    if (!ensureOutputState(self, format, size)) {
+-        gst_video_decoder_drop_frame(decoder, frame);
++    // Neither a picture the CDM leaks, which is no pending frame, nor input it takes without output, which
++    // allocates no picture, counts as a picture the CDM holds.
++    auto* priv = self->priv;
++    priv->outputFrameDuration = frame->duration;
++    auto memory = priv->pictures->take(cdmBuffer.get());
++    unsigned heldFrames = static_cast<unsigned>(std::min<size_t>(priv->pictures->size(), laterFrames));
++    priv->cdmHeldFrames = std::max(priv->cdmHeldFrames.load(), heldFrames);
++
++    if (!ensureOutputStateOnOutputThread(self, format, size, cdmBuffer->Capacity(), cdmFrame.Stride(cdm::kYPlane))) {
++        queueFrameItem(self, OutputItemType::DropFrame, frame);
+         return GST_FLOW_NOT_NEGOTIATED;
+     }
+ 
+-    GstBuffer* buffer = wrapCdmBuffer(WTF::move(cdmBuffer), cdmFrame, format);
+-    if (self->priv->canAttachVideoMeta) {
+-        frame->output_buffer = buffer;
+-        return gst_video_decoder_finish_frame(decoder, frame);
+-    }
++    if (priv->outputMemory == OutputMemory::DMABuf) {
++        if (!ensurePoolCoversCdm(self)) {
++            queueFrameItem(self, OutputItemType::DropFrame, frame);
++            return GST_FLOW_NOT_NEGOTIATED;
++        }
+ 
+-    GstFlowReturn ret = copyToOutputBuffer(self, frame, buffer);
+-    gst_buffer_unref(buffer);
+-    if (ret != GST_FLOW_OK) {
+-        gst_video_decoder_drop_frame(decoder, frame);
+-        return ret;
++        auto item = makeUnique<ExternalCDMOutputItem>(OutputItemType::DmaBufPicture);
++        item->frame = frame;
++        GstFlowReturn ret = takeDmaBufPicture(self, WTF::move(cdmBuffer), memory, cdmFrame, *item);
++        if (ret != GST_FLOW_OK) {
++            item->type = OutputItemType::DropFrame;
++            item->dmaBuffer = nullptr;
++            queueOutputItem(self, WTF::move(item));
++            return ret;
++        }
++        queueOutputItem(self, WTF::move(item));
++        return GST_FLOW_OK;
+     }
+-    return gst_video_decoder_finish_frame(decoder, frame);
++
++    auto item = makeUnique<ExternalCDMOutputItem>(OutputItemType::SystemMemoryPicture);
++    item->frame = frame;
++    item->buffer = adoptGRef(wrapCdmBuffer(WTF::move(cdmBuffer), cdmFrame, format));
++    if (!waitForSystemMemoryRoom(self))
++        return GST_FLOW_FLUSHING;
++    queueOutputItem(self, WTF::move(item));
++    return GST_FLOW_OK;
+ }
+ 
+ static GstFlowReturn decodeFrame(WebKitExternalCDMVideoDecoder* self, const CDMProxyExternalCDM::cencDecryptContext* input)
+@@ -493,9 +1240,12 @@ static GstFlowReturn decodeFrame(WebKitE
+     auto* priv = self->priv;
+     media::CdmVideoFrame cdmFrame;
+ 
+-    cdm::Status status = CDMProxyExternalCDM::decryptAndDecodeVideoFrame(*priv->adapter, input, cdmFrame);
++    GstFlowReturn ret = reserveDmaBuffers(self);
++    if (ret != GST_FLOW_OK)
++        return ret;
++
++    cdm::Status status = CDMProxyExternalCDM::decryptAndDecodeVideoFrame(*priv->adapter, input, cdmFrame, priv->output.get());
+     CdmBufferPtr cdmBuffer(cdmFrame.FrameBuffer());
+-    GstFlowReturn ret = GST_FLOW_OK;
+ 
+     switch (status) {
+     case cdm::kSuccess:
+@@ -506,7 +1256,10 @@ static GstFlowReturn decodeFrame(WebKitE
+         GST_ELEMENT_ERROR(self, STREAM, DECRYPT_NOKEY, ("No key found, decryption failed"), (nullptr));
+         return GST_FLOW_CUSTOM_ERROR;
+     default:
++        // GstVideoDecoder counts errors under its stream lock.
++        GST_VIDEO_DECODER_STREAM_LOCK(self);
+         GST_VIDEO_DECODER_ERROR(self, 1, STREAM, DECODE, ("CDM failed to decrypt and decode a frame"), ("status %d", static_cast<int>(status)), ret);
++        GST_VIDEO_DECODER_STREAM_UNLOCK(self);
+         return ret;
+     }
+ }
+@@ -515,7 +1268,11 @@ static GstFlowReturn drainOneFrame(WebKi
+ {
+     media::CdmVideoFrame cdmFrame;
+ 
+-    cdm::Status status = CDMProxyExternalCDM::decryptAndDecodeVideoFrame(*self->priv->adapter, nullptr, cdmFrame);
++    GstFlowReturn ret = reserveDmaBuffers(self);
++    if (ret != GST_FLOW_OK)
++        return ret;
++
++    cdm::Status status = CDMProxyExternalCDM::decryptAndDecodeVideoFrame(*self->priv->adapter, nullptr, cdmFrame, self->priv->output.get());
+     CdmBufferPtr cdmBuffer(cdmFrame.FrameBuffer());
+     isDrained = status != cdm::kSuccess;
+     if (isDrained)
+@@ -537,14 +1294,254 @@ static GstFlowReturn drainFrames(WebKitE
+     return ret;
+ }
+ 
+-static GstFlowReturn handleFrame(GstVideoDecoder* decoder, GstVideoCodecFrame* frame)
++static GstFlowReturn runDecodeJob(WebKitExternalCDMVideoDecoder* self, ExternalCDMDecodeJob& job)
++{
++    if (!ensureDecoder(self, WTF::move(job.adapter))) {
++        queueFrameItem(self, OutputItemType::ReleaseFrame, std::exchange(job.frame, nullptr));
++        GST_ELEMENT_ERROR(self, STREAM, CODEC_NOT_FOUND, ("The CDM cannot decode this stream"), (nullptr));
++        return GST_FLOW_NOT_NEGOTIATED;
++    }
++
++    self->priv->cdmFrames.append(std::exchange(job.frame, nullptr));
++    return decodeFrame(self, &job.input.context);
++}
++
++static void decodeLoop(WebKitExternalCDMVideoDecoder* self)
+ {
+-    auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder);
+     auto* priv = self->priv;
+ 
++    while (true) {
++        std::unique_ptr<ExternalCDMDecodeJob> job;
++        {
++            Locker locker { priv->lock };
++            priv->isDecodeBusy = false;
++            priv->condition.notifyAll();
++            priv->condition.wait(priv->lock, [priv] {
++                return priv->isStopped || (!priv->decodeJobs.isEmpty() && !priv->isFlushing && !priv->isParking);
++            });
++            if (priv->isStopped)
++                return;
++            job = priv->decodeJobs.takeFirst();
++            priv->isDecodeBusy = true;
++            priv->condition.notifyAll();
++        }
++
++        uint64_t drainNumber = job->drainNumber;
++        GstFlowReturn ret = drainNumber ? drainFrames(self) : runDecodeJob(self, *job);
++        job = nullptr;
++        if (drainNumber) {
++            auto marker = makeUnique<ExternalCDMOutputItem>(OutputItemType::DrainMarker);
++            marker->number = drainNumber;
++            queueOutputItem(self, WTF::move(marker));
++        }
++
++        Locker locker { priv->lock };
++        if (ret != GST_FLOW_OK && priv->outputFlow == GST_FLOW_OK && !isInterrupted(priv))
++            priv->outputFlow = ret;
++    }
++}
++
++static GstFlowReturn finishSystemMemoryPicture(WebKitExternalCDMVideoDecoder* self, ExternalCDMOutputItem& item)
++{
++    auto* decoder = GST_VIDEO_DECODER(self);
++    auto* frame = std::exchange(item.frame, nullptr);
++
++    if (self->priv->canAttachVideoMeta) {
++        frame->output_buffer = item.buffer.leakRef();
++        return gst_video_decoder_finish_frame(decoder, frame);
++    }
++
++    GstFlowReturn ret = copyToOutputBuffer(self, frame, item.buffer.get());
++    item.buffer = nullptr;
++    if (ret != GST_FLOW_OK) {
++        gst_video_decoder_drop_frame(decoder, frame);
++        return ret;
++    }
++    return gst_video_decoder_finish_frame(decoder, frame);
++}
++
++static void completeConfiguration(WebKitExternalCDMVideoDecoder* self, uint64_t number, bool isConfigured)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    priv->isConfigured = isConfigured;
++    priv->configuresCompleted = number;
++    priv->condition.notifyAll();
++}
++
++static void processOutputItem(WebKitExternalCDMVideoDecoder* self, ExternalCDMOutputItem& item)
++{
++    auto* decoder = GST_VIDEO_DECODER(self);
++    GstFlowReturn ret = GST_FLOW_OK;
++
++    switch (item.type) {
++    case OutputItemType::DmaBufPicture: {
++        GRefPtr<GstBuffer> buffer;
++        ret = finishDmaBufPicture(self, item, buffer);
++        auto* frame = std::exchange(item.frame, nullptr);
++        if (ret != GST_FLOW_OK) {
++            gst_video_decoder_drop_frame(decoder, frame);
++            break;
++        }
++        frame->output_buffer = buffer.leakRef();
++        ret = gst_video_decoder_finish_frame(decoder, frame);
++        break;
++    }
++    case OutputItemType::SystemMemoryPicture:
++        ret = finishSystemMemoryPicture(self, item);
++        break;
++    case OutputItemType::DropFrame:
++        gst_video_decoder_drop_frame(decoder, std::exchange(item.frame, nullptr));
++        break;
++    case OutputItemType::ReleaseFrame:
++        gst_video_decoder_release_frame(decoder, std::exchange(item.frame, nullptr));
++        break;
++    case OutputItemType::OutputState:
++        completeConfiguration(self, item.number, ensureOutputState(self, item.format, item.size, item.capacity, item.lumaStride));
++        break;
++    case OutputItemType::PoolForCdm:
++        completeConfiguration(self, item.number, gst_video_decoder_negotiate(decoder));
++        break;
++    case OutputItemType::DrainMarker: {
++        auto* priv = self->priv;
++        Locker locker { priv->lock };
++        priv->drainsCompleted = item.number;
++        priv->condition.notifyAll();
++        break;
++    }
++    }
++
++    if (ret != GST_FLOW_OK)
++        setOutputFlow(self, ret);
++}
++
++static void outputLoop(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++
++    while (true) {
++        std::unique_ptr<ExternalCDMOutputItem> item;
++        {
++            Locker locker { priv->lock };
++            priv->isOutputBusy = false;
++            priv->condition.notifyAll();
++            priv->condition.wait(priv->lock, [priv] {
++                return priv->isStopped || (!priv->outputItems.isEmpty() && !priv->isFlushing && !priv->isParking);
++            });
++            if (priv->isStopped)
++                return;
++            item = priv->outputItems.takeFirst();
++            if (isPictureItem(*item))
++                priv->queuedPictures--;
++            priv->isOutputBusy = true;
++            priv->condition.notifyAll();
++        }
++
++        processOutputItem(self, *item);
++    }
++}
++
++static void startThreads(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    priv->isStopped = false;
++    priv->decodeThread = Thread::create("CDMVideoDecode"_s, [self] {
++        decodeLoop(self);
++    });
++    priv->outputThread = Thread::create("CDMVideoOutput"_s, [self] {
++        outputLoop(self);
++    });
++}
++
++static void stopThreads(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    RefPtr<Thread> decodeThread;
++    RefPtr<Thread> outputThread;
++
++    {
++        Locker locker { priv->lock };
++        priv->isStopped = true;
++        decodeThread = WTF::move(priv->decodeThread);
++        outputThread = WTF::move(priv->outputThread);
++    }
++    abortWaits(self);
++
++    if (decodeThread)
++        decodeThread->waitForCompletion();
++    if (outputThread)
++        outputThread->waitForCompletion();
++}
++
++// Stops both threads at the end of their current item, for a flush that may come without FLUSH_START, and
++// drops what is queued.
++static void parkThreads(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    Deque<std::unique_ptr<ExternalCDMDecodeJob>> decodeJobs;
++    Deque<std::unique_ptr<ExternalCDMOutputItem>> outputItems;
++
++    {
++        Locker locker { priv->lock };
++        priv->isParking = true;
++    }
++    abortWaits(self);
++
++    Locker locker { priv->lock };
++    priv->condition.wait(priv->lock, [priv] {
++        return !priv->isDecodeBusy && !priv->isOutputBusy;
++    });
++    decodeJobs.swap(priv->decodeJobs);
++    outputItems.swap(priv->outputItems);
++    priv->queuedPictures = 0;
++    priv->outputFlow = GST_FLOW_OK;
++}
++
++static void unparkThreads(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    bool isFlushing;
++
++    {
++        Locker locker { priv->lock };
++        priv->isParking = false;
++        isFlushing = priv->isFlushing;
++        priv->condition.notifyAll();
++    }
++    if (!isFlushing)
++        setOutputPoolFlushing(self, false);
++}
++
++// Upstream's next chain() waits for the stream lock while the output thread pushes into a full downstream, so
++// input arrives in bursts between pushes; the CDM thread works through the queued input meanwhile. It cannot run
++// further ahead than the cover, so more queued input would not be decoded any earlier.
++static GstFlowReturn submitDecodeJob(WebKitExternalCDMVideoDecoder* self, std::unique_ptr<ExternalCDMDecodeJob>& job)
++{
++    auto* priv = self->priv;
++    size_t maxJobs = std::max(slowCdmCallCoverFrames(self), s_framesInDecoder);
++    Locker locker { priv->lock };
++    priv->condition.wait(priv->lock, [priv, maxJobs] {
++        return priv->decodeJobs.size() < maxJobs || isInterrupted(priv) || priv->outputFlow != GST_FLOW_OK;
++    });
++    if (isInterrupted(priv))
++        return GST_FLOW_FLUSHING;
++    if (priv->outputFlow != GST_FLOW_OK)
++        return priv->outputFlow;
++
++    priv->decodeJobs.append(WTF::move(job));
++    priv->condition.notifyAll();
++    return GST_FLOW_OK;
++}
++
++static GstFlowReturn prepareDecodeJob(WebKitExternalCDMVideoDecoder* self, std::unique_ptr<ExternalCDMDecodeJob>& job)
++{
++    auto* decoder = GST_VIDEO_DECODER(self);
++    auto* priv = self->priv;
++    auto* frame = job->frame;
++
+     RefPtr cdmProxy = waitForCDMProxy(self);
+     if (!cdmProxy) {
+-        gst_video_decoder_release_frame(decoder, frame);
+         if (priv->client->isAborting())
+             return GST_FLOW_FLUSHING;
+         GST_ELEMENT_ERROR(self, STREAM, FAILED, ("CDMProxy was not retrieved in time"), (nullptr));
+@@ -553,36 +1550,30 @@ static GstFlowReturn handleFrame(GstVide
+ 
+     WebKitMediaCommonEncryptionSampleInfo sampleInfo;
+     if (auto* protectionMeta = reinterpret_cast<GstProtectionMeta*>(gst_buffer_get_protection_meta(frame->input_buffer))) {
+-        if (!webKitMediaCommonEncryptionParseProtectionMeta(GST_ELEMENT_CAST(self), protectionMeta, sampleInfo)) {
+-            gst_video_decoder_release_frame(decoder, frame);
++        if (!webKitMediaCommonEncryptionParseProtectionMeta(GST_ELEMENT_CAST(self), protectionMeta, sampleInfo))
+             return GST_FLOW_NOT_SUPPORTED;
+-        }
+     }
+ 
+-    // The mapping holds no reference, and finishing or dropping the frame frees its input buffer before the
+-    // mapping goes out of scope.
+-    GRefPtr<GstBuffer> inputBuffer = frame->input_buffer;
+-    WebKitExternalCDMDecryptInput input;
+-    if (!input.map(GST_ELEMENT_CAST(self), frame->input_buffer, GST_MAP_READ, sampleInfo)) {
+-        gst_video_decoder_release_frame(decoder, frame);
++    auto& context = job->input.context;
++    job->inputBuffer = frame->input_buffer;
++    if (!job->input.map(GST_ELEMENT_CAST(self), job->inputBuffer.get(), GST_MAP_READ, sampleInfo)) {
+         GST_ELEMENT_ERROR(self, STREAM, DECODE, ("Failed to map the input frame"), (nullptr));
+         return GST_FLOW_ERROR;
+     }
+-    input.context.cdmProxyDecryptionClient = WeakPtr { *priv->client, EnableWeakPtrThreadingAssertions::No };
++    context.cdmProxyDecryptionClient = WeakPtr { *priv->client, EnableWeakPtrThreadingAssertions::No };
+ 
+-    Vector<uint8_t> annexBSample;
+-    Vector<uint8_t> annexBSubsamples;
+-    if (priv->isAvc && !h264SampleToAnnexB(self, GST_VIDEO_CODEC_FRAME_IS_SYNC_POINT(frame), input.context, annexBSample, annexBSubsamples)) {
++    if (priv->isAvc && !h264SampleToAnnexB(self, GST_VIDEO_CODEC_FRAME_IS_SYNC_POINT(frame), context, job->annexBSample, job->annexBSubsamples)) {
+         GstFlowReturn ret = GST_FLOW_OK;
+-        gst_video_decoder_drop_frame(decoder, frame);
++        gst_video_decoder_drop_frame(decoder, std::exchange(job->frame, nullptr));
++        GST_VIDEO_DECODER_STREAM_LOCK(decoder);
+         GST_VIDEO_DECODER_ERROR(self, 1, STREAM, DECODE, ("Malformed H.264 sample"), (nullptr), ret);
++        GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
+         return ret;
+     }
+ 
+     DecryptionResult result;
+-    auto adapter = cdmProxy->getOrWaitForVideoAdapter(input.context, result);
+-    if (!adapter) {
+-        gst_video_decoder_release_frame(decoder, frame);
++    job->adapter = cdmProxy->getOrWaitForVideoAdapter(context, result);
++    if (!job->adapter) {
+         if (priv->client->isAborting())
+             return GST_FLOW_FLUSHING;
+         if (result == DecryptionResult::NoKey) {
+@@ -593,14 +1584,47 @@ static GstFlowReturn handleFrame(GstVide
+         return GST_FLOW_ERROR;
+     }
+ 
+-    if (!ensureDecoder(self, WTF::move(adapter))) {
+-        gst_video_decoder_release_frame(decoder, frame);
+-        GST_ELEMENT_ERROR(self, STREAM, CODEC_NOT_FOUND, ("The CDM cannot decode this stream"), (nullptr));
+-        return GST_FLOW_NOT_NEGOTIATED;
+-    }
++    return submitDecodeJob(self, job);
++}
++
++// Runs without the stream lock, which the output thread needs to push while this waits for the CDM thread.
++static GstFlowReturn handleFrame(GstVideoDecoder* decoder, GstVideoCodecFrame* frame)
++{
++    auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder);
++    auto job = makeUnique<ExternalCDMDecodeJob>();
++    job->frame = frame;
++
++    GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
++    GstFlowReturn ret = prepareDecodeJob(self, job);
++    if (job && job->frame)
++        gst_video_decoder_release_frame(decoder, std::exchange(job->frame, nullptr));
++    job = nullptr;
++    GST_VIDEO_DECODER_STREAM_LOCK(decoder);
++    return ret;
++}
+ 
+-    gst_video_codec_frame_unref(frame);
+-    return decodeFrame(self, &input.context);
++// Waits until every picture the CDM still holds is pushed, and leaves both threads idle.
++static GstFlowReturn drainCdm(WebKitExternalCDMVideoDecoder* self)
++{
++    auto* priv = self->priv;
++    Locker locker { priv->lock };
++    if (!priv->decodeThread)
++        return GST_FLOW_OK;
++
++    if (!isInterrupted(priv)) {
++        uint64_t number = ++priv->drainsRequested;
++        auto job = makeUnique<ExternalCDMDecodeJob>();
++        job->drainNumber = number;
++        priv->decodeJobs.append(WTF::move(job));
++        priv->condition.notifyAll();
++        priv->condition.wait(priv->lock, [priv, number] {
++            return priv->drainsCompleted >= number || isInterrupted(priv);
++        });
++    }
++    priv->condition.wait(priv->lock, [priv] {
++        return !priv->isDecodeBusy && !priv->isOutputBusy;
++    });
++    return isInterrupted(priv) ? GST_FLOW_FLUSHING : priv->outputFlow;
+ }
+ 
+ static gboolean setFormat(GstVideoDecoder* decoder, GstVideoCodecState* state)
+@@ -629,10 +1653,10 @@ static gboolean setFormat(GstVideoDecode
+ 
+     GST_DEBUG_OBJECT(self, "input %" GST_PTR_FORMAT, state->caps);
+ 
+-    if (priv->isDecoderInitialized) {
+-        drainFrames(self);
+-        deinitializeDecoder(self);
+-    }
++    GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
++    drainCdm(self);
++    GST_VIDEO_DECODER_STREAM_LOCK(decoder);
++    deinitializeDecoder(self);
+ 
+     priv->config = config;
+     priv->isAvc = isAvc;
+@@ -643,13 +1667,64 @@ static gboolean setFormat(GstVideoDecode
+     return TRUE;
+ }
+ 
++// The dma-heap context names the frames the sink holds before decodebin links the decoder to it, when no
++// allocation query reaches the sink yet; once linked, a larger min-buffers downstream wins. The CDM keeps
++// pictures across calls, as many as seen so far; the first pool is made once the first picture comes out.
++static gboolean decideDmaBufAllocation(WebKitExternalCDMVideoDecoder* self, GstQuery* query)
++{
++    auto* priv = self->priv;
++    GstCaps* caps = nullptr;
++    gst_query_parse_allocation(query, &caps, nullptr);
++
++    unsigned heldBuffers = priv->sinkHeldFrames;
++    unsigned poolCount = gst_query_get_n_allocation_pools(query);
++    for (unsigned i = 0; i < poolCount; ++i) {
++        guint minBuffers = 0;
++        gst_query_parse_nth_allocation_pool(query, i, nullptr, nullptr, &minBuffers, nullptr);
++        heldBuffers = std::max(heldBuffers, minBuffers);
++    }
++    unsigned cdmHeldFrames = priv->cdmHeldFrames;
++    unsigned coverFrames = slowCdmCallCoverFrames(self);
++    unsigned maxBuffers = heldBuffers + cdmHeldFrames + s_framesInDecoder + coverFrames;
++
++    GRefPtr<GstBufferPool> pool = adoptGRef(gst_buffer_pool_new());
++    GstStructure* config = gst_buffer_pool_get_config(pool.get());
++    gst_buffer_pool_config_set_params(config, caps, static_cast<guint>(priv->dmaBufSize), 0, maxBuffers);
++    gst_buffer_pool_config_set_allocator(config, priv->dmaHeapAllocator.get(), nullptr);
++    if (!gst_buffer_pool_set_config(pool.get(), config)) {
++        GST_WARNING_OBJECT(self, "cannot configure the dma-buf pool");
++        return FALSE;
++    }
++
++    GST_DEBUG_OBJECT(self, "dma-buf pool of %" G_GSIZE_FORMAT " byte buffers, at most %u: %u downstream, %u in the CDM, %u decoding, %u queued",
++        priv->dmaBufSize, maxBuffers, heldBuffers, cdmHeldFrames, s_framesInDecoder, coverFrames);
++    priv->poolCdmHeldFrames = cdmHeldFrames;
++    while (gst_query_get_n_allocation_pools(query))
++        gst_query_remove_nth_allocation_pool(query, 0);
++    gst_query_add_allocation_pool(query, pool.get(), static_cast<guint>(priv->dmaBufSize), 0, maxBuffers);
++    setOutputPool(self, pool.get());
++    return TRUE;
++}
++
+ static gboolean decideAllocation(GstVideoDecoder* decoder, GstQuery* query)
+ {
+     auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder);
+ 
++    if (self->priv->outputMemory == OutputMemory::DMABuf)
++        return decideDmaBufAllocation(self, query);
++
+     self->priv->canAttachVideoMeta = gst_query_find_allocation_meta(query, GST_VIDEO_META_API_TYPE, nullptr);
+     GST_DEBUG_OBJECT(self, "downstream %s video meta", self->priv->canAttachVideoMeta ? "supports" : "does not support");
+-    return GST_VIDEO_DECODER_CLASS(webkit_external_cdm_video_decoder_parent_class)->decide_allocation(decoder, query);
++    if (!GST_VIDEO_DECODER_CLASS(webkit_external_cdm_video_decoder_parent_class)->decide_allocation(decoder, query))
++        return FALSE;
++
++    GstBufferPool* pool = nullptr;
++    if (gst_query_get_n_allocation_pools(query))
++        gst_query_parse_nth_allocation_pool(query, 0, &pool, nullptr, nullptr, nullptr);
++    setOutputPool(self, pool);
++    if (pool)
++        gst_object_unref(pool);
++    return TRUE;
+ }
+ 
+ static gboolean flush(GstVideoDecoder* decoder)
+@@ -657,20 +1732,42 @@ static gboolean flush(GstVideoDecoder* d
+     auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder);
+     auto* priv = self->priv;
+ 
++    GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
++    parkThreads(self);
++    GST_VIDEO_DECODER_STREAM_LOCK(decoder);
++
+     if (priv->adapter && priv->isDecoderInitialized)
+         priv->adapter->ResetDecoder(cdm::kStreamTypeVideo);
++    priv->reservedBuffers.clear();
++    clearCdmFrames(self);
++    unparkThreads(self);
+     return TRUE;
+ }
+ 
+ static GstFlowReturn finish(GstVideoDecoder* decoder)
+ {
+-    return drainFrames(WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder));
++    GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
++    GstFlowReturn ret = drainCdm(WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder));
++    GST_VIDEO_DECODER_STREAM_LOCK(decoder);
++    return ret;
+ }
+ 
+ static gboolean stop(GstVideoDecoder* decoder)
+ {
+     auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(decoder);
+     auto* priv = self->priv;
++    Deque<std::unique_ptr<ExternalCDMDecodeJob>> decodeJobs;
++    Deque<std::unique_ptr<ExternalCDMOutputItem>> outputItems;
++
++    {
++        Locker locker { priv->lock };
++        decodeJobs.swap(priv->decodeJobs);
++        outputItems.swap(priv->outputItems);
++        priv->queuedPictures = 0;
++        priv->outputFlow = GST_FLOW_OK;
++        priv->outputPool = nullptr;
++    }
++    clearCdmFrames(self);
+ 
+     deinitializeDecoder(self);
+     priv->adapter = nullptr;
+@@ -678,6 +1775,21 @@ static gboolean stop(GstVideoDecoder* de
+         gst_video_codec_state_unref(priv->inputState);
+         priv->inputState = nullptr;
+     }
++
++    priv->reservedBuffers.clear();
++    priv->outputCdmFormat = GST_VIDEO_FORMAT_UNKNOWN;
++    priv->outputSize = { };
++    priv->outputMemory = OutputMemory::Undecided;
++    priv->dmaBufFormat = GST_VIDEO_FORMAT_UNKNOWN;
++    priv->outputFrameDuration = GST_CLOCK_TIME_NONE;
++    priv->dmaHeapAllocator = nullptr;
++    priv->sinkHeldFrames = 0;
++    priv->cdmHeldFrames = 0;
++    priv->poolCdmHeldFrames = 0;
++    {
++        Locker locker { priv->lock };
++        priv->dmaHeap = std::nullopt;
++    }
+     return TRUE;
+ }
+ 
+@@ -724,9 +1836,15 @@ static gboolean sinkEvent(GstVideoDecode
+         break;
+     }
+     case GST_EVENT_FLUSH_STOP: {
+-        Locker locker { priv->lock };
+-        priv->isFlushing = false;
+-        break;
++        // The base class calls flush() while handling FLUSH_STOP, and the threads stay idle until then.
++        gboolean ret = GST_VIDEO_DECODER_CLASS(webkit_external_cdm_video_decoder_parent_class)->sink_event(decoder, event);
++        {
++            Locker locker { priv->lock };
++            priv->isFlushing = false;
++            priv->condition.notifyAll();
++        }
++        setOutputPoolFlushing(self, false);
++        return ret;
+     }
+     default:
+         break;
+@@ -738,27 +1856,22 @@ static gboolean sinkEvent(GstVideoDecode
+ static GstStateChangeReturn changeState(GstElement* element, GstStateChange transition)
+ {
+     auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(element);
+-    auto* priv = self->priv;
+ 
+     switch (transition) {
+-    case GST_STATE_CHANGE_READY_TO_PAUSED: {
+-        Locker locker { priv->lock };
+-        priv->isStopped = false;
++    case GST_STATE_CHANGE_READY_TO_PAUSED:
++        startThreads(self);
+         break;
+-    }
+-    case GST_STATE_CHANGE_PAUSED_TO_READY: {
+-        {
+-            Locker locker { priv->lock };
+-            priv->isStopped = true;
+-        }
+-        abortWaits(self);
++    case GST_STATE_CHANGE_PAUSED_TO_READY:
++        stopThreads(self);
+         break;
+-    }
+     default:
+         break;
+     }
+ 
+-    return GST_ELEMENT_CLASS(webkit_external_cdm_video_decoder_parent_class)->change_state(element, transition);
++    GstStateChangeReturn ret = GST_ELEMENT_CLASS(webkit_external_cdm_video_decoder_parent_class)->change_state(element, transition);
++    if (transition == GST_STATE_CHANGE_READY_TO_PAUSED && ret == GST_STATE_CHANGE_FAILURE)
++        stopThreads(self);
++    return ret;
+ }
+ 
+ static void setContext(GstElement* element, GstContext* context)
+@@ -767,6 +1880,14 @@ static void setContext(GstElement* eleme
+ 
+     if (gst_context_has_context_type(context, "drm-cdm-proxy"))
+         attachCDMProxyFromContext(WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(element));
++
++    auto heap = dmaHeapFromContext(context);
++    if (!heap)
++        return;
++
++    auto* priv = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(element)->priv;
++    Locker locker { priv->lock };
++    priv->dmaHeap = WTF::move(heap);
+ }
+ 
+ static void constructed(GObject* object)
+@@ -775,8 +1896,11 @@ static void constructed(GObject* object)
+ 
+     auto* self = WEBKIT_EXTERNAL_CDM_VIDEO_DECODER(object);
+     self->priv->client = makeUnique<ExternalCDMVideoDecoderClient>(self);
++    self->priv->output = makeUnique<ExternalCDMVideoDecoderOutput>(self);
+     gst_video_decoder_set_packetized(GST_VIDEO_DECODER(self), TRUE);
+     gst_video_decoder_set_needs_format(GST_VIDEO_DECODER(self), TRUE);
++    // The CDM decodes every frame, as later ones refer to it, so a QoS drop only discards decoded pictures.
++    g_object_set(self, "qos", FALSE, nullptr);
+ }
+ 
+ static void webkit_external_cdm_video_decoder_class_init(WebKitExternalCDMVideoDecoderClass* klass)
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.cc
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.cc
+@@ -566,18 +566,26 @@ void CdmAdapter::ResetDecoder(cdm::Strea
+     cdm10_->ResetDecoder(decoder_type);
+ }
+ 
++void CdmAdapter::SetVideoOutput(CdmVideoOutput* video_output)
++{
++  std::lock_guard<std::mutex> guard(video_output_mutex_);
++  video_output_ = video_output;
++}
++
+ cdm::Status CdmAdapter::DecryptAndDecodeFrame(const cdm::InputBuffer_2& encrypted_buffer,
+-  CdmVideoFrame* video_frame)
++  CdmVideoFrame* video_frame, CdmVideoOutput* video_output)
+ {
+   std::lock_guard<std::mutex> lock(decrypt_mutex_);
+   cdm::Status ret(cdm::kDeferredInitialization);
+ 
++  SetVideoOutput(video_output);
+   if (cdm12_)
+     ret = cdm12_->DecryptAndDecodeFrame(encrypted_buffer, video_frame);
+   else if (cdm11_)
+     ret = cdm11_->DecryptAndDecodeFrame(encrypted_buffer, video_frame);
+   else if (cdm10_)
+     ret = cdm10_->DecryptAndDecodeFrame(encrypted_buffer, video_frame);
++  SetVideoOutput(nullptr);
+ 
+   active_buffer_ = 0;
+   return ret;
+@@ -621,11 +629,22 @@ void CdmAdapter::OnQueryOutputProtection
+ 
+ /******************************** HOST *****************************************/
+ 
++// Holding video_output_mutex_ across Allocate() makes the call that clears the output wait for a CDM
++// thread still allocating from it.
++cdm::Buffer* CdmAdapter::AllocateFromVideoOutput(uint32_t capacity)
++{
++  std::lock_guard<std::mutex> guard(video_output_mutex_);
++  return video_output_ ? video_output_->Allocate(capacity) : nullptr;
++}
++
+ cdm::Buffer* CdmAdapter::Allocate(uint32_t capacity)
+ {
+   if (active_buffer_)
+   return active_buffer_;
+ 
++  if (cdm::Buffer* buffer = AllocateFromVideoOutput(capacity))
++    return buffer;
++
+   std::lock_guard<std::mutex> guard(client_mutex_);
+   return client_ ? client_->AllocateBuffer(capacity) : nullptr;
+ }
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.h
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/cdm/media/cdm/cdm_adapter.h
+@@ -68,6 +68,15 @@ public:
+   virtual void OnPromiseRejected(uint32_t promise_id, uint32_t system_code, const std::string& message) = 0;
+ };
+ 
++// Picture memory for one DecryptAndDecodeFrame() call. The CDM may ask for it from any of its threads
++// while the call holds decrypt_mutex_, so Allocate() must not wait; it returns nullptr to decline.
++class CdmVideoOutput
++{
++public:
++  virtual ~CdmVideoOutput() = default;
++  virtual cdm::Buffer* Allocate(uint32_t capacity) = 0;
++};
++
+ class CdmVideoFrame : public cdm::VideoFrame, public cdm::VideoFrame_2 {
+ public:
+   CdmVideoFrame() = default;
+@@ -160,7 +169,7 @@ class CdmAdapter : public std::enable_sh
+ 	void ResetDecoder(cdm::StreamType decoder_type);
+ 
+ 	cdm::Status DecryptAndDecodeFrame(const cdm::InputBuffer_2& encrypted_buffer,
+-		CdmVideoFrame* video_frame);
++		CdmVideoFrame* video_frame, CdmVideoOutput* video_output = nullptr);
+ 
+ 	cdm::Status DecryptAndDecodeSamples(const cdm::InputBuffer_2& encrypted_buffer,
+ 		cdm::AudioFrames* audio_frames);
+@@ -272,6 +281,8 @@ private:
+   GetCdmVersionFunc get_cdm_verion_func{nullptr};
+   DeinitializeCdmModuleFunc deinit_cdm_func{nullptr};
+ 
++  void SetVideoOutput(CdmVideoOutput* video_output);
++  cdm::Buffer* AllocateFromVideoOutput(uint32_t capacity);
+   void SendClientMessage(const char* session, uint32_t session_size, CdmAdapterClient::CDMADPMSG msg, const uint8_t *data, size_t data_size, uint32_t status);
+   void SendOnKeyStatusChange(const std::string& sessionId,
+                              const std::vector<CdmAdapterClient::KeyInfo>& keysInfo);
+@@ -294,6 +305,9 @@ private:
+ 
+   cdm::Buffer* active_buffer_{nullptr};
+ 
++  std::mutex video_output_mutex_;
++  CdmVideoOutput* video_output_{nullptr};
++
+   std::promise<void> m_initPromise;
+   std::future<void> m_initFuture;
+   std::atomic<bool> m_provisioningCompleteOrStarted;
