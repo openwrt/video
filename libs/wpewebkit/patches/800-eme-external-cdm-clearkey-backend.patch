@@ -103,7 +103,7 @@ value stays the raw key bytes, so KeyHandleValueVariant is unchanged.
 
 --- a/Source/WebCore/platform/SourcesGStreamer.txt
 +++ b/Source/WebCore/platform/SourcesGStreamer.txt
-@@ -82,11 +82,14 @@ platform/graphics/gstreamer/VideoTrackPr
+@@ -83,11 +83,14 @@ platform/graphics/gstreamer/VideoTrackPr
  platform/graphics/gstreamer/WebKitAudioSinkGStreamer.cpp
  platform/graphics/gstreamer/WebKitWebSourceGStreamer.cpp
  

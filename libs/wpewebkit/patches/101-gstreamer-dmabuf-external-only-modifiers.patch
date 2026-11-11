@@ -1,0 +1,136 @@
+From 2a671e15c1ba18b108ecc3d730aaff2be198725b Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 17:16:06 +0000
+Subject: [PATCH] [GStreamer][GBM] Video in an external-only DMA-BUF layout
+ shows no picture
+
+https://bugs.webkit.org/show_bug.cgi?id=331206
+
+Reviewed by NOBODY (OOPS!).
+
+GLDisplay::bufferFormatsForVideo() lists every modifier that
+eglQueryDmaBufModifiersEXT() reports for the video formats, and
+buildDMABufCaps() offers all of them to the decoder as DMA_DRM caps.
+The compositor imports a YUV frame one plane at a time, as R8, GR88,
+R16 or GR1616 images bound to GL_TEXTURE_2D, and an RGB frame as one
+image bound the same way. EGL reports some modifiers as external-only,
+which GL can sample only through GL_TEXTURE_EXTERNAL_OES. Mesa's v3d
+driver does so for the Broadcom SAND128 column layout that the
+Raspberry Pi HEVC decoder writes. When a decoder negotiates such a
+modifier, every plane import fails and the video shows no picture.
+
+Offer a modifier for a video format only when EGL can sample every
+format the frame is imported as, with that modifier, as a 2D texture.
+A decoder producing an external-only layout then negotiates with
+glupload, which imports it as an external texture and converts it.
+
+* Source/WebCore/platform/graphics/egl/GLDisplay.cpp:
+(WebCore::isModifierSampledAsTexture2D):
+(WebCore::GLDisplay::bufferFormatsForVideo):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp:
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::importFormats):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h:
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../platform/graphics/egl/GLDisplay.cpp       | 42 +++++++++++++++++++
+ .../CoordinatedPlatformLayerBufferDMABuf.cpp  | 11 +++++
+ .../CoordinatedPlatformLayerBufferDMABuf.h    |  2 +
+ 3 files changed, 55 insertions(+)
+
+--- a/Source/WebCore/platform/graphics/egl/GLDisplay.cpp
++++ b/Source/WebCore/platform/graphics/egl/GLDisplay.cpp
+@@ -45,6 +45,10 @@
+ #include <drm_fourcc.h>
+ #endif
+ 
++#if USE(GBM) && USE(GSTREAMER)
++#include "CoordinatedPlatformLayerBufferDMABuf.h"
++#endif
++
+ #if !USE(LIBEPOXY)
+ typedef EGLImage (EGLAPIENTRYP PFNEGLCREATEIMAGEPROC) (EGLDisplay, EGLContext, EGLenum, EGLClientBuffer, const EGLAttrib*);
+ typedef EGLBoolean (EGLAPIENTRYP PFNEGLDESTROYIMAGEPROC) (EGLDisplay, EGLImage);
+@@ -293,6 +297,31 @@ const Vector<GLDisplay::BufferFormat>& G
+ }
+ 
+ #if USE(GSTREAMER)
++static bool isModifierSampledAsTexture2D(EGLDisplay eglDisplay, uint32_t format, uint64_t modifier)
++{
++    if (modifier == DRM_FORMAT_MOD_INVALID)
++        return true;
++
++    static PFNEGLQUERYDMABUFMODIFIERSEXTPROC s_eglQueryDmaBufModifiersEXT = reinterpret_cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(eglGetProcAddress("eglQueryDmaBufModifiersEXT"));
++    if (!s_eglQueryDmaBufModifiersEXT)
++        return false;
++
++    EGLint modifiersCount;
++    if (!s_eglQueryDmaBufModifiersEXT(eglDisplay, format, 0, nullptr, nullptr, &modifiersCount) || !modifiersCount)
++        return false;
++
++    Vector<EGLuint64KHR> modifiers(modifiersCount);
++    Vector<EGLBoolean> externalOnly(modifiersCount);
++    if (!s_eglQueryDmaBufModifiersEXT(eglDisplay, format, modifiersCount, modifiers.mutableSpan().data(), externalOnly.mutableSpan().data(), &modifiersCount))
++        return false;
++
++    for (EGLint i = 0; i < modifiersCount; ++i) {
++        if (modifiers[i] == modifier)
++            return !externalOnly[i];
++    }
++    return false;
++}
++
+ const Vector<GLDisplay::BufferFormat>& GLDisplay::bufferFormatsForVideo()
+ {
+     Locker locker { m_bufferFormatsForVideoLock };
+@@ -306,6 +335,19 @@ const Vector<GLDisplay::BufferFormat>& G
+                 DRM_FORMAT_YUV444, DRM_FORMAT_YUV411, DRM_FORMAT_YUV422, DRM_FORMAT_P010
+             };
+             m_bufferFormatsForVideo = queryDMABufFormats(m_display, s_supportedFormats, m_extensions.EXT_image_dma_buf_import_modifiers);
++
++            // The texture mapper binds every imported plane to GL_TEXTURE_2D, which an external-only modifier does not allow.
++            for (auto& format : m_bufferFormatsForVideo) {
++                auto importFormats = CoordinatedPlatformLayerBufferDMABuf::importFormats(format.fourcc.value);
++                format.modifiers.removeAllMatching([&](uint64_t modifier) {
++                    return !std::ranges::all_of(importFormats, [&](uint32_t importFormat) {
++                        return isModifierSampledAsTexture2D(m_display, importFormat, modifier);
++                    });
++                });
++            }
++            m_bufferFormatsForVideo.removeAllMatching([](const BufferFormat& format) {
++                return format.modifiers.isEmpty();
++            });
+         }
+         m_bufferFormatsForVideoInitialized = true;
+     }
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+@@ -167,6 +167,17 @@ static const HashMap<uint32_t, Vector<YU
+     return yuvFormatsMap;
+ }
+ 
++Vector<uint32_t> CoordinatedPlatformLayerBufferDMABuf::importFormats(uint32_t fourcc)
++{
++    const auto& iter = yuvFormatPlaneInfo().find(fourcc);
++    if (iter == yuvFormatPlaneInfo().end())
++        return { fourcc };
++
++    return iter->value.map([](const YUVPlaneInfo& plane) {
++        return plane.fourcc;
++    });
++}
++
+ static CoordinatedPlatformLayerBufferYUV::Format yuvFormatFromDRMFourcc(uint32_t fourcc)
+ {
+     switch (fourcc) {
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
+@@ -44,6 +44,8 @@ public:
+     CoordinatedPlatformLayerBufferDMABuf(Ref<DMABufBuffer>&&, OptionSet<TextureMapperFlags>, WTF::UnixFileDescriptor&&);
+     virtual ~CoordinatedPlatformLayerBufferDMABuf();
+ 
++    static Vector<uint32_t> importFormats(uint32_t fourcc);
++
+     // Provides CPU-readable rows for a YUV plane whose standalone DMABuf import the GPU
+     // rejected, so the plane can be repacked at an accepted stride. Set by the owner that
+     // has access to the source frame; invoked only when a plane's zero-copy import fails.

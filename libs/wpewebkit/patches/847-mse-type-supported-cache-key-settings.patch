@@ -1,0 +1,81 @@
+From 9460989561df7c3418efc92fc423a54576eb9d21 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 10:10:48 +0200
+Subject: [PATCH] [MSE] Key the isTypeSupported() cache by the settings it
+ depends on
+
+MediaSource.isTypeSupported() caches its answer per web process by the
+raw type alone, but the answer depends on the document's
+media-content-types-requiring-hardware-support and allowed media type
+settings. An answer computed under one setting is reused after the
+setting changes and by documents with other settings. The cache key now
+carries the type together with those settings.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../Modules/mediasource/MediaSource.cpp       | 33 +++++++++++++++++--
+ 1 file changed, 31 insertions(+), 2 deletions(-)
+
+--- a/Source/WebCore/Modules/mediasource/MediaSource.cpp
++++ b/Source/WebCore/Modules/mediasource/MediaSource.cpp
+@@ -76,6 +76,7 @@
+ #include <wtf/Scope.h>
+ #include <wtf/TZoneMallocInlines.h>
+ #include <wtf/text/MakeString.h>
++#include <wtf/text/StringBuilder.h>
+ 
+ namespace WebCore {
+ 
+@@ -985,6 +986,33 @@ void MediaSource::removeSourceBufferWith
+     notifyElementUpdateMediaState();
+ }
+ 
++// The answer depends on the settings that fill the parameters as much as on the type.
++static String mediaSourceTypeCacheKey(const MediaEngineSupportParameters& parameters)
++{
++    StringBuilder key;
++    key.append(parameters.type.raw());
++    for (auto& contentType : parameters.contentTypesRequiringHardwareSupport)
++        key.append("\nhardware "_s, contentType.raw());
++
++    if (parameters.allowedMediaContainerTypes) {
++        key.append("\ncontainers"_s);
++        for (auto& containerType : *parameters.allowedMediaContainerTypes)
++            key.append(' ', containerType);
++    }
++
++    auto appendFourCCs = [&](ASCIILiteral label, const std::optional<Vector<FourCC>>& fourCCs) {
++        if (!fourCCs)
++            return;
++        key.append(label);
++        for (auto fourCC : *fourCCs)
++            key.append(' ', fourCC.value);
++    };
++    appendFourCCs("\nvideo"_s, parameters.allowedMediaVideoCodecIDs);
++    appendFourCCs("\naudio"_s, parameters.allowedMediaAudioCodecIDs);
++    appendFourCCs("\ncaptions"_s, parameters.allowedMediaCaptionFormatTypes);
++    return key.toString();
++}
++
+ bool MediaSource::isTypeSupported(ScriptExecutionContext& context, const String& type)
+ {
+     Vector<ContentType> mediaContentTypesRequiringHardwareSupport;
+@@ -1034,7 +1062,8 @@ bool MediaSource::isTypeSupported(Script
+     }
+ 
+     auto& cache = MediaSourceTypeSupportedCache::singleton();
+-    if (auto cached = cache.lookup(contentType.raw()))
++    auto cacheKey = mediaSourceTypeCacheKey(parameters);
++    if (auto cached = cache.lookup(cacheKey))
+         return *cached;
+ 
+     MediaPlayer::SupportsType supported;
+@@ -1048,7 +1077,7 @@ bool MediaSource::isTypeSupported(Script
+     else
+         isSupported = supported == MediaPlayer::SupportsType::IsSupported;
+ 
+-    cache.store(contentType.raw(), isSupported);
++    cache.store(cacheKey, isSupported);
+ 
+     return isSupported;
+ }

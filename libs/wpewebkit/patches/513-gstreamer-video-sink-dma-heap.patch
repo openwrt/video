@@ -1,0 +1,486 @@
+From 962d080c76eb505dfab08465754f91aa30ab35cf Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 10 Nov 2026 16:07:29 +0200
+Subject: [PATCH] [GStreamer] Let a video sink name the dma-heap it imports
+ from
+
+A decoder that writes its pictures into dma-bufs has to allocate them
+from a dma-heap whose buffers the element showing the frames can import:
+a display controller without an IOMMU needs physically contiguous
+memory, other importers take the system heap. Only the sink side can
+tell. Add a GstContext, webkit.dma-heap, through which a video sink
+names that heap by its /dev/dma_heap path together with the number of
+frames it holds before it lets one go, and an allocator for the heap
+whose buffers stay mapped for their lifetime, since a pool maps each of
+them once per frame and mapping a heap buffer remaps all of its pages.
+The context reaches the sink before the decoder is linked to it, so a
+pool can be sized from its first allocation on. The GL video sink
+answers the context with the first heap, the system heap first, from
+which the shared EGL display imports a test buffer, and reports as held
+frames, in the context and in allocation queries, its queue, the appsink
+and the two frames the compositor keeps. The player asks its video sink
+for the context on behalf of an element that is not linked to the sink
+yet.
+
+* Source/WebCore/platform/SourcesGStreamer.txt:
+* Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp:
+(canImportFromDmaHeap):
+(importableDmaHeapDevice):
+(webKitGLVideoSinkHeldFrames):
+(webKitGLVideoSinkDmaHeapProbe):
+(webKitGLVideoSinkConstructed):
+* Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.cpp: Added.
+(webkitDmaHeapAllocatorAlloc):
+(webkitDmaHeapAllocatorConstructed):
+(webkit_dma_heap_allocator_class_init):
+(WebCore::createDmaHeapContext):
+(WebCore::dmaHeapFromContext):
+(WebCore::isDmaHeapContextQuery):
+(WebCore::dmaHeapDevices):
+(WebCore::createDmaHeapAllocator):
+* Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.h: Added.
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp:
+(WebCore::MediaPlayerPrivateGStreamer::answerDmaHeapContext):
+(WebCore::MediaPlayerPrivateGStreamer::handleNeedContextMessage):
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h:
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/platform/SourcesGStreamer.txt  |   1 +
+ .../gstreamer/GLVideoSinkGStreamer.cpp        | 109 +++++++++++-
+ .../graphics/gstreamer/GStreamerDmaHeap.cpp   | 159 ++++++++++++++++++
+ .../graphics/gstreamer/GStreamerDmaHeap.h     |  52 ++++++
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp |  32 ++++
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |   3 +
+ 6 files changed, 355 insertions(+), 1 deletion(-)
+ create mode 100644 Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.cpp
+ create mode 100644 Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.h
+
+--- a/Source/WebCore/platform/SourcesGStreamer.txt
++++ b/Source/WebCore/platform/SourcesGStreamer.txt
+@@ -57,6 +57,7 @@ platform/graphics/gstreamer/GLVideoSinkG
+ platform/graphics/gstreamer/GRefPtrGStreamer.cpp
+ platform/graphics/gstreamer/GStreamerAudioMixer.cpp
+ platform/graphics/gstreamer/GStreamerCommon.cpp
++platform/graphics/gstreamer/GStreamerDmaHeap.cpp
+ platform/graphics/gstreamer/GStreamerRegistryScanner.cpp
+ platform/graphics/gstreamer/GStreamerSinksWorkarounds.cpp
+ platform/graphics/gstreamer/GStreamerVideoFrameConverter.cpp
+--- a/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp
+@@ -33,8 +33,15 @@
+ #include <wtf/glib/WTFGType.h>
+ 
+ #if USE(GBM)
++#include "DMABufBuffer.h"
+ #include "DRMDeviceManager.h"
+ #include "GBMDevice.h"
++#include "GLDisplay.h"
++#include "GStreamerDmaHeap.h"
++#include <drm_fourcc.h>
++#include <gst/allocators/gstdmabuf.h>
++#include <unistd.h>
++#include <wtf/NeverDestroyed.h>
+ #endif
+ 
+ // gstglapi.h may include eglplatform.h and it includes X.h, which
+@@ -113,6 +120,99 @@ static void initializeDMABufAvailability
+             s_isDMABufDisabled = true;
+     });
+ }
++
++// The compositor keeps the frame it shows and the one waiting to replace it (CoordinatedPlatformLayerBufferProxy).
++static constexpr unsigned compositorHeldFrames = 2;
++
++static bool canImportFromDmaHeap(const CString& device)
++{
++    auto& display = PlatformDisplay::sharedDisplay();
++    if (!display.eglExtensions().EXT_image_dma_buf_import)
++        return false;
++
++    GRefPtr<GstAllocator> allocator = createDmaHeapAllocator(device);
++    if (!allocator)
++        return false;
++
++    // One page as a single XRGB8888 row: a heap hands out whole pages, and a pitch of one page meets
++    // any pitch alignment an importer asks for.
++    static constexpr long bytesPerPixel = 4;
++    long pageSize = sysconf(_SC_PAGESIZE);
++    GstMemory* memory = gst_allocator_alloc(allocator.get(), pageSize, nullptr);
++    if (!memory)
++        return false;
++
++    DMABufBuffer::Attributes attributes;
++    attributes.size = IntSize(static_cast<int>(pageSize / bytesPerPixel), 1);
++    attributes.fourcc = FourCC(DRM_FORMAT_XRGB8888);
++    attributes.fds.append(WTF::UnixFileDescriptor { gst_dmabuf_memory_get_fd(memory), WTF::UnixFileDescriptor::Duplicate });
++    attributes.offsets.append(0);
++    attributes.strides.append(static_cast<uint32_t>(pageSize));
++    attributes.modifier = DRM_FORMAT_MOD_LINEAR;
++
++    auto image = DMABufBuffer::createEGLImage(display.glDisplay(), attributes);
++    gst_memory_unref(memory);
++    if (!image)
++        return false;
++
++    display.glDisplay().destroyImage(image);
++    return true;
++}
++
++static const CString& importableDmaHeapDevice()
++{
++    static NeverDestroyed<CString> device;
++    static std::once_flag onceFlag;
++    std::call_once(onceFlag, [] {
++        for (auto& candidate : dmaHeapDevices()) {
++            if (!canImportFromDmaHeap(candidate))
++                continue;
++
++            GST_INFO("EGL imports dma-bufs from %s", candidate.data());
++            device.get() = candidate;
++            return;
++        }
++    });
++    return device.get();
++}
++
++static unsigned webKitGLVideoSinkHeldFrames(WebKitGLVideoSink* sink)
++{
++    auto* priv = sink->priv;
++    guint queuedFrames;
++    guint pendingFrames;
++    g_object_get(priv->queue.get(), "max-size-buffers", &queuedFrames, nullptr);
++    g_object_get(priv->appSink.get(), "max-buffers", &pendingFrames, nullptr);
++    return queuedFrames + pendingFrames + compositorHeldFrames;
++}
++
++static GstPadProbeReturn webKitGLVideoSinkDmaHeapProbe(GstPad* pad, GstPadProbeInfo* info, gpointer)
++{
++    auto* query = GST_PAD_PROBE_INFO_QUERY(info);
++    bool isPushPhase = GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_PUSH;
++
++    if (isPushPhase ? !isDmaHeapContextQuery(query) : GST_QUERY_TYPE(query) != GST_QUERY_ALLOCATION)
++        return GST_PAD_PROBE_OK;
++
++    GRefPtr sink = adoptGRef(gst_pad_get_parent_element(pad));
++    if (!sink)
++        return GST_PAD_PROBE_OK;
++
++    if (isPushPhase) {
++        const auto& device = importableDmaHeapDevice();
++        if (device.isNull())
++            return GST_PAD_PROBE_OK;
++
++        GRefPtr<GstContext> context = createDmaHeapContext({ device, webKitGLVideoSinkHeldFrames(WEBKIT_GL_VIDEO_SINK(sink.get())) });
++        gst_query_set_context(query, context.get());
++        GST_PAD_PROBE_INFO_FLOW_RETURN(info) = GST_FLOW_OK;
++        return GST_PAD_PROBE_HANDLED;
++    }
++
++    // Upstream pools need as many buffers as this sink can hold before it lets one go.
++    gst_query_add_allocation_pool(query, nullptr, 0, webKitGLVideoSinkHeldFrames(WEBKIT_GL_VIDEO_SINK(sink.get())), 0);
++    return GST_PAD_PROBE_OK;
++}
+ #endif
+ 
+ static void webKitGLVideoSinkConstructed(GObject* object)
+@@ -235,7 +335,14 @@ static void webKitGLVideoSinkConstructed
+     }
+ 
+     g_object_set(sink->priv->appSink.get(), "caps", caps.get(), nullptr);
+-    gst_element_add_pad(GST_ELEMENT_CAST(sink), gst_ghost_pad_new("sink", sinkPad.get()));
++    GstPad* ghostPad = gst_ghost_pad_new("sink", sinkPad.get());
++#if USE(GBM)
++    if (!s_isDMABufDisabled) {
++        importableDmaHeapDevice();
++        gst_pad_add_probe(ghostPad, GST_PAD_PROBE_TYPE_QUERY_DOWNSTREAM, webKitGLVideoSinkDmaHeapProbe, nullptr, nullptr);
++    }
++#endif
++    gst_element_add_pad(GST_ELEMENT_CAST(sink), ghostPad);
+ }
+ 
+ static GstStateChangeReturn webKitGLVideoSinkChangeState(GstElement* element, GstStateChange transition)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.cpp
+@@ -0,0 +1,159 @@
++/*
++ * Copyright (C) 2026 Daniel Golle <daniel@makrotopia.org>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++
++#include "config.h"
++#include "GStreamerDmaHeap.h"
++
++#if USE(GSTREAMER) && OS(LINUX)
++
++#include "GStreamerCommon.h"
++#include <algorithm>
++#include <fcntl.h>
++#include <gst/allocators/gstdmabuf.h>
++#include <linux/dma-heap.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++#include <wtf/FileSystem.h>
++#include <wtf/glib/WTFGType.h>
++#include <wtf/text/StringView.h>
++
++GST_DEBUG_CATEGORY_STATIC(webkit_dma_heap_debug);
++#define GST_CAT_DEFAULT webkit_dma_heap_debug
++
++struct WebKitDmaHeapAllocatorPrivate {
++    ~WebKitDmaHeapAllocatorPrivate()
++    {
++        if (heapFd >= 0)
++            close(heapFd);
++    }
++
++    int heapFd { -1 };
++};
++
++typedef struct {
++    GstDmaBufAllocator parent;
++    WebKitDmaHeapAllocatorPrivate* priv;
++} WebKitDmaHeapAllocator;
++
++typedef struct {
++    GstDmaBufAllocatorClass parentClass;
++} WebKitDmaHeapAllocatorClass;
++
++GType webkit_dma_heap_allocator_get_type();
++
++WEBKIT_DEFINE_TYPE_WITH_CODE(WebKitDmaHeapAllocator, webkit_dma_heap_allocator, GST_TYPE_DMABUF_ALLOCATOR,
++    GST_DEBUG_CATEGORY_INIT(webkit_dma_heap_debug, "webkitdmaheap", 0, "WebKit dma-heap allocator"))
++
++static GstMemory* webkitDmaHeapAllocatorAlloc(GstAllocator* allocator, gsize size, GstAllocationParams*)
++{
++    auto* self = reinterpret_cast<WebKitDmaHeapAllocator*>(allocator);
++    struct dma_heap_allocation_data allocation = { };
++
++    allocation.len = size;
++    allocation.fd_flags = O_RDWR | O_CLOEXEC;
++    if (ioctl(self->priv->heapFd, DMA_HEAP_IOCTL_ALLOC, &allocation) < 0) {
++        GST_WARNING_OBJECT(allocator, "cannot allocate %" G_GSIZE_FORMAT " bytes: %s", size, g_strerror(errno));
++        return nullptr;
++    }
++    // A pooled buffer is mapped once per frame; mapping a heap buffer remaps every page of it.
++    return gst_dmabuf_allocator_alloc_with_flags(allocator, allocation.fd, size, GST_FD_MEMORY_FLAG_KEEP_MAPPED);
++}
++
++static void webkitDmaHeapAllocatorConstructed(GObject* object)
++{
++    G_OBJECT_CLASS(webkit_dma_heap_allocator_parent_class)->constructed(object);
++
++    // GstFdAllocator only wraps descriptors it is given; this one allocates them itself.
++    GST_OBJECT_FLAG_UNSET(object, GST_ALLOCATOR_FLAG_CUSTOM_ALLOC);
++}
++
++static void webkit_dma_heap_allocator_class_init(WebKitDmaHeapAllocatorClass* klass)
++{
++    G_OBJECT_CLASS(klass)->constructed = webkitDmaHeapAllocatorConstructed;
++    GST_ALLOCATOR_CLASS(klass)->alloc = webkitDmaHeapAllocatorAlloc;
++}
++
++namespace WebCore {
++
++GRefPtr<GstContext> createDmaHeapContext(const DmaHeapContext& heap)
++{
++    GRefPtr context = adoptGRef(gst_context_new(WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters(), FALSE));
++    gst_structure_set(gst_context_writable_structure(context.get()), "device", G_TYPE_STRING, heap.device.data(),
++        "held-frames", G_TYPE_UINT, heap.heldFrames, nullptr);
++    return context;
++}
++
++// A pool sized without the sink's held-frames could hand it fewer buffers than it keeps, so an answer
++// that lacks them counts as none.
++std::optional<DmaHeapContext> dmaHeapFromContext(GstContext* context)
++{
++    if (!context || !gst_context_has_context_type(context, WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters()))
++        return std::nullopt;
++
++    const GstStructure* structure = gst_context_get_structure(context);
++    const char* device = gst_structure_get_string(structure, "device");
++    auto heldFrames = gstStructureGet<unsigned>(structure, "held-frames"_s);
++    if (!device || !heldFrames)
++        return std::nullopt;
++    return DmaHeapContext { CString(device), *heldFrames };
++}
++
++bool isDmaHeapContextQuery(GstQuery* query)
++{
++    const char* contextType;
++    if (GST_QUERY_TYPE(query) != GST_QUERY_CONTEXT || !gst_query_parse_context_type(query, &contextType))
++        return false;
++    return !g_strcmp0(contextType, WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters());
++}
++
++// The system heap comes first: it needs no physically contiguous memory, which is scarce.
++Vector<CString> dmaHeapDevices()
++{
++    static constexpr auto heapDirectory = "/dev/dma_heap"_s;
++    static constexpr auto systemHeap = "system"_s;
++
++    auto names = FileSystem::listDirectory(heapDirectory);
++    std::ranges::sort(names, [&](const String& a, const String& b) {
++        if ((a == systemHeap) != (b == systemHeap))
++            return a == systemHeap;
++        return codePointCompareLessThan(a, b);
++    });
++
++    return names.map([&](const String& name) {
++        return FileSystem::pathByAppendingComponent(heapDirectory, name).utf8();
++    });
++}
++
++GRefPtr<GstAllocator> createDmaHeapAllocator(const CString& device)
++{
++    int heapFd = open(device.data(), O_RDWR | O_CLOEXEC);
++    if (heapFd < 0)
++        return nullptr;
++
++    GRefPtr<GstAllocator> allocator = GST_ALLOCATOR_CAST(g_object_new(webkit_dma_heap_allocator_get_type(), nullptr));
++    reinterpret_cast<WebKitDmaHeapAllocator*>(allocator.get())->priv->heapFd = heapFd;
++    GST_DEBUG_OBJECT(allocator.get(), "allocating from %s", device.data());
++    return allocator;
++}
++
++} // namespace WebCore
++
++#undef GST_CAT_DEFAULT
++
++#endif // USE(GSTREAMER) && OS(LINUX)
+--- /dev/null
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerDmaHeap.h
+@@ -0,0 +1,52 @@
++/*
++ * Copyright (C) 2026 Daniel Golle <daniel@makrotopia.org>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++
++#pragma once
++
++#if USE(GSTREAMER) && OS(LINUX)
++
++#include "GRefPtrGStreamer.h"
++#include <gst/gst.h>
++#include <optional>
++#include <wtf/Vector.h>
++#include <wtf/text/ASCIILiteral.h>
++#include <wtf/text/CString.h>
++
++namespace WebCore {
++
++// A video sink answers a CONTEXT query of this type with the dma-heap ("device", a /dev/dma_heap
++// path) whose buffers the element showing its frames can import, and the number of frames it holds
++// before it lets one go ("held-frames", a uint).
++static constexpr auto WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME = "webkit.dma-heap"_s;
++
++struct DmaHeapContext {
++    CString device;
++    unsigned heldFrames { 0 };
++};
++
++GRefPtr<GstContext> createDmaHeapContext(const DmaHeapContext&);
++std::optional<DmaHeapContext> dmaHeapFromContext(GstContext*);
++bool isDmaHeapContextQuery(GstQuery*);
++
++Vector<CString> dmaHeapDevices();
++GRefPtr<GstAllocator> createDmaHeapAllocator(const CString& device);
++
++} // namespace WebCore
++
++#endif // USE(GSTREAMER) && OS(LINUX)
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -33,6 +33,7 @@
+ #include "GStreamerAudioMixer.h"
+ #include "GStreamerCaptureDeviceManager.h"
+ #include "GStreamerCommon.h"
++#include "GStreamerDmaHeap.h"
+ #include "GStreamerQuirks.h"
+ #include "GStreamerRegistryScanner.h"
+ #include "GraphicsContext.h"
+@@ -2024,6 +2025,32 @@ void MediaPlayerPrivateGStreamer::handle
+     GST_DEBUG_OBJECT(pipeline(), "Updating tracks DONE");
+ }
+ 
++#if OS(LINUX)
++// The decoder's own CONTEXT query reaches the video sink only once playbin3 has linked them.
++bool MediaPlayerPrivateGStreamer::answerDmaHeapContext(GstElement* element)
++{
++    GRefPtr<GstElement> videoSink = m_holePunchVideoSinkBin ? m_holePunchVideoSinkBin : m_videoSink;
++    if (!videoSink)
++        return false;
++
++    GRefPtr sinkPad = adoptGRef(gst_element_get_static_pad(videoSink.get(), "sink"));
++    if (!sinkPad)
++        return false;
++
++    GRefPtr query = adoptGRef(gst_query_new_context(WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME.characters()));
++    if (!gst_pad_query(sinkPad.get(), query.get()))
++        return false;
++
++    GstContext* context = nullptr;
++    gst_query_parse_context(query.get(), &context);
++    if (!context)
++        return false;
++
++    gst_element_set_context(element, context);
++    return true;
++}
++#endif
++
+ bool MediaPlayerPrivateGStreamer::handleNeedContextMessage(GstMessage* message)
+ {
+     ASSERT(GST_MESSAGE_TYPE(message) == GST_MESSAGE_NEED_CONTEXT);
+@@ -2045,6 +2072,11 @@ bool MediaPlayerPrivateGStreamer::handle
+         return true;
+     }
+ 
++#if OS(LINUX)
++    if (contextType == WEBKIT_DMA_HEAP_CONTEXT_TYPE_NAME)
++        return answerDmaHeapContext(GST_ELEMENT(GST_MESSAGE_SRC(message)));
++#endif
++
+ #if ENABLE(ENCRYPTED_MEDIA)
+     if (contextType == "drm-preferred-decryption-system-id"_s) {
+         initializationDataEncountered(parseInitDataFromProtectionMessage(message));
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -218,6 +218,9 @@ public:
+     // Append pipeline interface
+     // FIXME: Use the client interface pattern, AppendPipeline does not need the full interface to this class just for this function.
+     bool handleNeedContextMessage(GstMessage*);
++#if OS(LINUX)
++    bool answerDmaHeapContext(GstElement*);
++#endif
+ 
+     void handleStreamCollectionMessage(GstMessage*);
+     void handleMessage(GstMessage*);

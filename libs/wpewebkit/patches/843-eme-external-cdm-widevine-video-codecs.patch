@@ -1,0 +1,204 @@
+From 1189970c1d9ca33959a261537078e1ac94dcbfb4 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:53:20 +0200
+Subject: [PATCH] [EME] external CDM: claim the video codecs the Widevine CDM
+ decodes
+
+Encrypted Widevine video in MP4 goes to webkitexternalcdmvideodec, which
+has the CDM decrypt and decode it, so the media engine's decoders and
+the hardware-support setting say nothing about it. The external CDM now
+claims a video/mp4 content type when every codec in it is one the
+Widevine CDM decodes: the codecs its manifest.json next to the library
+lists in x-cdm-codecs, which is where Chromium takes them from, and
+which the decoder hands to the CDM. The web process sandbox binds that
+manifest.json read-only when it exists. Without a manifest, the codecs
+the decoder hands to the CDM are claimed. Encrypted WebM video reaches
+the decryptor, and the Widevine CDM decrypts video only while decoding
+it, so requestMediaKeySystemAccess() refuses Widevine video in WebM,
+whatever decoders the media engine has.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../graphics/gstreamer/eme/CDMExternalCDM.cpp | 71 ++++++++++++++++++-
+ .../graphics/gstreamer/eme/CDMExternalCDM.h   |  3 +
+ ...WebKitExternalCDMVideoDecoderGStreamer.cpp |  5 ++
+ .../WebKitExternalCDMVideoDecoderGStreamer.h  |  4 ++
+ .../Launcher/glib/BubblewrapLauncher.cpp      |  2 +
+ 5 files changed, 84 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.cpp
+@@ -41,6 +41,7 @@
+ #include "GStreamerCommon.h"
+ #include "GStreamerEMEUtilities.h"
+ #include "Logging.h"
++#include "WebKitExternalCDMVideoDecoderGStreamer.h"
+ #include <cstdlib>
+ #include <ranges>
+ #include <wtf/FileSystem.h>
+@@ -89,6 +90,55 @@ static CDMInstanceSession::KeyStatus key
+     }
+ }
+ 
++static String mediaTypeFromCodec(const String& codec)
++{
++    auto caps = capsFromMimeCodec(codec);
++    if (!caps || gst_caps_is_empty(caps.get()))
++        return { };
++    return String::fromLatin1(gst_structure_get_name(gst_caps_get_structure(caps.get(), 0)));
++}
++
++// The CDM's codecs are those its manifest lists, as Chromium reads them.
++static std::optional<Vector<String>> widevineManifestCodecs(const String& blobPath)
++{
++    auto manifest = FileSystem::readEntireFile(FileSystem::pathByAppendingComponent(FileSystem::parentPath(blobPath), "manifest.json"_s));
++    if (!manifest)
++        return std::nullopt;
++
++    RefPtr value = JSON::Value::parseJSON(String::fromUTF8(manifest->span()));
++    RefPtr object = value ? value->asObject() : nullptr;
++    if (!object)
++        return std::nullopt;
++
++    String codecs = object->getString("x-cdm-codecs"_s);
++    if (codecs.isEmpty())
++        return std::nullopt;
++    return codecs.split(',');
++}
++
++static Vector<String> claimedWidevineVideoMediaTypes(const String& blobPath)
++{
++    auto manifestCodecs = widevineManifestCodecs(blobPath);
++    Vector<String> mediaTypes;
++    for (auto decoderMediaType : webkitExternalCDMVideoDecoderMediaTypes()) {
++        String mediaType = decoderMediaType;
++        if (manifestCodecs && !manifestCodecs->containsIf([&](auto& codec) { return mediaTypeFromCodec(codec) == mediaType; }))
++            continue;
++        mediaTypes.append(WTF::move(mediaType));
++    }
++    return mediaTypes;
++}
++
++static bool widevineDecodesVideoMediaType(const String& mediaType)
++{
++    return CDMFactoryExternalCDM::singleton().widevineVideoMediaTypes().contains(mediaType);
++}
++
++static bool hasWebMContainer(const CDMMediaCapability& capability)
++{
++    return equalLettersIgnoringASCIICase(ContentType(capability.contentType).containerType(), "video/webm"_s);
++}
++
+ CDMFactoryExternalCDM& CDMFactoryExternalCDM::singleton()
+ {
+     static std::once_flag onceFlag;
+@@ -107,8 +157,10 @@ CDMFactoryExternalCDM::CDMFactoryExterna
+     // the Chromium CDM blob is present; it is loaded lazily per instance.
+     m_supportedKeySystems.append(String::fromLatin1(GStreamerEMEUtilities::s_ClearKeyKeySystem));
+ 
+-    if (FileSystem::fileExists(widevineBlobPath()))
++    if (FileSystem::fileExists(widevineBlobPath())) {
+         m_supportedKeySystems.append(String::fromLatin1(GStreamerEMEUtilities::s_WidevineKeySystem));
++        m_widevineVideoMediaTypes = claimedWidevineVideoMediaTypes(widevineBlobPath());
++    }
+ }
+ 
+ std::unique_ptr<CDMPrivate> CDMFactoryExternalCDM::createCDM(const String& keySystem, const String& mediaKeysHashSalt, const CDMPrivateClient&)
+@@ -179,6 +231,9 @@ bool CDMPrivateExternalCDM::supportsConf
+             || (!isWidevine() && !containsPersistentLicenseType(configuration.sessionTypes))))
+         return false;
+ 
++    if (isWidevine() && std::ranges::any_of(configuration.videoCapabilities, hasWebMContainer))
++        return false;
++
+     return true;
+ }
+ 
+@@ -263,6 +318,20 @@ RefPtr<SharedBuffer> CDMPrivateExternalC
+     return response.makeContiguous();
+ }
+ 
++bool CDMPrivateExternalCDM::decodesVideoContentType(const ContentType& contentType) const
++{
++    if (!isWidevine() || !equalLettersIgnoringASCIICase(contentType.containerType(), "video/mp4"_s))
++        return false;
++
++    auto codecs = contentType.codecs();
++    if (codecs.isEmpty())
++        return false;
++
++    return std::ranges::all_of(codecs, [](auto& codec) {
++        return widevineDecodesVideoMediaType(mediaTypeFromCodec(codec));
++    });
++}
++
+ std::optional<String> CDMPrivateExternalCDM::sanitizeSessionId(const String& sessionId) const
+ {
+     if (isWidevine())
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.h
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/CDMExternalCDM.h
+@@ -66,11 +66,13 @@ public:
+     RefPtr<CDMProxy> createCDMProxy(const String&) final;
+     bool supportsKeySystem(const String&) final;
+     const Vector<String>& supportedKeySystems() const LIFETIME_BOUND { return m_supportedKeySystems; }
++    const Vector<String>& widevineVideoMediaTypes() const LIFETIME_BOUND { return m_widevineVideoMediaTypes; }
+ 
+ private:
+     friend class NeverDestroyed<CDMFactoryExternalCDM>;
+     CDMFactoryExternalCDM();
+     Vector<String> m_supportedKeySystems;
++    Vector<String> m_widevineVideoMediaTypes;
+ };
+ 
+ class CDMPrivateExternalCDM final : public CDMPrivate {
+@@ -95,6 +97,7 @@ public:
+     bool supportsInitData(const String&, const SharedBuffer&) const final;
+     RefPtr<SharedBuffer> sanitizeResponse(const SharedBuffer&) const final;
+     std::optional<String> sanitizeSessionId(const String&) const final;
++    bool decodesVideoContentType(const ContentType&) const final;
+ 
+ private:
+     bool isWidevine() const;
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.cpp
+@@ -404,6 +404,11 @@ bool ExternalCDMVideoDecoderClient::isAb
+     return priv->isFlushing || priv->isStopped || priv->isParking;
+ }
+ 
++std::span<const ASCIILiteral> webkitExternalCDMVideoDecoderMediaTypes()
++{
++    return s_decodableMediaTypes;
++}
++
+ static GRefPtr<GstCaps> createSinkPadTemplateCaps()
+ {
+     GRefPtr<GstCaps> caps = adoptGRef(gst_caps_new_empty());
+--- a/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/eme/WebKitExternalCDMVideoDecoderGStreamer.h
+@@ -23,6 +23,8 @@
+ #if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
+ 
+ #include <gst/video/gstvideodecoder.h>
++#include <span>
++#include <wtf/text/ASCIILiteral.h>
+ 
+ G_BEGIN_DECLS
+ 
+@@ -47,4 +49,6 @@ struct _WebKitExternalCDMVideoDecoderCla
+ 
+ G_END_DECLS
+ 
++std::span<const WTF::ASCIILiteral> webkitExternalCDMVideoDecoderMediaTypes();
++
+ #endif // ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM) && USE(GSTREAMER)
+--- a/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
++++ b/Source/WebKit/UIProcess/Launcher/glib/BubblewrapLauncher.cpp
+@@ -477,6 +477,8 @@ static void bindExternalCDM(Vector<CStri
+     if (!cdmPath || !*cdmPath)
+         return;
+     bindIfExists(args, cdmPath);
++    auto manifestPath = FileSystem::pathByAppendingComponent(FileSystem::parentPath(FileSystem::stringFromFileSystemRepresentation(cdmPath)), "manifest.json"_s);
++    bindIfExists(args, manifestPath.utf8().data());
+ 
+     // The video the CDM decodes goes into buffers from the dma-heap the video sink can import from.
+     args.appendList({ "--dev-bind-try", "/dev/dma_heap", "/dev/dma_heap" });

@@ -1,0 +1,77 @@
+From f0c40055795e135f92b373124a7bf53f1711702a Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 11 Nov 2026 09:18:13 +0200
+Subject: [PATCH] [EME] Apply the hardware-support setting to key system
+ capabilities
+
+requestMediaKeySystemAccess() checks each requested capability with
+MediaPlayer::supportsType() for the content type alone, so a codec that
+the media-content-types-requiring-hardware-support setting reserves for
+hardware decoders is accepted whenever a software decoder exists, while
+canPlayType() and MediaSource.isTypeSupported() refuse it. After
+decryption such a stream goes to the same decoders as clear media, so
+the capability check now carries the document's setting as well.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/Modules/encryptedmedia/CDM.cpp         | 1 +
+ Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp | 5 ++++-
+ Source/WebCore/platform/encryptedmedia/CDMPrivate.h   | 6 ++++++
+ 3 files changed, 11 insertions(+), 1 deletion(-)
+
+--- a/Source/WebCore/Modules/encryptedmedia/CDM.cpp
++++ b/Source/WebCore/Modules/encryptedmedia/CDM.cpp
+@@ -105,6 +105,7 @@ void CDM::getSupportedConfiguration(Medi
+     bool isEphemeral = !page || page->sessionID().isEphemeral();
+     if (isEphemeral || document->canAccessResource(ScriptExecutionContext::ResourceType::LocalStorage) == ScriptExecutionContext::HasResourceAccess::No)
+         access = CDMPrivate::LocalStorageAccess::NotAllowed;
++    m_private->setContentTypesRequiringHardwareSupport(document->settings().mediaContentTypesRequiringHardwareSupport());
+     m_private->getSupportedConfiguration(WTF::move(candidateConfiguration), access, WTF::move(callback));
+ }
+ 
+--- a/Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp
++++ b/Source/WebCore/platform/encryptedmedia/CDMPrivate.cpp
+@@ -423,7 +423,10 @@ std::optional<Vector<CDMMediaCapability>
+         // 3.13. If the user agent and implementation definitely support playback of encrypted media data for the
+         //       combination of container, media types, robustness and local accumulated configuration in combination
+         //       with restrictions:
+-        MediaEngineSupportParameters parameters { .type = ContentType(contentType->contentType()) };
++        MediaEngineSupportParameters parameters {
++            .type = ContentType(contentType->contentType()),
++            .contentTypesRequiringHardwareSupport = m_contentTypesRequiringHardwareSupport,
++        };
+         if (MediaPlayer::supportsType(parameters) == MediaPlayer::SupportsType::IsNotSupported) {
+             // Try with Media Source:
+             parameters.platformType = PlatformMediaDecodingType::MediaSource;
+--- a/Source/WebCore/platform/encryptedmedia/CDMPrivate.h
++++ b/Source/WebCore/platform/encryptedmedia/CDMPrivate.h
+@@ -30,9 +30,11 @@
+ #include <WebCore/CDMInstance.h>
+ #include <WebCore/CDMRequirement.h>
+ #include <WebCore/CDMSessionType.h>
++#include <WebCore/ContentType.h>
+ #include <wtf/CheckedPtr.h>
+ #include <wtf/Forward.h>
+ #include <wtf/TZoneMalloc.h>
++#include <wtf/Vector.h>
+ #include <wtf/WeakPtr.h>
+ 
+ #if !RELEASE_LOG_DISABLED
+@@ -76,6 +78,7 @@ public:
+ 
+     using SupportedConfigurationCallback = Function<void(std::optional<CDMKeySystemConfiguration>)>;
+     WEBCORE_EXPORT virtual void getSupportedConfiguration(CDMKeySystemConfiguration&& candidateConfiguration, LocalStorageAccess, SupportedConfigurationCallback&&);
++    void setContentTypesRequiringHardwareSupport(const Vector<ContentType>& contentTypes) { m_contentTypesRequiringHardwareSupport = contentTypes; }
+ 
+     virtual Vector<String> supportedInitDataTypes() const = 0;
+     virtual bool supportsConfiguration(const CDMKeySystemConfiguration&) const = 0;
+@@ -120,6 +123,9 @@ protected:
+ 
+     using ConsentStatusCallback = Function<void(ConsentStatus, CDMKeySystemConfiguration&&, CDMRestrictions&&)>;
+     void getConsentStatus(CDMKeySystemConfiguration&& accumulatedConfiguration, CDMRestrictions&&, LocalStorageAccess, ConsentStatusCallback&&);
++
++private:
++    Vector<ContentType> m_contentTypesRequiringHardwareSupport;
+ };
+ 
+ }

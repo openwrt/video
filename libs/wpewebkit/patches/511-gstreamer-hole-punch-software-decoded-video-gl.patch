@@ -1,0 +1,359 @@
+From 7b0f011ba09d98f65c16b9041f95365a0ac03ea1 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Tue, 10 Nov 2026 11:21:31 +0200
+Subject: [PATCH] [GStreamer] Let a hole-punch quirk leave software-decoded
+ video to GL
+
+A hole-punch quirk shows video on a display plane. Display planes scan
+out the dma-bufs hardware decoders produce, but video a software decoder
+puts out in system memory would have to be copied into such buffers
+first, which costs more than drawing it with the GL sink. A quirk can
+now ask for that: the player then hands playbin a bin holding the
+hole-punch sink and creates the GL sink next to it. When a decoder is
+added whose source pad offers no memory:DMABuf caps, the player puts the
+GL sink into the bin in place of the hole-punch sink and stops punching
+the hole. A decoder whose source pad offers both chooses per stream, so
+for it the player makes the same swap when the first caps it sends are
+in system memory; those caps leave the decoder before decodebin exposes
+its pad, while playbin still holds the bin unlinked. playbin and
+playbin3 both keep the video sink they were given for the whole stream,
+and the decoder negotiates its output only after it has been added, so
+on either the decoder's output meets the GL sink. The Kodi quirk asks
+for it, so that video the Widevine CDM or another software decoder puts
+out is drawn with GL while hardware-decoded video stays on Kodi's plane.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 192 ++++++++++++++++--
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  12 ++
+ .../gstreamer/GStreamerHolePunchQuirkKodi.h   |   3 +
+ .../platform/gstreamer/GStreamerQuirks.cpp    |   5 +
+ .../platform/gstreamer/GStreamerQuirks.h      |   2 +
+ 5 files changed, 192 insertions(+), 22 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -1432,7 +1432,7 @@ bool MediaPlayerPrivateGStreamer::hasFir
+ 
+ bool MediaPlayerPrivateGStreamer::requiresVideoSinkCapsNotifications() const
+ {
+-    if (isHolePunchRenderingEnabled())
++    if (isHolePunchRenderingEnabled() && !m_isCreatingSoftwareDecodedVideoSink)
+         return false;
+ 
+     RefPtr player = m_player.get();
+@@ -3808,8 +3808,123 @@ void MediaPlayerPrivateGStreamer::config
+         configureMediaStreamAudioDecoder(decoder);
+ }
+ 
++enum class DecoderOutputMemory : uint8_t {
++    SystemMemory,
++    DMABuf,
++    Either
++};
++
++static bool capsFeaturesContainDMABuf(const GstCapsFeatures* features)
++{
++    return features && gst_caps_features_contains(features, "memory:DMABuf");
++}
++
++static DecoderOutputMemory decoderOutputMemory(GstElement* decoder)
++{
++    auto* factory = gst_element_get_factory(decoder);
++    if (!factory)
++        return DecoderOutputMemory::DMABuf;
++
++    bool offersSystemMemory = false;
++    bool offersDMABuf = false;
++    for (const GList* item = gst_element_factory_get_static_pad_templates(factory); item; item = item->next) {
++        auto* padTemplate = static_cast<GstStaticPadTemplate*>(item->data);
++        if (padTemplate->direction != GST_PAD_SRC)
++            continue;
++
++        GRefPtr<GstCaps> caps = adoptGRef(gst_static_pad_template_get_caps(padTemplate));
++        for (unsigned i = 0; i < gst_caps_get_size(caps.get()); ++i) {
++            if (capsFeaturesContainDMABuf(gst_caps_get_features(caps.get(), i)))
++                offersDMABuf = true;
++            else
++                offersSystemMemory = true;
++        }
++    }
++
++    if (!offersDMABuf)
++        return DecoderOutputMemory::SystemMemory;
++    return offersSystemMemory ? DecoderOutputMemory::Either : DecoderOutputMemory::DMABuf;
++}
++
++// Called from the streaming thread that adds the decoder, before the decoder negotiates its output.
++void MediaPlayerPrivateGStreamer::leaveHolePunchForSoftwareDecoder(GstElement* decoder)
++{
++    if (!m_holePunchVideoSinkBin)
++        return;
++
++    switch (decoderOutputMemory(decoder)) {
++    case DecoderOutputMemory::SystemMemory:
++        leaveHolePunch(decoder);
++        return;
++    case DecoderOutputMemory::Either:
++        leaveHolePunchOnSystemMemoryOutput(decoder);
++        return;
++    case DecoderOutputMemory::DMABuf:
++        return;
++    }
++}
++
++// The first caps leave the decoder before decodebin exposes its pad, so playbin still holds the bin unlinked.
++void MediaPlayerPrivateGStreamer::leaveHolePunchOnSystemMemoryOutput(GstElement* decoder)
++{
++    GRefPtr srcPad = adoptGRef(gst_element_get_static_pad(decoder, "src"));
++    if (!srcPad)
++        return;
++
++    auto probe = PadProbeHandle<MediaPlayerPrivateGStreamer>::create(*this, WTF::move(srcPad), GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, [](const auto& player, const auto& pad, auto info) -> GstPadProbeReturn {
++        auto* event = gst_pad_probe_info_get_event(info);
++        if (GST_EVENT_TYPE(event) != GST_EVENT_CAPS)
++            return GST_PAD_PROBE_OK;
++
++        GstCaps* caps;
++        gst_event_parse_caps(event, &caps);
++        if (capsFeaturesContainDMABuf(gst_caps_get_features(caps, 0)))
++            return GST_PAD_PROBE_REMOVE;
++
++        GRefPtr decoder = adoptGRef(gst_pad_get_parent_element(pad.get()));
++        player->leaveHolePunch(decoder.get());
++        return GST_PAD_PROBE_REMOVE;
++    });
++
++    Locker locker { m_decoderConfigurationLock };
++    m_decoderOutputMemoryProbe = WTF::move(probe);
++}
++
++void MediaPlayerPrivateGStreamer::leaveHolePunch(GstElement* decoder)
++{
++    if (m_hasLeftHolePunch.exchange(true))
++        return;
++
++    GST_INFO_OBJECT(pipeline(), "%" GST_PTR_FORMAT " decodes into system memory, its video is drawn with GL", decoder);
++    auto* bin = GST_BIN_CAST(m_holePunchVideoSinkBin.get());
++    GRefPtr binPad = adoptGRef(gst_element_get_static_pad(m_holePunchVideoSinkBin.get(), "sink"));
++    GRefPtr holePunchSinkPad = adoptGRef(gst_ghost_pad_get_target(GST_GHOST_PAD_CAST(binPad.get())));
++    GRefPtr holePunchSink = adoptGRef(gst_pad_get_parent_element(holePunchSinkPad.get()));
++
++    gst_bin_add(bin, m_softwareDecodedVideoSink.get());
++    GRefPtr glSinkPad = adoptGRef(gst_element_get_static_pad(m_softwareDecodedVideoSink.get(), "sink"));
++    gst_ghost_pad_set_target(GST_GHOST_PAD_CAST(binPad.get()), glSinkPad.get());
++    if (!gst_element_sync_state_with_parent(m_softwareDecodedVideoSink.get()))
++        GST_WARNING_OBJECT(pipeline(), "%" GST_PTR_FORMAT " did not reach the state of %" GST_PTR_FORMAT, m_softwareDecodedVideoSink.get(), bin);
++
++    gst_element_set_locked_state(holePunchSink.get(), TRUE);
++    gst_element_set_state(holePunchSink.get(), GST_STATE_NULL);
++    gst_bin_remove(bin, holePunchSink.get());
++
++    callOnMainThread([weakThis = ThreadSafeWeakPtr { *this }] {
++        RefPtr self = weakThis.get();
++        if (!self)
++            return;
++        self->m_videoSink = self->m_softwareDecodedVideoSink;
++        if (RefPtr player = self->m_player.get())
++            player->renderingModeChanged();
++    });
++}
++
+ void MediaPlayerPrivateGStreamer::configureVideoDecoder(GstElement* decoder)
+ {
++    leaveHolePunchForSoftwareDecoder(decoder);
++
+     auto name = GMallocString::unsafeAdoptFromUTF8(gst_element_get_name(decoder));
+     if (startsWith(name.span(), "v4l2"_s))
+         m_videoDecoderPlatform = GstVideoDecoderPlatform::Video4Linux;
+@@ -4510,6 +4625,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+ 
+ bool MediaPlayerPrivateGStreamer::isHolePunchRenderingEnabled() const
+ {
++    if (m_hasLeftHolePunch)
++        return false;
++
+     if (m_quirksManagerForTesting)
+         return m_quirksManagerForTesting->supportsVideoHolePunchRendering();
+ 
+@@ -4548,6 +4666,20 @@ GstElement* MediaPlayerPrivateGStreamer:
+     return sink;
+ }
+ 
++// playbin keeps the video sink it was given for the whole stream, so the sink that may still change is a bin.
++GstElement* MediaPlayerPrivateGStreamer::createHolePunchVideoSinkBin()
++{
++    m_holePunchVideoSinkBin = gst_bin_new(nullptr);
++    auto* bin = GST_BIN_CAST(m_holePunchVideoSinkBin.get());
++    GST_OBJECT_FLAG_SET(bin, GST_ELEMENT_FLAG_SINK);
++    gst_bin_set_suppressed_flags(bin, static_cast<GstElementFlags>(GST_ELEMENT_FLAG_SOURCE | GST_ELEMENT_FLAG_SINK));
++
++    gst_bin_add(bin, m_videoSink.get());
++    GRefPtr pad = adoptGRef(gst_element_get_static_pad(m_videoSink.get(), "sink"));
++    gst_element_add_pad(m_holePunchVideoSinkBin.get(), gst_ghost_pad_new("sink", pad.get()));
++    return m_holePunchVideoSinkBin.get();
++}
++
+ void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer()
+ {
+     ASSERT(isHolePunchRenderingEnabled());
+@@ -4561,6 +4693,31 @@ bool MediaPlayerPrivateGStreamer::should
+     return isHolePunchRenderingEnabled();
+ }
+ 
++void MediaPlayerPrivateGStreamer::configureVideoSinkForPlayback(GstElement* videoSink)
++{
++    GstElement* sink = videoSink;
++    while (GST_IS_BIN(sink)) {
++        GUniquePtr<GstIterator> iter(gst_bin_iterate_sinks(GST_BIN_CAST(sink)));
++        GValue value = G_VALUE_INIT;
++        auto result = gst_iterator_next(iter.get(), &value);
++        ASSERT_UNUSED(result, result == GST_ITERATOR_OK);
++        sink = GST_ELEMENT_CAST(g_value_get_object(&value));
++        g_value_unset(&value);
++    }
++
++    if (gstObjectHasProperty(sink, "qos")) [[likely]]
++        g_object_set(sink, "qos", TRUE, nullptr);
++
++    if (gstObjectHasProperty(sink, "max-lateness"_s)) {
++        uint64_t maxLateness = 100 * GST_MSECOND;
++        g_object_set(sink, "max-lateness", maxLateness, nullptr);
++    } else {
++        GST_WARNING_OBJECT(pipeline(), "video sink does not have max-lateness property. This could result in A/V "
++            "desynchronization if it does not discard buffers that are arriving late (for example quality changes "
++            "decoding something again that has already been played)");
++    }
++}
++
+ GstElement* MediaPlayerPrivateGStreamer::createVideoSink()
+ {
+     acceleratedRenderingStateChanged();
+@@ -4570,27 +4727,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+         if (!m_videoSink || isMediaStreamPlayer())
+             return;
+ 
+-        GstElement* sink = m_videoSink.get();
+-        while (GST_IS_BIN(sink)) {
+-            GUniquePtr<GstIterator> iter(gst_bin_iterate_sinks(GST_BIN_CAST(sink)));
+-            GValue value = G_VALUE_INIT;
+-            auto result = gst_iterator_next(iter.get(), &value);
+-            ASSERT_UNUSED(result, result == GST_ITERATOR_OK);
+-            sink = GST_ELEMENT_CAST(g_value_get_object(&value));
+-            g_value_unset(&value);
+-        }
+-
+-        if (gstObjectHasProperty(sink, "qos")) [[likely]]
+-            g_object_set(sink, "qos", TRUE, nullptr);
+-
+-        if (gstObjectHasProperty(sink, "max-lateness"_s)) {
+-            uint64_t maxLateness = 100 * GST_MSECOND;
+-            g_object_set(sink, "max-lateness", maxLateness, nullptr);
+-        } else {
+-            GST_WARNING_OBJECT(pipeline(), "video sink does not have max-lateness property. This could result in A/V "
+-                "desynchronization if it does not discard buffers that are arriving late (for example quality changes "
+-                "decoding something again that has already been played)");
+-        }
++        configureVideoSinkForPlayback(m_videoSink.get());
++        if (m_softwareDecodedVideoSink)
++            configureVideoSinkForPlayback(m_softwareDecodedVideoSink.get());
+     });
+ 
+     RefPtr player = m_player.get();
+@@ -4608,8 +4747,17 @@ GstElement* MediaPlayerPrivateGStreamer:
+ 
+     if (isHolePunchRenderingEnabled()) {
+         m_videoSink = createHolePunchVideoSink();
++#if USE(GSTREAMER_GL)
++        if (m_videoSink && GStreamerQuirksManager::singleton().holePunchLeavesSoftwareDecodedVideoToGL() && m_canRenderingBeAccelerated) {
++            m_isCreatingSoftwareDecodedVideoSink = true;
++            m_softwareDecodedVideoSink = createVideoSinkGL();
++            m_isCreatingSoftwareDecodedVideoSink = false;
++        }
++#endif
+         // Do not check the m_videoSink value. The nullptr case will trigger auto-plugging in playbin.
+         pushNextHolePunchBuffer();
++        if (m_softwareDecodedVideoSink)
++            return createHolePunchVideoSinkBin();
+         return m_videoSink.get();
+     }
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -318,6 +318,11 @@ protected:
+ 
+     bool isHolePunchRenderingEnabled() const;
+     GstElement* createHolePunchVideoSink();
++    GstElement* createHolePunchVideoSinkBin();
++    void configureVideoSinkForPlayback(GstElement*);
++    void leaveHolePunchForSoftwareDecoder(GstElement* decoder);
++    void leaveHolePunchOnSystemMemoryOutput(GstElement* decoder);
++    void leaveHolePunch(GstElement* decoder);
+     void pushNextHolePunchBuffer();
+     bool shouldIgnoreIntrinsicSize() final;
+ 
+@@ -430,6 +435,12 @@ protected:
+ 
+     GRefPtr<GstElement> m_audioSink;
+     GRefPtr<GstElement> m_videoSink;
++    // Video a software decoder puts out in system memory is drawn with this sink rather than on the hole punch.
++    GRefPtr<GstElement> m_softwareDecodedVideoSink;
++    // The video sink playbin holds: it contains the hole-punch sink, or the GL sink once a decoder puts out system memory.
++    GRefPtr<GstElement> m_holePunchVideoSinkBin;
++    std::atomic<bool> m_hasLeftHolePunch { false };
++    bool m_isCreatingSoftwareDecodedVideoSink { false };
+     GRefPtr<GstElement> m_pipeline;
+     IntSize m_size;
+ 
+@@ -731,6 +742,7 @@ private:
+     std::optional<VideoFrameGStreamer::Info> m_videoInfo;
+     RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameInputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
+     RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameOutputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
++    RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_decoderOutputMemoryProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
+ 
+     bool m_volumeLocked { false };
+ 
+--- a/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerHolePunchQuirkKodi.h
+@@ -38,6 +38,9 @@ public:
+         return makeGStreamerElement("kodivideosink"_s);
+     }
+ 
++    // Kodi's planes take the dma-bufs hardware decoders produce; video decoded into system memory is cheaper to draw with GL.
++    bool leavesSoftwareDecodedVideoToGL() const final { return true; }
++
+     bool setHolePunchVideoRectangle(GstElement* videoSink, const IntRect& rect) final
+     {
+         if (!gstObjectHasProperty(videoSink, "rectangle"_s)) [[unlikely]]
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.cpp
+@@ -233,6 +233,11 @@ bool GStreamerQuirksManager::sinksRequir
+     return m_holePunchQuirk->requiresClockSynchronization();
+ }
+ 
++bool GStreamerQuirksManager::holePunchLeavesSoftwareDecodedVideoToGL() const
++{
++    return m_holePunchQuirk && m_holePunchQuirk->leavesSoftwareDecodedVideoToGL();
++}
++
+ void GStreamerQuirksManager::configureElement(GstElement* element, OptionSet<ElementRuntimeCharacteristics>&& characteristics)
+ {
+     if (m_quirks.isEmpty())
+--- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
++++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
+@@ -114,6 +114,7 @@ public:
+     virtual GstElement* createHolePunchVideoSink(bool, const MediaPlayer*) { return nullptr; }
+     virtual bool setHolePunchVideoRectangle(GstElement*, const IntRect&) { return false; }
+     virtual bool requiresClockSynchronization() const { return true; }
++    virtual bool leavesSoftwareDecodedVideoToGL() const { return false; }
+ };
+ 
+ class GStreamerQuirksManager : public RefCounted<GStreamerQuirksManager> {
+@@ -146,6 +147,7 @@ public:
+     GstElement* createHolePunchVideoSink(bool isLegacyPlaybin, const MediaPlayer*);
+     void setHolePunchVideoRectangle(GstElement*, const IntRect&);
+     bool sinksRequireClockSynchronization() const;
++    bool holePunchLeavesSoftwareDecodedVideoToGL() const;
+ 
+     void setHolePunchEnabledForTesting(bool);
+ 

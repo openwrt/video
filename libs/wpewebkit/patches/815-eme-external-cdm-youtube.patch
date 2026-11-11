@@ -1,0 +1,36 @@
+From 1d2fb9547172eefd8a2b9da311f02ee656b22e97 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Mon, 9 Nov 2026 02:22:00 +0000
+Subject: [PATCH] [EME] Keep the encrypted media API on YouTube with the
+ external CDM
+
+https://bugs.webkit.org/show_bug.cgi?id=328385
+
+Reviewed by NOBODY (OOPS!).
+
+YouTube serves some videos to its TV client as Widevine-protected
+streams only. The youtube.com quirk for bug 195598 removes
+navigator.requestMediaKeySystemAccess() wherever WebKit is built
+without Thunder, so YouTube finds no key system and reports that the
+video format is not supported. Like Thunder, the external CDM backend
+plays Widevine content, so builds with it keep the API on youtube.com.
+
+* Source/WebCore/page/Quirks.cpp:
+(WebCore::Quirks::hasBrokenEncryptedMediaAPISupportQuirk const):
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/WebCore/page/Quirks.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/WebCore/page/Quirks.cpp
++++ b/Source/WebCore/page/Quirks.cpp
+@@ -327,7 +327,7 @@ bool Quirks::shouldAutoplayWebAudioForAr
+ // youtube.com https://bugs.webkit.org/show_bug.cgi?id=195598
+ bool Quirks::hasBrokenEncryptedMediaAPISupportQuirk() const
+ {
+-#if ENABLE(THUNDER)
++#if ENABLE(THUNDER) || ENABLE(EXTERNAL_CDM)
+     return false;
+ #else
+     QUIRKS_EARLY_RETURN_IF_DISABLED_WITH_VALUE(false);
