@@ -1,0 +1,741 @@
+From c754bb7079945cf2780741db6256f76a0900af97 Mon Sep 17 00:00:00 2001
+From: Carlos Garcia Campos <cgarcia@igalia.com>
+Date: Mon, 24 Aug 2026 04:14:29 -0700
+Subject: [PATCH] [CoordinatedGraphics] Move ownership of
+ CoordinatedPlatformLayerBufferProxy from media player to graphics layer
+ https://bugs.webkit.org/show_bug.cgi?id=322182
+
+Reviewed by Nikolas Zimmermann.
+
+CoordinatedPlatformLayerBufferProxy is currently defined as the
+PlatformLayer for coordinated graphics. That works only because we only
+support media platform buffers in GraphicsLayer::setContentsToPlatformLayer().
+But CoordinatedPlatformLayerBufferProxy is not really a platform layer,
+it's helper class created by the media player and shared with the
+GraphicsLayer to be able to send video frames to the compositor. This
+patch moves the ownership from the media player to the graphics layer.
+For that GraphicsLayer::setContentsToMediaPlayer() has been added, with
+a default implementation that just calls setContentsToPlatformLayer(),
+but overriden by GraphicsLayerCoordinated to create a new
+CoordinatedPlatformLayerBufferProxy if needed and set it to the given
+media player. This allows to create the CoordinatedPlatformLayerBufferProxy
+with a CoordinatedPlatformLayer. When the newly created proxy is set on
+the media player, if there's already a video frame available, it's set
+in the proxy as initial buffer that is handled from the main thread
+during layer flush. Creating the proxy from GraphicsLayerCoordinated
+will also allow us to pass the thread safe gr context to the proxy to
+create video buffers using skia promised images too.
+
+* Source/WebCore/platform/graphics/GraphicsLayer.cpp:
+(WebCore::GraphicsLayer::setContentsToMediaPlayer):
+* Source/WebCore/platform/graphics/GraphicsLayer.h:
+* Source/WebCore/platform/graphics/MediaPlayer.cpp:
+(WebCore::MediaPlayer::setPlatformLayerBufferProxy):
+(WebCore::MediaPlayer::platformLayerBufferProxy const):
+* Source/WebCore/platform/graphics/MediaPlayer.h:
+* Source/WebCore/platform/graphics/MediaPlayerPrivate.h:
+(WebCore::MediaPlayerPrivateInterface::setPlatformLayerBufferProxy):
+(WebCore::MediaPlayerPrivateInterface::platformLayerBufferProxy const):
+* Source/WebCore/platform/graphics/PlatformLayer.h:
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp:
+(WebCore::MediaPlayerPrivateGStreamer::MediaPlayerPrivateGStreamer):
+(WebCore::MediaPlayerPrivateGStreamer::setPlatformLayerBufferProxy):
+(WebCore::MediaPlayerPrivateGStreamer::platformLayerBufferProxy const):
+(WebCore::MediaPlayerPrivateGStreamer::pushTextureToCompositor):
+(WebCore::MediaPlayerPrivateGStreamer::flushCurrentBuffer):
+(WebCore::MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer):
+(WebCore::MediaPlayerPrivateGStreamer::platformLayer const): Deleted.
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h:
+* Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.cpp:
+(WebCore::MediaPlayerPrivateHolePunch::MediaPlayerPrivateHolePunch):
+(WebCore::MediaPlayerPrivateHolePunch::setPlatformLayerBufferProxy):
+(WebCore::MediaPlayerPrivateHolePunch::platformLayerBufferProxy const):
+(WebCore::MediaPlayerPrivateHolePunch::pushNextHolePunchBuffer):
+(WebCore::MediaPlayerPrivateHolePunch::platformLayer const): Deleted.
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.cpp:
+(WebCore::CoordinatedPlatformLayerBufferProxy::create):
+(WebCore::CoordinatedPlatformLayerBufferProxy::CoordinatedPlatformLayerBufferProxy):
+(WebCore::CoordinatedPlatformLayerBufferProxy::invalidate):
+(WebCore::CoordinatedPlatformLayerBufferProxy::setInitialDisplayBuffer):
+(WebCore::CoordinatedPlatformLayerBufferProxy::consumePendingBufferIfNeeded):
+(WebCore::CoordinatedPlatformLayerBufferProxy::setDisplayBuffer):
+(WebCore::CoordinatedPlatformLayerBufferProxy::dropCurrentBufferWhilePreservingTexture):
+(WebCore::CoordinatedPlatformLayerBufferProxy::setTargetLayer): Deleted.
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.cpp:
+(WebCore::GraphicsLayerCoordinated::~GraphicsLayerCoordinated):
+(WebCore::GraphicsLayerCoordinated::setContentsToMediaPlayer):
+(WebCore::GraphicsLayerCoordinated::setContentsDisplayDelegate):
+(WebCore::GraphicsLayerCoordinated::setContentsToPlatformLayer): Deleted.
+* Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.h:
+* Source/WebCore/rendering/RenderLayerBacking.cpp:
+(WebCore::RenderLayerBacking::updateConfiguration):
+* Source/WebCore/platform/graphics/MediaPlayerPrivate.cpp:
+(WebCore::MediaPlayerPrivateInterface::setPlatformLayerBufferProxy):
+(WebCore::MediaPlayerPrivateInterface::platformLayerBufferProxy const):
+* Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.h:
+* Source/WebKit/WebProcess/GPU/media/gstreamer/VideoLayerRemoteGStreamer.cpp:
+
+Canonical link: https://commits.webkit.org/319694@main
+
+(cherry picked from commit e1e984506198419c3141b726ab5b9338103e270e)
+[Backported to 2.54.2, which lacks commit f60e5f1e1bd1 ("MEDIA_ERR_ABORTED
+after restore page with media from bfcache"): its layer-attached callback
+of CoordinatedPlatformLayerBufferProxy, which this change replaces, is
+absent, and pushTextureToCompositor() keeps its bool isDuplicateSample.]
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ .../platform/graphics/GraphicsLayer.cpp       |  8 ++
+ .../WebCore/platform/graphics/GraphicsLayer.h |  4 +
+ .../WebCore/platform/graphics/MediaPlayer.cpp | 14 ++++
+ .../WebCore/platform/graphics/MediaPlayer.h   |  8 ++
+ .../platform/graphics/MediaPlayerPrivate.cpp  | 15 ++++
+ .../platform/graphics/MediaPlayerPrivate.h    |  4 +
+ .../WebCore/platform/graphics/PlatformLayer.h |  6 +-
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 50 ++++++++---
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   | 10 ++-
+ .../holepunch/MediaPlayerPrivateHolePunch.cpp | 21 +++--
+ .../holepunch/MediaPlayerPrivateHolePunch.h   |  4 +-
+ .../CoordinatedPlatformLayerBufferProxy.cpp   | 83 +++++++++----------
+ .../CoordinatedPlatformLayerBufferProxy.h     | 18 ++--
+ .../coordinated/GraphicsLayerCoordinated.cpp  | 30 ++++---
+ .../coordinated/GraphicsLayerCoordinated.h    |  4 +-
+ .../WebCore/rendering/RenderLayerBacking.cpp  |  2 +-
+ .../gstreamer/VideoLayerRemoteGStreamer.cpp   |  2 +-
+ 17 files changed, 190 insertions(+), 93 deletions(-)
+
+--- a/Source/WebCore/platform/graphics/GraphicsLayer.cpp
++++ b/Source/WebCore/platform/graphics/GraphicsLayer.cpp
+@@ -35,6 +35,7 @@
+ #include "GraphicsLayerFilterAnimationValue.h"
+ #include "GraphicsLayerKeyframeValueList.h"
+ #include "LayoutRect.h"
++#include "MediaPlayer.h"
+ #include "MediaPlayerEnums.h"
+ #include "RotateTransformOperation.h"
+ #include <wtf/FileHandle.h>
+@@ -749,6 +750,13 @@ RefPtr<GraphicsLayerAsyncContentsDisplay
+     return nullptr;
+ }
+ 
++#if ENABLE(VIDEO)
++void GraphicsLayer::setContentsToMediaPlayer(MediaPlayer* player, ContentsLayerPurpose purpose)
++{
++    SUPPRESS_FORWARD_DECL_ARG setContentsToPlatformLayer(player ? player->platformLayer() : nullptr, purpose);
++}
++#endif
++
+ void GraphicsLayer::getDebugBorderInfo(Color& color, float& width) const
+ {
+     width = 2;
+--- a/Source/WebCore/platform/graphics/GraphicsLayer.h
++++ b/Source/WebCore/platform/graphics/GraphicsLayer.h
+@@ -79,6 +79,7 @@ class GraphicsLayerKeyframeValueList;
+ class HTMLVideoElement;
+ class Image;
+ class ImageBuffer;
++class MediaPlayer;
+ class Model;
+ class Settings;
+ class TiledBacking;
+@@ -404,6 +405,9 @@ public:
+     virtual void removeModelContents() { }
+ #endif
+     virtual void setContentsToVideoElement(HTMLVideoElement&, ContentsLayerPurpose) { }
++#if ENABLE(VIDEO)
++    WEBCORE_EXPORT virtual void setContentsToMediaPlayer(MediaPlayer*, ContentsLayerPurpose);
++#endif
+     virtual void setContentsDisplayDelegate(RefPtr<GraphicsLayerContentsDisplayDelegate>&&, ContentsLayerPurpose);
+     WEBCORE_EXPORT virtual RefPtr<GraphicsLayerAsyncContentsDisplayDelegate> createAsyncContentsDisplayDelegate(GraphicsLayerAsyncContentsDisplayDelegate* existing);
+ #if ENABLE(MODEL_ELEMENT)
+--- a/Source/WebCore/platform/graphics/MediaPlayer.cpp
++++ b/Source/WebCore/platform/graphics/MediaPlayer.cpp
+@@ -74,6 +74,7 @@
+ #endif
+ 
+ #if USE(GSTREAMER)
++#include "CoordinatedPlatformLayerBufferProxy.h"
+ #include "MediaPlayerPrivateGStreamer.h"
+ #if ENABLE(MEDIA_SOURCE)
+ #include "MediaPlayerPrivateGStreamerMSE.h"
+@@ -1821,6 +1822,19 @@ bool MediaPlayer::isGStreamerHolePunchin
+ {
+     return protect(client())->isGStreamerHolePunchingEnabled();
+ }
++
++#if USE(COORDINATED_GRAPHICS)
++void MediaPlayer::setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&& proxy)
++{
++    if (m_private)
++        protect(m_private)->setPlatformLayerBufferProxy(WTF::move(proxy));
++}
++
++RefPtr<CoordinatedPlatformLayerBufferProxy> MediaPlayer::platformLayerBufferProxy() const
++{
++    return m_private ? protect(m_private)->platformLayerBufferProxy() : nullptr;
++}
++#endif
+ #endif
+ 
+ String MediaPlayer::languageOfPrimaryAudioTrack() const
+--- a/Source/WebCore/platform/graphics/MediaPlayer.h
++++ b/Source/WebCore/platform/graphics/MediaPlayer.h
+@@ -109,6 +109,10 @@ class TextTrackRepresentation;
+ class VideoFrame;
+ class VideoTrackPrivate;
+ 
++#if USE(GSTREAMER) && USE(COORDINATED_GRAPHICS)
++class CoordinatedPlatformLayerBufferProxy;
++#endif
++
+ struct GraphicsDeviceAdapter;
+ struct HostingContext;
+ struct VideoFrameMetadata;
+@@ -683,6 +687,10 @@ public:
+ #if USE(GSTREAMER)
+     void simulateAudioInterruption();
+     bool isGStreamerHolePunchingEnabled();
++#if USE(COORDINATED_GRAPHICS)
++    void setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&&);
++    RefPtr<CoordinatedPlatformLayerBufferProxy> platformLayerBufferProxy() const;
++#endif
+ #endif
+ 
+     String languageOfPrimaryAudioTrack() const;
+--- a/Source/WebCore/platform/graphics/MediaPlayerPrivate.cpp
++++ b/Source/WebCore/platform/graphics/MediaPlayerPrivate.cpp
+@@ -35,6 +35,10 @@
+ #include "VideoFrameMetadata.h"
+ #include <wtf/NativePromise.h>
+ 
++#if USE(GSTREAMER) && USE(COORDINATED_GRAPHICS)
++#include "CoordinatedPlatformLayerBufferProxy.h"
++#endif
++
+ namespace WebCore {
+ 
+ MediaPlayerPrivateInterface::MediaPlayerPrivateInterface() = default;
+@@ -118,6 +122,17 @@ OptionSet<MediaPlaybackTargetType> Media
+ }
+ #endif
+ 
++#if USE(GSTREAMER) && USE(COORDINATED_GRAPHICS)
++void MediaPlayerPrivateInterface::setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&&)
++{
++}
++
++RefPtr<CoordinatedPlatformLayerBufferProxy> MediaPlayerPrivateInterface::platformLayerBufferProxy() const
++{
++    return nullptr;
++}
++#endif
++
+ } // namespace WebCore
+ 
+ #endif
+--- a/Source/WebCore/platform/graphics/MediaPlayerPrivate.h
++++ b/Source/WebCore/platform/graphics/MediaPlayerPrivate.h
+@@ -296,6 +296,10 @@ public:
+ 
+ #if USE(GSTREAMER)
+     virtual void simulateAudioInterruption() { }
++#if USE(COORDINATED_GRAPHICS)
++    virtual void setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&&);
++    virtual RefPtr<CoordinatedPlatformLayerBufferProxy> platformLayerBufferProxy() const;
++#endif
+ #endif
+ 
+     virtual String languageOfPrimaryAudioTrack() const { return emptyString(); }
+--- a/Source/WebCore/platform/graphics/PlatformLayer.h
++++ b/Source/WebCore/platform/graphics/PlatformLayer.h
+@@ -33,10 +33,10 @@ OBJC_CLASS CALayer;
+ using PlatformLayer = CALayer;
+ #elif USE(COORDINATED_GRAPHICS)
+ namespace WebCore {
+-class CoordinatedPlatformLayerBufferProxy;
++class CoordinatedPlatformLayer;
+ };
+-using PlatformLayer = WebCore::CoordinatedPlatformLayerBufferProxy;
+-#elif USE(TEXTURE_MAPPER)
++using PlatformLayer = WebCore::CoordinatedPlatformLayer;
++#elif USE(TEXTURE_MAPPER) && !USE(COORDINATED_GRAPHICS)
+ namespace WebCore {
+ class TextureMapperPlatformLayer;
+ };
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -202,10 +202,6 @@ MediaPlayerPrivateGStreamer::MediaPlayer
+         m_quirksManagerForTesting->setHolePunchEnabledForTesting(true);
+     }
+ 
+-#if USE(COORDINATED_GRAPHICS)
+-    m_contentsBufferProxy = CoordinatedPlatformLayerBufferProxy::create();
+-#endif
+-
+     ensureGStreamerInitialized();
+     m_audioSink = createAudioSink();
+ }
+@@ -3896,12 +3892,22 @@ void MediaPlayerPrivateGStreamer::isLoop
+ }
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-PlatformLayer* MediaPlayerPrivateGStreamer::platformLayer() const
++void MediaPlayerPrivateGStreamer::setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&& proxy)
+ {
+-    return m_contentsBufferProxy.get();
++    m_contentsBufferProxy = WTF::move(proxy);
++    // Push any pending frame if needed.
++    if (isHolePunchRenderingEnabled())
++        pushNextHolePunchBuffer(IsInitialBuffer::Yes);
++    else
++        pushTextureToCompositor(true, IsInitialBuffer::Yes);
+ }
+ 
+-void MediaPlayerPrivateGStreamer::pushTextureToCompositor(bool isDuplicateSample)
++RefPtr<CoordinatedPlatformLayerBufferProxy> MediaPlayerPrivateGStreamer::platformLayerBufferProxy() const
++{
++    return m_contentsBufferProxy;
++}
++
++void MediaPlayerPrivateGStreamer::pushTextureToCompositor(bool isDuplicateSample, IsInitialBuffer isInitialBuffer)
+ {
+     Locker sampleLocker { m_sampleMutex };
+     if (!GST_IS_SAMPLE(m_sample.get()))
+@@ -3913,6 +3919,10 @@ void MediaPlayerPrivateGStreamer::pushTe
+     if (!isDuplicateSample)
+         ++m_sampleCount;
+ 
++    RefPtr proxy = m_contentsBufferProxy;
++    if (!proxy || !proxy->isValid())
++        return;
++
+     if (!m_videoInfo)
+         m_videoInfo = VideoFrameGStreamer::infoFromCaps(GRefPtr(gst_sample_get_caps(m_sample.get())));
+ 
+@@ -3920,7 +3930,11 @@ void MediaPlayerPrivateGStreamer::pushTe
+     options.info = m_videoInfo;
+     auto frame = VideoFrameGStreamer::createWrappedSample(m_sample, options);
+ 
+-    m_contentsBufferProxy->setDisplayBuffer(CoordinatedPlatformLayerBufferVideo::create(WTF::move(frame), m_videoDecoderPlatform, !m_isUsingFallbackVideoSink, m_textureMapperFlags));
++    auto buffer = CoordinatedPlatformLayerBufferVideo::create(WTF::move(frame), m_videoDecoderPlatform, !m_isUsingFallbackVideoSink, m_textureMapperFlags);
++    if (isInitialBuffer == IsInitialBuffer::Yes)
++        proxy->setInitialDisplayBuffer(WTF::move(buffer));
++    else
++        proxy->setDisplayBuffer(WTF::move(buffer));
+ }
+ #endif // USE(COORDINATED_GRAPHICS)
+ 
+@@ -4212,9 +4226,13 @@ void MediaPlayerPrivateGStreamer::flushC
+     }
+ 
+ #if USE(COORDINATED_GRAPHICS)
++    RefPtr proxy = m_contentsBufferProxy;
++    if (!proxy)
++        return;
++
+     auto shouldWait = m_videoDecoderPlatform == GstVideoDecoderPlatform::Video4Linux ? CoordinatedPlatformLayerBufferProxy::ShouldWait::Yes : CoordinatedPlatformLayerBufferProxy::ShouldWait::No;
+     GST_DEBUG_OBJECT(pipeline(), "Flushing video sample %s", shouldWait == CoordinatedPlatformLayerBufferProxy::ShouldWait::Yes ? "synchronously" : "");
+-    m_contentsBufferProxy->dropCurrentBufferWhilePreservingTexture(shouldWait);
++    proxy->dropCurrentBufferWhilePreservingTexture(shouldWait);
+ #endif
+ }
+ #endif
+@@ -4477,11 +4495,21 @@ GstElement* MediaPlayerPrivateGStreamer:
+     return sink;
+ }
+ 
+-void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer()
++void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer(IsInitialBuffer isInitialBuffer)
+ {
+     ASSERT(isHolePunchRenderingEnabled());
+ #if USE(COORDINATED_GRAPHICS)
+-    m_contentsBufferProxy->setDisplayBuffer(CoordinatedPlatformLayerBufferHolePunch::create(m_size, m_videoSink.get(), m_quirksManagerForTesting ? m_quirksManagerForTesting.copyRef() : protect(&GStreamerQuirksManager::singleton())));
++    RefPtr proxy = m_contentsBufferProxy;
++    if (!proxy)
++        return;
++
++    auto buffer = CoordinatedPlatformLayerBufferHolePunch::create(m_size, m_videoSink.get(), m_quirksManagerForTesting ? m_quirksManagerForTesting.copyRef() : protect(&GStreamerQuirksManager::singleton()));
++    if (isInitialBuffer == IsInitialBuffer::Yes)
++        proxy->setInitialDisplayBuffer(WTF::move(buffer));
++    else
++        proxy->setDisplayBuffer(WTF::move(buffer));
++#else
++    UNUSED_PARAM(isInitialBuffer);
+ #endif
+ }
+ 
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -191,8 +191,10 @@ public:
+     GstElement* pipeline() const { return m_pipeline.get(); }
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-    PlatformLayer* NODELETE platformLayer() const override;
++    PlatformLayer* NODELETE platformLayer() const override { return nullptr; }
+     bool supportsAcceleratedRendering() const override { return true; }
++    void setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&&) override;
++    RefPtr<CoordinatedPlatformLayerBufferProxy> platformLayerBufferProxy() const override;
+ #endif
+ 
+ #if ENABLE(ENCRYPTED_MEDIA)
+@@ -311,9 +313,11 @@ protected:
+     virtual void sourceSetup(GstElement*);
+     virtual void updatePlaybackRate();
+ 
++    enum class IsInitialBuffer : bool { No, Yes };
++
+     bool isHolePunchRenderingEnabled() const;
+     GstElement* createHolePunchVideoSink();
+-    void pushNextHolePunchBuffer();
++    void pushNextHolePunchBuffer(IsInitialBuffer = IsInitialBuffer::No);
+     bool shouldIgnoreIntrinsicSize() final;
+ 
+ #if USE(GSTREAMER_GL)
+@@ -321,7 +325,7 @@ protected:
+ #endif
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-    void pushTextureToCompositor(bool isDuplicateSample);
++    void pushTextureToCompositor(bool isDuplicateSample, IsInitialBuffer = IsInitialBuffer::No);
+ #endif
+ 
+     GstElement* videoSink() const { return m_videoSink.get(); }
+--- a/Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.cpp
++++ b/Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.cpp
+@@ -38,12 +38,7 @@ MediaPlayerPrivateHolePunch::MediaPlayer
+     : m_player(player)
+     , m_readyTimer(RunLoop::mainSingleton(), "MediaPlayerPrivateHolePunch::ReadyTimer"_s, this, &MediaPlayerPrivateHolePunch::notifyReadyState)
+     , m_networkState(MediaPlayer::NetworkState::Empty)
+-#if USE(COORDINATED_GRAPHICS)
+-    , m_contentsBufferProxy(CoordinatedPlatformLayerBufferProxy::create())
+-#endif
+ {
+-    pushNextHolePunchBuffer();
+-
+     // Delay the configuration of the HTMLMediaElement, as during this stage this is not
+     // the MediaPlayer private yet and calls from HTMLMediaElement won't reach this.
+     m_readyTimer.startOneShot(0_s);
+@@ -52,9 +47,15 @@ MediaPlayerPrivateHolePunch::MediaPlayer
+ MediaPlayerPrivateHolePunch::~MediaPlayerPrivateHolePunch() = default;
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-PlatformLayer* MediaPlayerPrivateHolePunch::platformLayer() const
++void MediaPlayerPrivateHolePunch::setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&& proxy)
+ {
+-    return m_contentsBufferProxy.get();
++    m_contentsBufferProxy = WTF::move(proxy);
++    m_contentsBufferProxy->setInitialDisplayBuffer(CoordinatedPlatformLayerBufferHolePunch::create(m_size));
++}
++
++RefPtr<CoordinatedPlatformLayerBufferProxy> MediaPlayerPrivateHolePunch::platformLayerBufferProxy() const
++{
++    return m_contentsBufferProxy;
+ }
+ #endif
+ 
+@@ -68,7 +69,11 @@ FloatSize MediaPlayerPrivateHolePunch::n
+ 
+ void MediaPlayerPrivateHolePunch::pushNextHolePunchBuffer()
+ {
+-    m_contentsBufferProxy->setDisplayBuffer(CoordinatedPlatformLayerBufferHolePunch::create(m_size));
++    RefPtr proxy = m_contentsBufferProxy;
++    if (!proxy || !proxy->isValid())
++        return;
++
++    proxy->setDisplayBuffer(CoordinatedPlatformLayerBufferHolePunch::create(m_size));
+ }
+ 
+ static HashSet<String>& mimeTypeCache()
+--- a/Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.h
++++ b/Source/WebCore/platform/graphics/holepunch/MediaPlayerPrivateHolePunch.h
+@@ -64,7 +64,9 @@ public:
+     void pause() final { };
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-    PlatformLayer* NODELETE platformLayer() const final;
++    PlatformLayer* NODELETE platformLayer() const final { return nullptr; }
++    void setPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayerBufferProxy>&&) final;
++    RefPtr<CoordinatedPlatformLayerBufferProxy> platformLayerBufferProxy() const final;
+ #endif
+ 
+     FloatSize naturalSize() const final;
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.cpp
+@@ -33,12 +33,18 @@
+ 
+ namespace WebCore {
+ 
+-Ref<CoordinatedPlatformLayerBufferProxy> CoordinatedPlatformLayerBufferProxy::create()
++Ref<CoordinatedPlatformLayerBufferProxy> CoordinatedPlatformLayerBufferProxy::create(Ref<CoordinatedPlatformLayer>&& layer)
+ {
+-    return adoptRef(*new CoordinatedPlatformLayerBufferProxy());
++    return adoptRef(*new CoordinatedPlatformLayerBufferProxy(WTF::move(layer)));
+ }
+ 
+-CoordinatedPlatformLayerBufferProxy::CoordinatedPlatformLayerBufferProxy() = default;
++CoordinatedPlatformLayerBufferProxy::CoordinatedPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayer>&& layer)
++    : m_layer(WTF::move(layer))
++#if ENABLE(VIDEO) && USE(GSTREAMER)
++    , m_compositingRunLoop(m_layer->compositingRunLoop())
++#endif
++{
++}
+ 
+ CoordinatedPlatformLayerBufferProxy::~CoordinatedPlatformLayerBufferProxy()
+ {
+@@ -48,53 +54,42 @@ CoordinatedPlatformLayerBufferProxy::~Co
+ #endif
+ }
+ 
+-void CoordinatedPlatformLayerBufferProxy::setTargetLayer(CoordinatedPlatformLayer* layer)
++void CoordinatedPlatformLayerBufferProxy::invalidate()
+ {
+-    ASSERT(RunLoop::isMain());
+-    Locker locker { m_lock };
+-    if (m_layer == layer)
+-        return;
+-
+-    m_layer = layer;
+-    if (m_layer) {
++    assertIsMainThread();
++    m_layer = nullptr;
+ #if ENABLE(VIDEO) && USE(GSTREAMER)
+-        m_compositingRunLoop = m_layer->compositingRunLoop();
++    m_compositingRunLoop = nullptr;
+ #endif
+-    } else {
+-        m_pendingBuffer = nullptr;
+-#if ENABLE(VIDEO) && USE(GSTREAMER)
+-        m_compositingRunLoop = nullptr;
+-#endif
+-    }
++}
++
++void CoordinatedPlatformLayerBufferProxy::setInitialDisplayBuffer(std::unique_ptr<CoordinatedPlatformLayerBuffer>&& buffer)
++{
++    assertIsMainThread();
++    if (!m_layer)
++        return;
++
++    m_pendingBuffer = WTF::move(buffer);
+ }
+ 
+ void CoordinatedPlatformLayerBufferProxy::consumePendingBufferIfNeeded()
+ {
+-    ASSERT(RunLoop::isMain());
+-    Locker locker { m_lock };
++    assertIsMainThread();
+     if (!m_pendingBuffer)
+         return;
+ 
+-    if (m_layer) {
+-        assertIsHeld(m_layer->lock());
+-        m_layer->setContentsBuffer(WTF::move(m_pendingBuffer));
++    if (RefPtr layer = m_layer) {
++        assertIsHeld(layer->lock());
++        layer->setContentsBuffer(WTF::move(m_pendingBuffer));
+     } else
+         m_pendingBuffer = nullptr;
+ }
+ 
+ void CoordinatedPlatformLayerBufferProxy::setDisplayBuffer(std::unique_ptr<CoordinatedPlatformLayerBuffer>&& buffer)
+ {
+-    RefPtr<CoordinatedPlatformLayer> layer;
+-    {
+-        Locker locker { m_lock };
+-        if (!m_layer) {
+-            m_pendingBuffer = WTF::move(buffer);
+-            return;
+-        }
+-
+-        m_pendingBuffer = nullptr;
+-        layer = m_layer;
+-    }
++    RefPtr layer = m_layer;
++    if (!layer)
++        return;
+ 
+     {
+         Locker layerLocker { layer->lock() };
+@@ -106,21 +101,17 @@ void CoordinatedPlatformLayerBufferProxy
+ #if ENABLE(VIDEO) && USE(GSTREAMER)
+ void CoordinatedPlatformLayerBufferProxy::dropCurrentBufferWhilePreservingTexture(ShouldWait shouldWait)
+ {
+-    RefPtr<RunLoop> compositingRunLoop;
+-    {
+-        Locker locker { m_lock };
+-        if (!m_layer || !m_compositingRunLoop)
+-            return;
++    RefPtr layer = m_layer;
++    if (!layer)
++        return;
+ 
+-        compositingRunLoop = m_compositingRunLoop;
+-    }
++    RefPtr compositingRunLoop = m_compositingRunLoop;
++    if (!compositingRunLoop)
++        return;
+ 
+     auto dropCurrentBuffer = [this, protectedThis = Ref { *this }] {
+-        Locker locker { m_lock };
+-        if (!m_layer)
+-            return;
+-
+-        m_layer->replaceCurrentContentsBufferWithCopy();
++        if (RefPtr layer = m_layer)
++            layer->replaceCurrentContentsBufferWithCopy();
+     };
+ 
+     if (shouldWait == ShouldWait::No) {
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferProxy.h
+@@ -26,7 +26,7 @@
+ #pragma once
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-#include <wtf/Lock.h>
++#include <wtf/MainThread.h>
+ #include <wtf/RefPtr.h>
+ #include <wtf/RunLoop.h>
+ #include <wtf/ThreadSafeRefCounted.h>
+@@ -39,11 +39,14 @@ class TextureMapperLayer;
+ 
+ class CoordinatedPlatformLayerBufferProxy final : public ThreadSafeRefCounted<CoordinatedPlatformLayerBufferProxy> {
+ public:
+-    static Ref<CoordinatedPlatformLayerBufferProxy> create();
++    static Ref<CoordinatedPlatformLayerBufferProxy> create(Ref<CoordinatedPlatformLayer>&&);
+     ~CoordinatedPlatformLayerBufferProxy();
+ 
+-    void setTargetLayer(CoordinatedPlatformLayer*);
++    void invalidate();
++    bool isValid() const { return !!m_layer; }
++
+     void consumePendingBufferIfNeeded();
++    void setInitialDisplayBuffer(std::unique_ptr<CoordinatedPlatformLayerBuffer>&&);
+     void setDisplayBuffer(std::unique_ptr<CoordinatedPlatformLayerBuffer>&&);
+ 
+ #if ENABLE(VIDEO) && USE(GSTREAMER)
+@@ -52,13 +55,12 @@ public:
+ #endif
+ 
+ private:
+-    CoordinatedPlatformLayerBufferProxy();
++    explicit CoordinatedPlatformLayerBufferProxy(Ref<CoordinatedPlatformLayer>&&);
+ 
+-    Lock m_lock;
+-    RefPtr<CoordinatedPlatformLayer> m_layer WTF_GUARDED_BY_LOCK(m_lock);
+-    std::unique_ptr<CoordinatedPlatformLayerBuffer> m_pendingBuffer WTF_GUARDED_BY_LOCK(m_lock);
++    RefPtr<CoordinatedPlatformLayer> m_layer;
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> m_pendingBuffer WTF_GUARDED_BY_CAPABILITY(mainThread);
+ #if ENABLE(VIDEO) && USE(GSTREAMER)
+-    RefPtr<RunLoop> m_compositingRunLoop WTF_GUARDED_BY_LOCK(m_lock);
++    RefPtr<RunLoop> m_compositingRunLoop;
+ #endif
+ };
+ 
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.cpp
+@@ -43,6 +43,7 @@
+ #include "GraphicsLayerFilterAnimationValue.h"
+ #include "GraphicsLayerKeyframeValueList.h"
+ #include "Image.h"
++#include "MediaPlayer.h"
+ #include "NativeImage.h"
+ #include <wtf/Locker.h>
+ 
+@@ -85,7 +86,7 @@ GraphicsLayerCoordinated::GraphicsLayerC
+ GraphicsLayerCoordinated::~GraphicsLayerCoordinated()
+ {
+     if (m_contentsBufferProxy)
+-        m_contentsBufferProxy->setTargetLayer(nullptr);
++        m_contentsBufferProxy->invalidate();
+     m_platformLayer->setOwner(nullptr);
+     if (m_parent)
+         downcast<GraphicsLayerCoordinated>(*m_parent).noteLayerPropertyChanged(Change::Children, ScheduleFlush::Yes);
+@@ -380,24 +381,33 @@ void GraphicsLayerCoordinated::setConten
+     noteLayerPropertyChanged(Change::ContentsBufferNeedsDisplay, ScheduleFlush::Yes);
+ }
+ 
+-void GraphicsLayerCoordinated::setContentsToPlatformLayer(PlatformLayer* contentsLayer, ContentsLayerPurpose)
++#if ENABLE(VIDEO) && USE(GSTREAMER)
++void GraphicsLayerCoordinated::setContentsToMediaPlayer(MediaPlayer* player, ContentsLayerPurpose)
+ {
+-    if (m_contentsBufferProxy == contentsLayer)
++    // Never try to get or set the proxy on a player that doesn't support accelerated rendering (null media player).
++    if (player && !player->supportsAcceleratedRendering())
++        player = nullptr;
++
++    if (player && m_contentsBufferProxy && player->platformLayerBufferProxy() == m_contentsBufferProxy)
+         return;
+ 
+-    if (m_contentsBufferProxy)
+-        m_contentsBufferProxy->setTargetLayer(nullptr);
++    if (!player && !m_contentsBufferProxy)
++        return;
+ 
+-    m_contentsBufferProxy = contentsLayer;
++    if (m_contentsBufferProxy)
++        m_contentsBufferProxy->invalidate();
+ 
+     EnumSet<Change> change = { Change::ContentsBuffer };
+-    if (m_contentsBufferProxy) {
+-        m_contentsBufferProxy->setTargetLayer(m_platformLayer.ptr());
++    if (player) {
++        m_contentsBufferProxy = CoordinatedPlatformLayerBufferProxy::create(m_platformLayer.copyRef());
++        player->setPlatformLayerBufferProxy(Ref { *m_contentsBufferProxy });
+         m_contentsDisplayDelegate = nullptr;
+         change.add(Change::ContentsBufferNeedsDisplay);
+-    }
++    } else
++        m_contentsBufferProxy = nullptr;
+     noteLayerPropertyChanged(change, ScheduleFlush::Yes);
+ }
++#endif
+ 
+ void GraphicsLayerCoordinated::setContentsDisplayDelegate(RefPtr<GraphicsLayerContentsDisplayDelegate>&& delegate, ContentsLayerPurpose)
+ {
+@@ -412,7 +422,7 @@ void GraphicsLayerCoordinated::setConten
+         m_contentsDisplayDelegate->setThreadSafeGrContext(m_platformLayer->threadSafeGrContext());
+ #endif
+         if (m_contentsBufferProxy) {
+-            m_contentsBufferProxy->setTargetLayer(nullptr);
++            m_contentsBufferProxy->invalidate();
+             m_contentsBufferProxy = nullptr;
+         }
+         change.add(Change::ContentsBufferNeedsDisplay);
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/GraphicsLayerCoordinated.h
+@@ -82,7 +82,9 @@ private:
+     void setContentsClippingRect(const FloatRoundedRect&) override;
+     void setContentsNeedsDisplay() override;
+     void setContentsNeedsDisplayInRect(const FloatRect&) override;
+-    void setContentsToPlatformLayer(PlatformLayer*, ContentsLayerPurpose) override;
++#if ENABLE(VIDEO) && USE(GSTREAMER)
++    void setContentsToMediaPlayer(MediaPlayer*, ContentsLayerPurpose) override;
++#endif
+     void setContentsDisplayDelegate(RefPtr<GraphicsLayerContentsDisplayDelegate>&&, ContentsLayerPurpose) override;
+     RefPtr<GraphicsLayerAsyncContentsDisplayDelegate> createAsyncContentsDisplayDelegate(GraphicsLayerAsyncContentsDisplayDelegate*) override;
+     void setContentsToImage(Image*) override;
+--- a/Source/WebCore/rendering/RenderLayerBacking.cpp
++++ b/Source/WebCore/rendering/RenderLayerBacking.cpp
+@@ -1342,7 +1342,7 @@ bool RenderLayerBacking::updateConfigura
+             )
+             m_graphicsLayer->setContentsToVideoElement(videoElement, GraphicsLayer::ContentsLayerPurpose::Media);
+         else
+-            m_graphicsLayer->setContentsToPlatformLayer(videoElement->platformLayer(), GraphicsLayer::ContentsLayerPurpose::Media);
++            m_graphicsLayer->setContentsToMediaPlayer(videoElement->player(), GraphicsLayer::ContentsLayerPurpose::Media);
+         updateContentsRects();
+     }
+ #endif
+--- a/Source/WebKit/WebProcess/GPU/media/gstreamer/VideoLayerRemoteGStreamer.cpp
++++ b/Source/WebKit/WebProcess/GPU/media/gstreamer/VideoLayerRemoteGStreamer.cpp
+@@ -30,7 +30,7 @@
+ #include <WebCore/NotImplemented.h>
+ 
+ #if USE(COORDINATED_GRAPHICS)
+-#include <WebCore/CoordinatedPlatformLayerBufferProxy.h>
++#include <WebCore/CoordinatedPlatformLayer.h>
+ #endif
+ 
+ namespace WebKit {

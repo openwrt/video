@@ -1,4 +1,4 @@
-From a79d0165f74e8000300d13da436b42a7cca7d1ca Mon Sep 17 00:00:00 2001
+From 408722e53aa0a91bfa7c1f5602d96baea4156661 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
 Date: Sun, 8 Nov 2026 09:47:13 +0000
 Subject: [PATCH] [GStreamer] Let a hole-punch quirk place video by the page's
@@ -29,7 +29,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -4688,9 +4688,47 @@ void MediaPlayerPrivateGStreamer::pushNe
+@@ -4716,9 +4716,47 @@ void MediaPlayerPrivateGStreamer::pushNe
  #endif
  }
  
@@ -78,7 +78,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  }
  
  void MediaPlayerPrivateGStreamer::configureVideoSinkForPlayback(GstElement* videoSink)
-@@ -4747,6 +4785,8 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4775,6 +4813,8 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      if (isHolePunchRenderingEnabled()) {
          m_videoSink = createHolePunchVideoSink();
@@ -89,10 +89,10 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
              m_isCreatingSoftwareDecodedVideoSink = true;
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -324,6 +324,8 @@ protected:
+@@ -328,6 +328,8 @@ protected:
      void leaveHolePunchOnSystemMemoryOutput(GstElement* decoder);
      void leaveHolePunch(GstElement* decoder);
-     void pushNextHolePunchBuffer();
+     void pushNextHolePunchBuffer(IsInitialBuffer = IsInitialBuffer::No);
 +    void watchHolePunchVideoSize();
 +    bool holePunchPlacesVideoByObjectFit() const;
      bool shouldIgnoreIntrinsicSize() final;

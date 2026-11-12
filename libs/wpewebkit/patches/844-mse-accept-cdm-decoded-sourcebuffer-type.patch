@@ -168,7 +168,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      void startedWaitingForKey();
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -5099,6 +5099,24 @@ bool MediaPlayerPrivateGStreamer::waitin
+@@ -5127,6 +5127,24 @@ bool MediaPlayerPrivateGStreamer::waitin
  
      return m_cdmInstance->isWaitingForKey();
  }
@@ -195,7 +195,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  bool MediaPlayerPrivateGStreamer::supportsKeySystem(const String& keySystem, [[maybe_unused]] const String& mimeType)
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -202,6 +202,9 @@ public:
+@@ -204,6 +204,9 @@ public:
      bool waitingForKey() const final;
  
      void handleProtectionEvent(GstEvent*);

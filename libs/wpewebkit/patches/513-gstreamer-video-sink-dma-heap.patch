@@ -427,7 +427,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include "GStreamerQuirks.h"
  #include "GStreamerRegistryScanner.h"
  #include "GraphicsContext.h"
-@@ -2024,6 +2025,32 @@ void MediaPlayerPrivateGStreamer::handle
+@@ -2020,6 +2021,32 @@ void MediaPlayerPrivateGStreamer::handle
      GST_DEBUG_OBJECT(pipeline(), "Updating tracks DONE");
  }
  
@@ -460,7 +460,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  bool MediaPlayerPrivateGStreamer::handleNeedContextMessage(GstMessage* message)
  {
      ASSERT(GST_MESSAGE_TYPE(message) == GST_MESSAGE_NEED_CONTEXT);
-@@ -2045,6 +2072,11 @@ bool MediaPlayerPrivateGStreamer::handle
+@@ -2041,6 +2068,11 @@ bool MediaPlayerPrivateGStreamer::handle
          return true;
      }
  
@@ -474,7 +474,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          initializationDataEncountered(parseInitDataFromProtectionMessage(message));
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -218,6 +218,9 @@ public:
+@@ -220,6 +220,9 @@ public:
      // Append pipeline interface
      // FIXME: Use the client interface pattern, AppendPipeline does not need the full interface to this class just for this function.
      bool handleNeedContextMessage(GstMessage*);
