@@ -171,7 +171,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include <wtf/FileSystem.h>
  #include <wtf/glib/WTFGType.h>
  #include <wtf/MathExtras.h>
-@@ -233,6 +234,7 @@ void MediaPlayerPrivateGStreamer::tearDo
+@@ -229,6 +230,7 @@ void MediaPlayerPrivateGStreamer::tearDo
      {
          Locker locker { m_decoderConfigurationLock };
          m_codecProbes.clear();
@@ -179,7 +179,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          m_videoFrameInputProbe = nullptr;
          m_videoFrameOutputProbe = nullptr;
      }
-@@ -3953,10 +3955,65 @@ void MediaPlayerPrivateGStreamer::leaveH
+@@ -3949,10 +3951,65 @@ void MediaPlayerPrivateGStreamer::leaveH
      });
  }
  
@@ -247,7 +247,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          m_videoDecoderPlatform = GstVideoDecoderPlatform::Video4Linux;
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -386,6 +386,8 @@ protected:
+@@ -390,6 +390,8 @@ protected:
  
      URL m_url;
      Ref<MainThreadNotifier<MainThreadNotification>> m_notifier;
@@ -256,7 +256,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      ThreadSafeWeakPtr<MediaPlayer> m_player;
      String m_referrer;
      mutable MediaTime m_cachedPosition;
-@@ -588,6 +590,8 @@ private:
+@@ -592,6 +594,8 @@ private:
  
      void configureAudioDecoder(GstElement*);
      void configureVideoDecoder(GstElement*);
@@ -265,7 +265,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      void configureElement(GstElement*);
      void configureParsebin(GstElement*);
      void configureUriDecodebin2(GstElement*);
-@@ -752,6 +756,9 @@ private:
+@@ -756,6 +760,9 @@ private:
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameInputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameOutputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_decoderOutputMemoryProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
