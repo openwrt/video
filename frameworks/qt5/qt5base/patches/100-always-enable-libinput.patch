@@ -1,6 +1,23 @@
---- ./src/platformsupport/platformsupport.pro	2020-05-11 08:15:08.000000000 +0000
-+++ ./src/platformsupport/platformsupport.pro.mod	2020-06-11 21:15:01.922331522 +0000
-@@ -6,13 +6,13 @@
+From f1431c9649b268d6dd037d78347f20b9a94f17d1 Mon Sep 17 00:00:00 2001
+From: Mirko Vogt <mirko-openwrt@nanl.de>
+Date: Mon, 12 May 2025 00:52:38 +0000
+Subject: [PATCH] qt5base: force-build "input"-component
+
+Without that patch the build rule including the input component depends
+on other options being enabled, such as e.g. GUI support.
+Since our host build is headless and we only need the input component
+which actually does not have any such dependencies, we patch to force-
+build it.
+
+input component being present is a requirement for e.g. qt5tools
+building certain host tools - such as 'kmap2qmap'.
+---
+ src/platformsupport/platformsupport.pro | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+--- a/src/platformsupport/platformsupport.pro
++++ b/src/platformsupport/platformsupport.pro
+@@ -6,13 +6,13 @@ SUBDIRS = \
      eventdispatchers \
      devicediscovery \
      fbconvenience \
@@ -15,3 +32,4 @@
 -    SUBDIRS += input
      input.depends += devicediscovery
  }
+ 
