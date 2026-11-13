@@ -1,4 +1,4 @@
-From 2a671e15c1ba18b108ecc3d730aaff2be198725b Mon Sep 17 00:00:00 2001
+From 0568da00950251858a3b32964d0e7768bbf944a3 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
 Date: Wed, 11 Nov 2026 17:16:06 +0000
 Subject: [PATCH] [GStreamer][GBM] Video in an external-only DMA-BUF layout
@@ -28,7 +28,7 @@ glupload, which imports it as an external texture and converts it.
 (WebCore::isModifierSampledAsTexture2D):
 (WebCore::GLDisplay::bufferFormatsForVideo):
 * Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp:
-(WebCore::CoordinatedPlatformLayerBufferDMABuf::importFormats):
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::allPlaneFormats):
 * Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h:
 
 Signed-off-by: Daniel Golle <daniel@makrotopia.org>
@@ -88,12 +88,12 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
              };
              m_bufferFormatsForVideo = queryDMABufFormats(m_display, s_supportedFormats, m_extensions.EXT_image_dma_buf_import_modifiers);
 +
-+            // The texture mapper binds every imported plane to GL_TEXTURE_2D, which an external-only modifier does not allow.
++            // CoordinatedPlatformLayerBufferDMABuf::importDMABuf() binds every plane it imports to GL_TEXTURE_2D, which an external-only modifier does not allow.
 +            for (auto& format : m_bufferFormatsForVideo) {
-+                auto importFormats = CoordinatedPlatformLayerBufferDMABuf::importFormats(format.fourcc.value);
++                auto planeFormats = CoordinatedPlatformLayerBufferDMABuf::allPlaneFormats(format.fourcc.value);
 +                format.modifiers.removeAllMatching([&](uint64_t modifier) {
-+                    return !std::ranges::all_of(importFormats, [&](uint32_t importFormat) {
-+                        return isModifierSampledAsTexture2D(m_display, importFormat, modifier);
++                    return !std::ranges::all_of(planeFormats, [&](uint32_t planeFormat) {
++                        return isModifierSampledAsTexture2D(m_display, planeFormat, modifier);
 +                    });
 +                });
 +            }
@@ -109,13 +109,13 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      return yuvFormatsMap;
  }
  
-+Vector<uint32_t> CoordinatedPlatformLayerBufferDMABuf::importFormats(uint32_t fourcc)
++Vector<uint32_t, 4> CoordinatedPlatformLayerBufferDMABuf::allPlaneFormats(uint32_t fourcc)
 +{
 +    const auto& iter = yuvFormatPlaneInfo().find(fourcc);
 +    if (iter == yuvFormatPlaneInfo().end())
 +        return { fourcc };
 +
-+    return iter->value.map([](const YUVPlaneInfo& plane) {
++    return iter->value.map<Vector<uint32_t, 4>>([](const YUVPlaneInfo& plane) {
 +        return plane.fourcc;
 +    });
 +}
@@ -129,7 +129,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      CoordinatedPlatformLayerBufferDMABuf(Ref<DMABufBuffer>&&, OptionSet<TextureMapperFlags>, WTF::UnixFileDescriptor&&);
      virtual ~CoordinatedPlatformLayerBufferDMABuf();
  
-+    static Vector<uint32_t> importFormats(uint32_t fourcc);
++    static Vector<uint32_t, 4> allPlaneFormats(uint32_t fourcc);
 +
      // Provides CPU-readable rows for a YUV plane whose standalone DMABuf import the GPU
      // rejected, so the plane can be repacked at an accepted stride. Set by the owner that
