@@ -29,7 +29,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -4708,7 +4708,32 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4726,7 +4726,32 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      gst_bin_add(bin, m_videoSink.get());
      GRefPtr pad = adoptGRef(gst_element_get_static_pad(m_videoSink.get(), "sink"));
@@ -65,7 +65,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -444,6 +444,7 @@ protected:
+@@ -448,6 +448,7 @@ protected:
      GRefPtr<GstElement> m_softwareDecodedVideoSink;
      // The video sink playbin holds: it contains the hole-punch sink, or the GL sink once a decoder puts out system memory.
      GRefPtr<GstElement> m_holePunchVideoSinkBin;

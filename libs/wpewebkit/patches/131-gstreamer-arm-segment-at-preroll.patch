@@ -33,7 +33,7 @@ play() retains the arming for a loop enabled after preroll.
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -508,11 +508,9 @@ void MediaPlayerPrivateGStreamer::play()
+@@ -504,11 +504,9 @@ void MediaPlayerPrivateGStreamer::play()
  #endif
          RefPtr player = m_player.get();
          if (player) {
@@ -48,7 +48,7 @@ play() retains the arming for a loop enabled after preroll.
                  updateDownloadBufferingFlag();
          }
      } else
-@@ -616,11 +614,16 @@ bool MediaPlayerPrivateGStreamer::doSeek
+@@ -612,11 +610,16 @@ bool MediaPlayerPrivateGStreamer::doSeek
          g_object_set(m_downloadBuffer.get(), "high-percent", 0, nullptr);
      }
  
@@ -70,7 +70,7 @@ play() retains the arming for a loop enabled after preroll.
      }
      auto seekFlags = static_cast<GstSeekFlags>(flag | GST_SEEK_FLAG_ACCURATE);
  
-@@ -690,6 +693,23 @@ bool MediaPlayerPrivateGStreamer::doSeek
+@@ -686,6 +689,23 @@ bool MediaPlayerPrivateGStreamer::doSeek
      return gst_element_send_event(m_pipeline.get(), gst_event_new_seek(rate, GST_FORMAT_TIME, seekFlags, GST_SEEK_TYPE_SET, seekStart, GST_SEEK_TYPE_SET, seekStop));
  }
  
@@ -94,7 +94,7 @@ play() retains the arming for a loop enabled after preroll.
  Ref<MediaTimePromise> MediaPlayerPrivateGStreamer::seekToTarget(const SeekTarget& inTarget)
  {
      if (auto previousSeekPromise = std::exchange(m_seekPromise, std::nullopt))
-@@ -3093,6 +3113,12 @@ void MediaPlayerPrivateGStreamer::update
+@@ -3089,6 +3109,12 @@ void MediaPlayerPrivateGStreamer::update
              m_isEndReached = false;
          }
  
@@ -109,7 +109,7 @@ play() retains the arming for a loop enabled after preroll.
          // Emitting this notification in more cases triggers unwanted code paths
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -381,6 +381,7 @@ protected:
+@@ -385,6 +385,7 @@ protected:
      mutable std::optional<bool> m_isLiveStream;
  
      bool isSeamlessSeekingEnabled() const;
@@ -117,7 +117,7 @@ play() retains the arming for a loop enabled after preroll.
      bool m_isSegmentSeekAllowed { true };
  
      // Must reflect whether the last successfull call to gst_element_set_state() was for PLAYING.
-@@ -408,6 +409,7 @@ protected:
+@@ -412,6 +413,7 @@ protected:
      std::optional<MediaTimePromise::AutoRejectProducer> m_seekPromise;
      bool m_isSeekPending { false };
      bool m_isLoopRestartSeekPending { false };

@@ -1,4 +1,4 @@
-From 7b0f011ba09d98f65c16b9041f95365a0ac03ea1 Mon Sep 17 00:00:00 2001
+From 55076ca81cfe91ffc7887ccee1dee4bd2583ae97 Mon Sep 17 00:00:00 2001
 From: Daniel Golle <daniel@makrotopia.org>
 Date: Tue, 10 Nov 2026 11:21:31 +0200
 Subject: [PATCH] [GStreamer] Let a hole-punch quirk leave software-decoded
@@ -33,7 +33,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -1432,7 +1432,7 @@ bool MediaPlayerPrivateGStreamer::hasFir
+@@ -1428,7 +1428,7 @@ bool MediaPlayerPrivateGStreamer::hasFir
  
  bool MediaPlayerPrivateGStreamer::requiresVideoSinkCapsNotifications() const
  {
@@ -42,7 +42,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          return false;
  
      RefPtr player = m_player.get();
-@@ -3808,8 +3808,123 @@ void MediaPlayerPrivateGStreamer::config
+@@ -3804,8 +3804,123 @@ void MediaPlayerPrivateGStreamer::config
          configureMediaStreamAudioDecoder(decoder);
  }
  
@@ -166,7 +166,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      auto name = GMallocString::unsafeAdoptFromUTF8(gst_element_get_name(decoder));
      if (startsWith(name.span(), "v4l2"_s))
          m_videoDecoderPlatform = GstVideoDecoderPlatform::Video4Linux;
-@@ -4510,6 +4625,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4528,6 +4643,9 @@ GstElement* MediaPlayerPrivateGStreamer:
  
  bool MediaPlayerPrivateGStreamer::isHolePunchRenderingEnabled() const
  {
@@ -176,7 +176,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      if (m_quirksManagerForTesting)
          return m_quirksManagerForTesting->supportsVideoHolePunchRendering();
  
-@@ -4548,6 +4666,20 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4566,6 +4684,20 @@ GstElement* MediaPlayerPrivateGStreamer:
      return sink;
  }
  
@@ -194,10 +194,10 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +    return m_holePunchVideoSinkBin.get();
 +}
 +
- void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer()
+ void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer(IsInitialBuffer isInitialBuffer)
  {
      ASSERT(isHolePunchRenderingEnabled());
-@@ -4561,6 +4693,31 @@ bool MediaPlayerPrivateGStreamer::should
+@@ -4589,6 +4721,31 @@ bool MediaPlayerPrivateGStreamer::should
      return isHolePunchRenderingEnabled();
  }
  
@@ -229,7 +229,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  GstElement* MediaPlayerPrivateGStreamer::createVideoSink()
  {
      acceleratedRenderingStateChanged();
-@@ -4570,27 +4727,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4598,27 +4755,9 @@ GstElement* MediaPlayerPrivateGStreamer:
          if (!m_videoSink || isMediaStreamPlayer())
              return;
  
@@ -260,7 +260,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      });
  
      RefPtr player = m_player.get();
-@@ -4608,8 +4747,17 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4636,8 +4775,17 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      if (isHolePunchRenderingEnabled()) {
          m_videoSink = createHolePunchVideoSink();
@@ -280,7 +280,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -318,6 +318,11 @@ protected:
+@@ -322,6 +322,11 @@ protected:
  
      bool isHolePunchRenderingEnabled() const;
      GstElement* createHolePunchVideoSink();
@@ -289,10 +289,10 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +    void leaveHolePunchForSoftwareDecoder(GstElement* decoder);
 +    void leaveHolePunchOnSystemMemoryOutput(GstElement* decoder);
 +    void leaveHolePunch(GstElement* decoder);
-     void pushNextHolePunchBuffer();
+     void pushNextHolePunchBuffer(IsInitialBuffer = IsInitialBuffer::No);
      bool shouldIgnoreIntrinsicSize() final;
  
-@@ -430,6 +435,12 @@ protected:
+@@ -434,6 +439,12 @@ protected:
  
      GRefPtr<GstElement> m_audioSink;
      GRefPtr<GstElement> m_videoSink;
@@ -305,7 +305,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      GRefPtr<GstElement> m_pipeline;
      IntSize m_size;
  
-@@ -731,6 +742,7 @@ private:
+@@ -735,6 +746,7 @@ private:
      std::optional<VideoFrameGStreamer::Info> m_videoInfo;
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameInputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameOutputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
