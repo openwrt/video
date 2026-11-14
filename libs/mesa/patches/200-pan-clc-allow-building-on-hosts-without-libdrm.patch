@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Wed, 16 Jul 2025 15:56:34 +0100
+Subject: [PATCH] pan/clc: allow building on hosts without libdrm
+
+When using a non-Linux host to cross-compile the panfrost driver we
+need to make sure that the 'panfrost_compile' tool can be built without
+requiring libdrm or using functions provided by xf86drm.h, which is the
+case for panfrost/lib/kmod.
+
+Stop panfrost_compile from depending on libpanfrost, stop the
+per-version libraries from building by default, and skip the run-time
+tools when libdrm is absent.
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+Link: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/36170
+---
+ src/panfrost/clc/meson.build | 4 ++--
+ src/panfrost/lib/meson.build | 2 ++
+ src/panfrost/meson.build     | 2 +-
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+--- a/src/panfrost/clc/meson.build
++++ b/src/panfrost/clc/meson.build
+@@ -10,10 +10,10 @@ else
+     'panfrost_compile',
+     ['pan_compile.c'],
+     link_with : [libpanfrost_compiler],
+-    include_directories : [inc_include, inc_src],
++    include_directories : [inc_include, inc_src, inc_panfrost],
+     c_args : [c_msvc_compat_args, no_override_init_args, soong_compat_c_args],
+     link_args : [ld_args_build_id],
+-    dependencies : [idep_vtn, idep_nir, idep_mesautil, libpanfrost_dep],
++    dependencies : [idep_vtn, idep_nir, idep_mesautil, idep_pan_packers, libpanfrost_model_dep],
+     # If we can run host binaries directly, just build panfrost_compile for the host.
+     # Most commonly this happens when doing a cross compile from an x86_64 build
+     # machine to an x86 host
+--- a/src/panfrost/lib/meson.build
++++ b/src/panfrost/lib/meson.build
+@@ -17,6 +17,7 @@ foreach ver : pixel_format_versions
+     c_args : ['-DPAN_ARCH=' + ver],
+     gnu_symbol_visibility : 'hidden',
+     dependencies : [deps_for_libpanfrost, dep_valgrind],
++    build_by_default : false,
+ )
+ endforeach
+ 
+@@ -38,6 +39,7 @@ foreach ver : ['4', '5', '6', '7', '9',
+     c_args : ['-DPAN_ARCH=' + ver],
+     gnu_symbol_visibility : 'hidden',
+     dependencies : [deps_for_libpanfrost, idep_nir],
++    build_by_default : false,
+   )
+ endforeach
+ 
+--- a/src/panfrost/meson.build
++++ b/src/panfrost/meson.build
+@@ -86,6 +86,6 @@ if with_tools.contains('drm-shim')
+   subdir('drm-shim')
+ endif
+ 
+-if with_tools.contains('panfrost')
++if with_tools.contains('panfrost') and dep_libdrm.found()
+    subdir('tools')
+ endif

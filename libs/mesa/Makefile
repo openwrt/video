@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mesa
 PKG_VERSION:=26.2.2
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://archive.mesa3d.org/
@@ -545,7 +545,7 @@ MESON_HOST_ARGS += \
 
 ifneq ($(CONFIG_MESA_USE_LLVM),)
 MESON_HOST_ARGS += \
-	-Dtools=nir,imagination \
+	-Dtools=nir,imagination,panfrost \
 	-Dllvm=enabled \
 	-Dmesa-clc=enabled \
 	-Dprecomp-compiler=enabled \
