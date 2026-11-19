@@ -29,7 +29,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/MediaPlayer.cpp
 +++ b/Source/WebCore/platform/graphics/MediaPlayer.cpp
-@@ -1558,8 +1558,11 @@ void MediaPlayer::setPrivateBrowsingMode
+@@ -1559,8 +1559,11 @@ void MediaPlayer::setPrivateBrowsingMode
  void MediaPlayer::networkStateChanged()
  {
      RefPtr playerPrivate = m_private;

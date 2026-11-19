@@ -1,0 +1,40 @@
+From 55f47027b4a18f04fae9f19ac969c5bb4cfc282d Mon Sep 17 00:00:00 2001
+From: Daniel Golle <daniel@makrotopia.org>
+Date: Sat, 14 Nov 2026 03:27:42 +0000
+Subject: [PATCH] JavaScriptCore: RISCV64: name OR and AND by namespace in the
+ disassembler
+
+Need the bug URL (OOPS!).
+
+Reviewed by NOBODY (OOPS!).
+
+disassembleOpcode() pulls in namespace RISCV64Instructions with a
+using-directive and lists the instruction types by their bare names.
+JavaScriptCorePrefix.h includes CodeBlock.h, which reaches
+ParserTokens.h, so a build using the precompiled prefix header also
+sees the JSTokenType enumerators JSC::OR and JSC::AND in this file.
+The bare names OR and AND are then ambiguous, and GCC rejects the
+template argument list with "template argument 36 is invalid".
+
+Name the two instruction types with their namespace, as
+RTypeDefaultFormatting in this file does.
+
+* Source/JavaScriptCore/disassembler/RISCV64Disassembler.cpp:
+(JSC::RISCV64Disassembler::disassembleOpcode):
+
+Signed-off-by: Daniel Golle <daniel@makrotopia.org>
+---
+ Source/JavaScriptCore/disassembler/RISCV64Disassembler.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/Source/JavaScriptCore/disassembler/RISCV64Disassembler.cpp
++++ b/Source/JavaScriptCore/disassembler/RISCV64Disassembler.cpp
+@@ -584,7 +584,7 @@ CString disassembleOpcode(uint32_t *pc)
+         LB, LH, LW, LBU, LHU,
+         SB, SH, SW,
+         ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI,
+-        ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND,
++        ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, RISCV64Instructions::OR, RISCV64Instructions::AND,
+         FENCE, ECALL, EBREAK,
+         // RV64I Base Instruction Set (in addition to RV32I)
+         LWU, LD, SD,

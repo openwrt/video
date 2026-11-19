@@ -44,7 +44,7 @@ transport heuristics are the right source, keep their current behaviour.
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -373,6 +373,8 @@ void MediaPlayerPrivateGStreamer::load(c
+@@ -369,6 +369,8 @@ void MediaPlayerPrivateGStreamer::load(c
          return;
      }
  
@@ -53,7 +53,7 @@ transport heuristics are the right source, keep their current behaviour.
      registerWebKitGStreamerElements();
  
      if (!m_pipeline)
-@@ -1092,7 +1094,8 @@ unsigned long long MediaPlayerPrivateGSt
+@@ -1088,7 +1090,8 @@ unsigned long long MediaPlayerPrivateGSt
      if (gst_element_query_duration(m_source.get(), fmt, &length)) {
          GST_INFO_OBJECT(pipeline(), "totalBytes %" G_GINT64_FORMAT, length);
          m_totalBytes = static_cast<unsigned long long>(length);
@@ -63,7 +63,7 @@ transport heuristics are the right source, keep their current behaviour.
          return m_totalBytes;
      }
  
-@@ -1126,7 +1129,8 @@ unsigned long long MediaPlayerPrivateGSt
+@@ -1122,7 +1125,8 @@ unsigned long long MediaPlayerPrivateGSt
  
      GST_INFO_OBJECT(pipeline(), "totalBytes %" G_GINT64_FORMAT, length);
      m_totalBytes = static_cast<unsigned long long>(length);
@@ -73,7 +73,7 @@ transport heuristics are the right source, keep their current behaviour.
      return m_totalBytes;
  }
  
-@@ -1162,6 +1166,9 @@ void MediaPlayerPrivateGStreamer::durati
+@@ -1158,6 +1162,9 @@ void MediaPlayerPrivateGStreamer::durati
      MediaTime previousDuration = duration();
      m_cachedDuration = MediaTime::invalidTime();
  
@@ -83,7 +83,7 @@ transport heuristics are the right source, keep their current behaviour.
      // Avoid emitting durationChanged in the case where the previous
      // duration was 0 because that case is already handled by the
      // HTMLMediaElement.
-@@ -1521,6 +1528,22 @@ MediaTime MediaPlayerPrivateGStreamer::p
+@@ -1517,6 +1524,22 @@ MediaTime MediaPlayerPrivateGStreamer::p
      return MediaTime(duration, GST_SECOND);
  }
  
@@ -106,7 +106,7 @@ transport heuristics are the right source, keep their current behaviour.
  bool MediaPlayerPrivateGStreamer::isMuted() const
  {
      bool isMuted = false;
-@@ -2442,7 +2465,7 @@ void MediaPlayerPrivateGStreamer::handle
+@@ -2438,7 +2461,7 @@ void MediaPlayerPrivateGStreamer::handle
                      }
                  } else
                      contentLength = *contentLengthFromResponse;
@@ -115,7 +115,7 @@ transport heuristics are the right source, keep their current behaviour.
                      m_isLiveStream = !contentLength;
                      if (*m_isLiveStream && WEBKIT_IS_WEB_SRC(m_source.get()) && webKitSrcIsSeekable(WEBKIT_WEB_SRC_CAST(m_source.get())))
                          m_isLiveStream = false;
-@@ -2809,6 +2832,11 @@ void MediaPlayerPrivateGStreamer::config
+@@ -2805,6 +2828,11 @@ void MediaPlayerPrivateGStreamer::config
      String elementClass(unsafeSpan(gst_element_get_metadata(element, GST_ELEMENT_METADATA_KLASS)));
      auto classifiers = elementClass.split('/');
  
@@ -127,7 +127,7 @@ transport heuristics are the right source, keep their current behaviour.
      // In GStreamer 1.20 and older urisourcebin mishandles source elements with dynamic pads. This
      // is not an issue in 1.22. Streams parsing is not needed for MediaStream cases because we do it
      // upfront for incoming WebRTC MediaStreams. It is however needed for MSE, otherwise decodebin3
-@@ -2988,6 +3016,9 @@ void MediaPlayerPrivateGStreamer::didPre
+@@ -2984,6 +3012,9 @@ void MediaPlayerPrivateGStreamer::didPre
      // committed via doSeek()).
      if (m_isSeeking && !m_isSeekPending)
          finishSeek();
@@ -139,7 +139,7 @@ transport heuristics are the right source, keep their current behaviour.
  void MediaPlayerPrivateGStreamer::updateStates()
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
-@@ -258,7 +258,12 @@ public:
+@@ -260,7 +260,12 @@ public:
          return m_quirkStates.get(owner);
      }
  
@@ -153,7 +153,7 @@ transport heuristics are the right source, keep their current behaviour.
  
      bool requiresVideoSinkCapsNotifications() const;
      void videoSinkCapsChanged(GstPad*);
-@@ -379,8 +384,10 @@ protected:
+@@ -383,8 +388,10 @@ protected:
      bool m_didErrorOccur { false };
      mutable bool m_isEndReached { false };
      mutable std::optional<bool> m_isLiveStream;

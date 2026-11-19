@@ -31,7 +31,7 @@ exists to preserve.
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -3144,7 +3144,7 @@ void MediaPlayerPrivateGStreamer::update
+@@ -3140,7 +3140,7 @@ void MediaPlayerPrivateGStreamer::update
  
          // Delay the m_isBuffering change by returning it to its previous value. Without this, the false --> true change
          // would go unnoticed by the code that should trigger a pause.
