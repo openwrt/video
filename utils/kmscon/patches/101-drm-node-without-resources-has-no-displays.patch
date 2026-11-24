@@ -20,7 +20,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/src/video/drm_shared.c
 +++ b/src/video/drm_shared.c
-@@ -1462,8 +1462,10 @@ int drm_video_hotplug(struct video *vide
+@@ -1471,8 +1471,10 @@ int drm_video_hotplug(struct video *vide
  
  	res = drmModeGetResources(vdrm->fd);
  	if (!res) {
@@ -32,4 +32,4 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +		return 0;
  	}
  
- 	shl_dlist_for_each(iter, &video->displays)
+ 	dlist_for_each_entry(disp, &video->displays, list)

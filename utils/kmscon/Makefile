@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=kmscon
-PKG_VERSION:=10.0.3
-PKG_RELEASE:=6
+PKG_VERSION:=10.1.2
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/kmscon/kmscon/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=4a0552d3cd3ba16df4fcff61f2b1431650bcd9e7ecabc03625ce52345b9c95c5
+PKG_HASH:=ba683806d517b1dfc9cfbca0e9d5c2653b62d1fbf41918c00fa1d5c837626044
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT

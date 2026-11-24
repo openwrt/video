@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libtsm
-PKG_VERSION:=4.7.1
+PKG_VERSION:=4.8.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/kmscon/libtsm/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=40d7f11698f0ce87af8da67a3142ee9f02e2b5d914f8ad83aa080e052fe1ae2b
+PKG_HASH:=50811e9e94fc798eb5dcbaff20f81067c942ec47f329f91bbe4caeb35a61ff05
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=MIT
