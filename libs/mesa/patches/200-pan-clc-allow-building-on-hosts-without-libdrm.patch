@@ -55,7 +55,7 @@ Link: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/36170
  
 --- a/src/panfrost/meson.build
 +++ b/src/panfrost/meson.build
-@@ -86,6 +86,6 @@ if with_tools.contains('drm-shim')
+@@ -88,6 +88,6 @@ if with_tools.contains('drm-shim')
    subdir('drm-shim')
  endif
  
