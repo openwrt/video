@@ -23,7 +23,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/src/font/meson.build
 +++ b/src/font/meson.build
-@@ -20,19 +20,21 @@ font_deps = declare_dependency(
+@@ -21,19 +21,21 @@ font_deps = declare_dependency(
  # Unifont Generator
  # This generates the unifont sources from raw hex-encoded font data.
  #
