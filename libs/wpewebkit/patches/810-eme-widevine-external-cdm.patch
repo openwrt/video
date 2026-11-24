@@ -375,7 +375,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #endif
  
  #if ENABLE(VIDEO)
-@@ -574,6 +575,9 @@ void registerWebKitGStreamerElements()
+@@ -575,6 +576,9 @@ void registerWebKitGStreamerElements()
  #if ENABLE(ENCRYPTED_MEDIA) && ENABLE(EXTERNAL_CDM)
          if (!CDMFactoryExternalCDM::singleton().supportedKeySystems().isEmpty())
              gst_element_register(nullptr, "webkitexternalcdm", GST_RANK_PRIMARY + 100, WEBKIT_TYPE_MEDIA_EXTERNAL_CDM_DECRYPT);

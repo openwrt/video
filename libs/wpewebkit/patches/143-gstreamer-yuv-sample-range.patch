@@ -82,7 +82,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
 --- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
-@@ -870,6 +870,7 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+@@ -876,6 +876,7 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
      auto yuvColorimetry = this->yuvColorimetry();
      dmabuf->setColorSpace(yuvColorimetry.colorSpace);
      dmabuf->setTransferFunction(yuvColorimetry.transferFunction);
@@ -90,7 +90,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
      dmabuf->ref();
      gst_mini_object_set_qdata(memory, dmabufQuark, dmabuf.ptr(), [](gpointer data) {
-@@ -904,6 +905,7 @@ VideoFrameGStreamer::YUVColorimetry Vide
+@@ -910,6 +911,7 @@ VideoFrameGStreamer::YUVColorimetry Vide
      return {
          yuvColorSpaceFromMatrix(colorimetry.matrix),
          colorimetry.transfer == GST_VIDEO_TRANSFER_SMPTE2084 ? DMABufBuffer::TransferFunction::Pq : DMABufBuffer::TransferFunction::Bt709,

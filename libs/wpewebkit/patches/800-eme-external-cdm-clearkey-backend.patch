@@ -240,7 +240,7 @@ value stays the raw key bytes, so KeyHandleValueVariant is unchanged.
  #if ENABLE(VIDEO)
  #include "ImageDecoderGStreamer.h"
  #include "VideoEncoderPrivateGStreamer.h"
-@@ -566,6 +571,11 @@ void registerWebKitGStreamerElements()
+@@ -567,6 +572,11 @@ void registerWebKitGStreamerElements()
          }
  #endif
  

@@ -283,7 +283,7 @@ for every connection at the connecting stage, before connect.
  
 --- a/Source/WebKit/NetworkProcess/NetworkProcess.h
 +++ b/Source/WebKit/NetworkProcess/NetworkProcess.h
-@@ -594,6 +594,7 @@ private:
+@@ -613,6 +613,7 @@ private:
      void setIgnoreTLSErrors(PAL::SessionID, bool);
      void userPreferredLanguagesChanged(const Vector<String>&);
      void setNetworkProxySettings(PAL::SessionID, WebCore::SoupNetworkProxySettings&&);
@@ -293,7 +293,7 @@ for every connection at the connecting stage, before connect.
  
 --- a/Source/WebKit/NetworkProcess/NetworkProcess.messages.in
 +++ b/Source/WebKit/NetworkProcess/NetworkProcess.messages.in
-@@ -38,6 +38,7 @@ messages -> NetworkProcess : AuxiliaryPr
+@@ -39,6 +39,7 @@ messages -> NetworkProcess : AuxiliaryPr
      SetIgnoreTLSErrors(PAL::SessionID sessionID, bool ignoreTLSErrors)
      UserPreferredLanguagesChanged(Vector<String> languages)
      SetNetworkProxySettings(PAL::SessionID sessionID, struct WebCore::SoupNetworkProxySettings settings)
@@ -470,7 +470,7 @@ for every connection at the connecting stage, before connect.
      void setCookiePersistentStorage(const String&, SoupCookiePersistentStorageType);
      void setHTTPCookieAcceptPolicy(WebCore::HTTPCookieAcceptPolicy);
  #endif
-@@ -646,6 +648,7 @@ private:
+@@ -648,6 +650,7 @@ private:
      bool m_persistentCredentialStorageEnabled { true };
      bool m_ignoreTLSErrors { true };
      WebCore::SoupNetworkProxySettings m_networkProxySettings;

@@ -45,7 +45,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
-@@ -867,19 +867,9 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+@@ -873,19 +873,9 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
  
      Ref dmabuf = DMABufBuffer::create({ size, fourcc, WTF::move(fds), WTF::move(offsets), WTF::move(strides), modifier });
  
@@ -68,7 +68,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
      dmabuf->ref();
      gst_mini_object_set_qdata(memory, dmabufQuark, dmabuf.ptr(), [](gpointer data) {
-@@ -890,6 +880,34 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
+@@ -896,6 +886,34 @@ RefPtr<DMABufBuffer> VideoFrameGStreamer
  }
  #endif
  
