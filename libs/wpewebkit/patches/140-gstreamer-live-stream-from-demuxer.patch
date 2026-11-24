@@ -83,7 +83,7 @@ transport heuristics are the right source, keep their current behaviour.
      // Avoid emitting durationChanged in the case where the previous
      // duration was 0 because that case is already handled by the
      // HTMLMediaElement.
-@@ -1517,6 +1524,22 @@ MediaTime MediaPlayerPrivateGStreamer::p
+@@ -1515,6 +1522,22 @@ MediaTime MediaPlayerPrivateGStreamer::p
      return MediaTime(duration, GST_SECOND);
  }
  
@@ -106,7 +106,7 @@ transport heuristics are the right source, keep their current behaviour.
  bool MediaPlayerPrivateGStreamer::isMuted() const
  {
      bool isMuted = false;
-@@ -2438,7 +2461,7 @@ void MediaPlayerPrivateGStreamer::handle
+@@ -2436,7 +2459,7 @@ void MediaPlayerPrivateGStreamer::handle
                      }
                  } else
                      contentLength = *contentLengthFromResponse;
@@ -115,7 +115,7 @@ transport heuristics are the right source, keep their current behaviour.
                      m_isLiveStream = !contentLength;
                      if (*m_isLiveStream && WEBKIT_IS_WEB_SRC(m_source.get()) && webKitSrcIsSeekable(WEBKIT_WEB_SRC_CAST(m_source.get())))
                          m_isLiveStream = false;
-@@ -2805,6 +2828,11 @@ void MediaPlayerPrivateGStreamer::config
+@@ -2803,6 +2826,11 @@ void MediaPlayerPrivateGStreamer::config
      String elementClass(unsafeSpan(gst_element_get_metadata(element, GST_ELEMENT_METADATA_KLASS)));
      auto classifiers = elementClass.split('/');
  
@@ -125,9 +125,9 @@ transport heuristics are the right source, keep their current behaviour.
 +        m_hasAdaptiveDemuxer = true;
 +
      // In GStreamer 1.20 and older urisourcebin mishandles source elements with dynamic pads. This
-     // is not an issue in 1.22. Streams parsing is not needed for MediaStream cases because we do it
-     // upfront for incoming WebRTC MediaStreams. It is however needed for MSE, otherwise decodebin3
-@@ -2984,6 +3012,9 @@ void MediaPlayerPrivateGStreamer::didPre
+     // is not an issue in 1.22. Streams parsing is needed, otherwise decodebin3 might not auto-plug
+     // hardware decoders, specially in versions older than 1.24.13 and 1.26.1.
+@@ -2981,6 +3009,9 @@ void MediaPlayerPrivateGStreamer::didPre
      // committed via doSeek()).
      if (m_isSeeking && !m_isSeekPending)
          finishSeek();

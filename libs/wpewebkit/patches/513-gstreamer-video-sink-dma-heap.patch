@@ -427,7 +427,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include "GStreamerQuirks.h"
  #include "GStreamerRegistryScanner.h"
  #include "GraphicsContext.h"
-@@ -2020,6 +2021,32 @@ void MediaPlayerPrivateGStreamer::handle
+@@ -2018,6 +2019,32 @@ void MediaPlayerPrivateGStreamer::handle
      GST_DEBUG_OBJECT(pipeline(), "Updating tracks DONE");
  }
  
@@ -460,7 +460,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  bool MediaPlayerPrivateGStreamer::handleNeedContextMessage(GstMessage* message)
  {
      ASSERT(GST_MESSAGE_TYPE(message) == GST_MESSAGE_NEED_CONTEXT);
-@@ -2041,6 +2068,11 @@ bool MediaPlayerPrivateGStreamer::handle
+@@ -2039,6 +2066,11 @@ bool MediaPlayerPrivateGStreamer::handle
          return true;
      }
  

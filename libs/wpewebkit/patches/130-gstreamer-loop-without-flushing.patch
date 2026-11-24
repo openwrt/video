@@ -69,7 +69,7 @@ issued, otherwise its promise and the "seeked" event would never fire.
      }
  
      m_isEndReached = false;
-@@ -3174,9 +3179,14 @@ void MediaPlayerPrivateGStreamer::update
+@@ -3171,9 +3176,14 @@ void MediaPlayerPrivateGStreamer::update
              GST_DEBUG_OBJECT(pipeline(), "[Seek] committing pending seek to %s", toString(m_seekTarget.time).utf8().data());
              m_isSeekPending = false;
              m_isSeeking = doSeek(m_seekTarget, player->rate());
@@ -84,7 +84,7 @@ issued, otherwise its promise and the "seeked" event would never fire.
              }
          } else if (m_isSeeking && !(state == GST_STATE_PLAYING && pending == GST_STATE_PAUSED))
              finishSeek();
-@@ -3636,6 +3646,10 @@ void MediaPlayerPrivateGStreamer::create
+@@ -3640,6 +3650,10 @@ void MediaPlayerPrivateGStreamer::create
              if (!mediaPlayer || !mediaPlayer->isLooping())
                  return;
              GST_DEBUG_OBJECT(player->pipeline(), "Handling segment-done message");

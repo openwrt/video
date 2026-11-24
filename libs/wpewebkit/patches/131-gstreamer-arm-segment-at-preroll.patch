@@ -94,7 +94,7 @@ play() retains the arming for a loop enabled after preroll.
  Ref<MediaTimePromise> MediaPlayerPrivateGStreamer::seekToTarget(const SeekTarget& inTarget)
  {
      if (auto previousSeekPromise = std::exchange(m_seekPromise, std::nullopt))
-@@ -3089,6 +3109,12 @@ void MediaPlayerPrivateGStreamer::update
+@@ -3086,6 +3106,12 @@ void MediaPlayerPrivateGStreamer::update
              m_isEndReached = false;
          }
  

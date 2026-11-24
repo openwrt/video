@@ -28,7 +28,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
-@@ -459,6 +459,26 @@ GRefPtr<GstCaps> capsFromMimeCodec(const
+@@ -460,6 +460,26 @@ GRefPtr<GstCaps> capsFromMimeCodec(const
  #endif
  }
  
@@ -179,7 +179,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          m_videoFrameInputProbe = nullptr;
          m_videoFrameOutputProbe = nullptr;
      }
-@@ -3949,10 +3951,65 @@ void MediaPlayerPrivateGStreamer::leaveH
+@@ -3955,10 +3957,65 @@ void MediaPlayerPrivateGStreamer::leaveH
      });
  }
  

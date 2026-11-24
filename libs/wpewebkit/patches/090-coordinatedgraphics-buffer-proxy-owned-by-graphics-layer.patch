@@ -159,7 +159,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include "MediaPlayerPrivateGStreamer.h"
  #if ENABLE(MEDIA_SOURCE)
  #include "MediaPlayerPrivateGStreamerMSE.h"
-@@ -1821,6 +1822,19 @@ bool MediaPlayer::isGStreamerHolePunchin
+@@ -1838,6 +1839,19 @@ bool MediaPlayer::isGStreamerHolePunchin
  {
      return protect(client())->isGStreamerHolePunchingEnabled();
  }
@@ -276,7 +276,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      ensureGStreamerInitialized();
      m_audioSink = createAudioSink();
  }
-@@ -3896,12 +3892,22 @@ void MediaPlayerPrivateGStreamer::isLoop
+@@ -3902,12 +3898,22 @@ void MediaPlayerPrivateGStreamer::isLoop
  }
  
  #if USE(COORDINATED_GRAPHICS)
@@ -301,8 +301,8 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +void MediaPlayerPrivateGStreamer::pushTextureToCompositor(bool isDuplicateSample, IsInitialBuffer isInitialBuffer)
  {
      Locker sampleLocker { m_sampleMutex };
-     if (!GST_IS_SAMPLE(m_sample.get()))
-@@ -3913,6 +3919,10 @@ void MediaPlayerPrivateGStreamer::pushTe
+     if (!GST_IS_SAMPLE(m_sample.get()) || !gst_sample_get_buffer(m_sample.get()))
+@@ -3919,6 +3925,10 @@ void MediaPlayerPrivateGStreamer::pushTe
      if (!isDuplicateSample)
          ++m_sampleCount;
  
@@ -313,7 +313,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      if (!m_videoInfo)
          m_videoInfo = VideoFrameGStreamer::infoFromCaps(GRefPtr(gst_sample_get_caps(m_sample.get())));
  
-@@ -3920,7 +3930,11 @@ void MediaPlayerPrivateGStreamer::pushTe
+@@ -3926,7 +3936,11 @@ void MediaPlayerPrivateGStreamer::pushTe
      options.info = m_videoInfo;
      auto frame = VideoFrameGStreamer::createWrappedSample(m_sample, options);
  
@@ -326,7 +326,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  }
  #endif // USE(COORDINATED_GRAPHICS)
  
-@@ -4212,9 +4226,13 @@ void MediaPlayerPrivateGStreamer::flushC
+@@ -4222,9 +4236,13 @@ void MediaPlayerPrivateGStreamer::flushC
      }
  
  #if USE(COORDINATED_GRAPHICS)
@@ -341,7 +341,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #endif
  }
  #endif
-@@ -4477,11 +4495,21 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4489,11 +4507,21 @@ GstElement* MediaPlayerPrivateGStreamer:
      return sink;
  }
  

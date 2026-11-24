@@ -933,7 +933,7 @@ replacement) in a1..a3 and return the previous value in r0.
          case Width8:
 --- a/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmIPIntSlowPaths.cpp
-@@ -1404,6 +1404,123 @@ WASM_IPINT_EXTERN_CPP_DECL(ref_func, uns
+@@ -1407,6 +1407,123 @@ WASM_IPINT_EXTERN_CPP_DECL(ref_func, uns
      IPINT_RETURN(Wasm::refFunc(instance, index));
  }
  
@@ -1104,5 +1104,5 @@ replacement) in a1..a3 and return the previous value in r0.
 +WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(atomic_rmw_cmpxchg64, uint64_t address, uint64_t expected, uint64_t replacement);
 +
  WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(check_stack_and_vm_traps, void* candidateNewStackPointer, Wasm::IPIntCallee*, CallFrame*);
- WASM_IPINT_EXTERN_CPP_DECL(handle_debugger_trap_if_needed, CallFrame*, Register*);
+ WASM_IPINT_EXTERN_CPP_HIDDEN_DECL(handle_debugger_trap_if_needed, CallFrame*, Register*);
  

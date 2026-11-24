@@ -31,7 +31,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include <wtf/FileSystem.h>
  #include <wtf/HashMap.h>
  #include <wtf/MallocSpan.h>
-@@ -434,6 +437,28 @@ bool areEncryptedCaps(const GstCaps* cap
+@@ -435,6 +438,28 @@ bool areEncryptedCaps(const GstCaps* cap
  #endif
  }
  

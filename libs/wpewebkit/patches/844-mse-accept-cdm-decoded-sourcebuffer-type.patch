@@ -102,7 +102,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  #include "MediaSourceConfiguration.h"
  #if ENABLE(MEDIA_SOURCE_IN_WORKERS)
  #include "MediaSourceHandle.h"
-@@ -736,7 +737,7 @@ ExceptionOr<Ref<SourceBuffer>> MediaSour
+@@ -737,7 +738,7 @@ ExceptionOr<Ref<SourceBuffer>> MediaSour
      if (document)
          mediaContentTypesRequiringHardwareSupport.appendVector(document->settings().mediaContentTypesRequiringHardwareSupport());
  
@@ -111,7 +111,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          return Exception { ExceptionCode::NotSupportedError };
  
      // 4. If the readyState attribute is not in the "open" state then throw an
-@@ -1052,6 +1053,26 @@ bool MediaSource::isTypeSupported(Script
+@@ -1053,6 +1054,26 @@ bool MediaSource::isTypeSupported(Script
      return isSupported;
  }
  
@@ -168,7 +168,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      void startedWaitingForKey();
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -5127,6 +5127,24 @@ bool MediaPlayerPrivateGStreamer::waitin
+@@ -5139,6 +5139,24 @@ bool MediaPlayerPrivateGStreamer::waitin
  
      return m_cdmInstance->isWaitingForKey();
  }

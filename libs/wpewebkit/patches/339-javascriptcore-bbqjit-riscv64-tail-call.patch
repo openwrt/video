@@ -43,7 +43,7 @@ return_call inside try-catch.
      m_jit.loadPairPtr(MacroAssembler::framePointerRegister, callerFramePointer, MacroAssembler::linkRegister);
  #else
      UNUSED_PARAM(callerFramePointer);
-@@ -4774,7 +4774,7 @@ void BBQJIT::emitIndirectTailCall(const
+@@ -4782,7 +4782,7 @@ void BBQJIT::emitIndirectTailCall(const
  
      resolvedArguments.append(Value::pinned(pointerType(), Location::fromStack(sizeof(Register))));
      parameterLocations.append(Location::fromStack(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))));
@@ -52,7 +52,7 @@ return_call inside try-catch.
      auto preserved = callingConvention.argumentGPRs();
      preserved.add(importableFunction, IgnoreVectors);
      if constexpr (isARM64E())
-@@ -4831,7 +4831,7 @@ void BBQJIT::emitIndirectTailCall(const
+@@ -4839,7 +4839,7 @@ void BBQJIT::emitIndirectTailCall(const
      m_jit.loadPtr(Address(MacroAssembler::framePointerRegister, tailCallStackOffsetFromFP), wasmScratchGPR);
      m_jit.addPtr(TrustedImm32(tailCallStackOffsetFromFP + Checked<int>(sizeof(Register))), MacroAssembler::framePointerRegister, MacroAssembler::stackPointerRegister);
      m_jit.move(wasmScratchGPR, MacroAssembler::framePointerRegister);

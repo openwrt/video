@@ -29,7 +29,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -4726,7 +4726,32 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4738,7 +4738,32 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      gst_bin_add(bin, m_videoSink.get());
      GRefPtr pad = adoptGRef(gst_element_get_static_pad(m_videoSink.get(), "sink"));
@@ -103,7 +103,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      else {
 --- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
 +++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
-@@ -116,6 +116,7 @@ public:
+@@ -115,6 +115,7 @@ public:
      virtual bool requiresClockSynchronization() const { return true; }
      virtual bool leavesSoftwareDecodedVideoToGL() const { return false; }
      virtual bool placesVideoByObjectFit() const { return false; }

@@ -29,7 +29,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
 +++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
-@@ -4716,9 +4716,47 @@ void MediaPlayerPrivateGStreamer::pushNe
+@@ -4728,9 +4728,47 @@ void MediaPlayerPrivateGStreamer::pushNe
  #endif
  }
  
@@ -78,7 +78,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  }
  
  void MediaPlayerPrivateGStreamer::configureVideoSinkForPlayback(GstElement* videoSink)
-@@ -4775,6 +4813,8 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4787,6 +4825,8 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      if (isHolePunchRenderingEnabled()) {
          m_videoSink = createHolePunchVideoSink();
@@ -126,7 +126,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      if (m_quirks.isEmpty())
 --- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
 +++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
-@@ -115,6 +115,7 @@ public:
+@@ -114,6 +114,7 @@ public:
      virtual bool setHolePunchVideoRectangle(GstElement*, const IntRect&) { return false; }
      virtual bool requiresClockSynchronization() const { return true; }
      virtual bool leavesSoftwareDecodedVideoToGL() const { return false; }
@@ -134,7 +134,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  };
  
  class GStreamerQuirksManager : public RefCounted<GStreamerQuirksManager> {
-@@ -148,6 +149,7 @@ public:
+@@ -147,6 +148,7 @@ public:
      void setHolePunchVideoRectangle(GstElement*, const IntRect&);
      bool sinksRequireClockSynchronization() const;
      bool holePunchLeavesSoftwareDecodedVideoToGL() const;

@@ -32,7 +32,7 @@ only exists so the function bodies parse on RISCV64.
 
 --- a/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
 +++ b/Source/JavaScriptCore/wasm/WasmBBQJIT64.cpp
-@@ -3652,6 +3652,11 @@ void NODELETE BBQJIT::notifyFunctionUses
+@@ -3654,6 +3654,11 @@ void NODELETE BBQJIT::notifyFunctionUses
      clobber(ARM64Registers::q28);
      clobber(ARM64Registers::q29);
      ScratchScope<0, 0> scratches(*this, Location::fromFPR(ARM64Registers::q28), Location::fromFPR(ARM64Registers::q29));
@@ -44,7 +44,7 @@ only exists so the function bodies parse on RISCV64.
  #endif
      Location aLocation = loadIfNecessary(a);
      Location bLocation = loadIfNecessary(b);
-@@ -3709,6 +3714,11 @@ void NODELETE BBQJIT::notifyFunctionUses
+@@ -3711,6 +3716,11 @@ void NODELETE BBQJIT::notifyFunctionUses
      // Clobber and preserve RCX on x86, since we need it to do shifts.
      clobber(shiftRCX);
      ScratchScope<2, 2> scratches(*this, Location::fromGPR(shiftRCX));

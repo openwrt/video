@@ -26,7 +26,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  
  namespace WebCore {
  
-@@ -985,6 +986,33 @@ void MediaSource::removeSourceBufferWith
+@@ -986,6 +987,33 @@ void MediaSource::removeSourceBufferWith
      notifyElementUpdateMediaState();
  }
  
@@ -60,7 +60,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  bool MediaSource::isTypeSupported(ScriptExecutionContext& context, const String& type)
  {
      Vector<ContentType> mediaContentTypesRequiringHardwareSupport;
-@@ -1034,7 +1062,8 @@ bool MediaSource::isTypeSupported(Script
+@@ -1035,7 +1063,8 @@ bool MediaSource::isTypeSupported(Script
      }
  
      auto& cache = MediaSourceTypeSupportedCache::singleton();
@@ -70,7 +70,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          return *cached;
  
      MediaPlayer::SupportsType supported;
-@@ -1048,7 +1077,7 @@ bool MediaSource::isTypeSupported(Script
+@@ -1049,7 +1078,7 @@ bool MediaSource::isTypeSupported(Script
      else
          isSupported = supported == MediaPlayer::SupportsType::IsSupported;
  

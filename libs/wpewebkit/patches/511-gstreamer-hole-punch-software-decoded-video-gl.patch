@@ -42,7 +42,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
          return false;
  
      RefPtr player = m_player.get();
-@@ -3804,8 +3804,123 @@ void MediaPlayerPrivateGStreamer::config
+@@ -3810,8 +3810,123 @@ void MediaPlayerPrivateGStreamer::config
          configureMediaStreamAudioDecoder(decoder);
  }
  
@@ -166,7 +166,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      auto name = GMallocString::unsafeAdoptFromUTF8(gst_element_get_name(decoder));
      if (startsWith(name.span(), "v4l2"_s))
          m_videoDecoderPlatform = GstVideoDecoderPlatform::Video4Linux;
-@@ -4528,6 +4643,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4540,6 +4655,9 @@ GstElement* MediaPlayerPrivateGStreamer:
  
  bool MediaPlayerPrivateGStreamer::isHolePunchRenderingEnabled() const
  {
@@ -176,7 +176,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      if (m_quirksManagerForTesting)
          return m_quirksManagerForTesting->supportsVideoHolePunchRendering();
  
-@@ -4566,6 +4684,20 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4578,6 +4696,20 @@ GstElement* MediaPlayerPrivateGStreamer:
      return sink;
  }
  
@@ -197,7 +197,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  void MediaPlayerPrivateGStreamer::pushNextHolePunchBuffer(IsInitialBuffer isInitialBuffer)
  {
      ASSERT(isHolePunchRenderingEnabled());
-@@ -4589,6 +4721,31 @@ bool MediaPlayerPrivateGStreamer::should
+@@ -4601,6 +4733,31 @@ bool MediaPlayerPrivateGStreamer::should
      return isHolePunchRenderingEnabled();
  }
  
@@ -229,7 +229,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  GstElement* MediaPlayerPrivateGStreamer::createVideoSink()
  {
      acceleratedRenderingStateChanged();
-@@ -4598,27 +4755,9 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4610,27 +4767,9 @@ GstElement* MediaPlayerPrivateGStreamer:
          if (!m_videoSink || isMediaStreamPlayer())
              return;
  
@@ -260,7 +260,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      });
  
      RefPtr player = m_player.get();
-@@ -4636,8 +4775,17 @@ GstElement* MediaPlayerPrivateGStreamer:
+@@ -4648,8 +4787,17 @@ GstElement* MediaPlayerPrivateGStreamer:
  
      if (isHolePunchRenderingEnabled()) {
          m_videoSink = createHolePunchVideoSink();
@@ -306,7 +306,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      IntSize m_size;
  
 @@ -735,6 +746,7 @@ private:
-     std::optional<VideoFrameGStreamer::Info> m_videoInfo;
+     std::optional<VideoFrameGStreamer::Info> m_videoInfo WTF_GUARDED_BY_LOCK(m_sampleMutex);
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameInputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
      RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_videoFrameOutputProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
 +    RefPtr<PadProbeHandle<MediaPlayerPrivateGStreamer>> m_decoderOutputMemoryProbe WTF_GUARDED_BY_LOCK(m_decoderConfigurationLock);
@@ -341,7 +341,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
      if (m_quirks.isEmpty())
 --- a/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
 +++ b/Source/WebCore/platform/gstreamer/GStreamerQuirks.h
-@@ -114,6 +114,7 @@ public:
+@@ -113,6 +113,7 @@ public:
      virtual GstElement* createHolePunchVideoSink(bool, const MediaPlayer*) { return nullptr; }
      virtual bool setHolePunchVideoRectangle(GstElement*, const IntRect&) { return false; }
      virtual bool requiresClockSynchronization() const { return true; }
@@ -349,7 +349,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  };
  
  class GStreamerQuirksManager : public RefCounted<GStreamerQuirksManager> {
-@@ -146,6 +147,7 @@ public:
+@@ -145,6 +146,7 @@ public:
      GstElement* createHolePunchVideoSink(bool isLegacyPlaybin, const MediaPlayer*);
      void setHolePunchVideoRectangle(GstElement*, const IntRect&);
      bool sinksRequireClockSynchronization() const;
