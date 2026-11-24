@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=harfbuzz
-PKG_VERSION:=14.3.1
+PKG_VERSION:=15.2.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://github.com/harfbuzz/harfbuzz/releases/download/$(PKG_VERSION)/
-PKG_HASH:=9dae9538aae2ffdf70cec31f2c27bf68e2aaeeae3112688467697d5faf6194f7
+PKG_HASH:=e2ec49090744383cdbe7df808c1cedaafba06a97be8dc4211fe546ba585f12cb
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=LGPL-2.1
