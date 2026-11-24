@@ -76,7 +76,7 @@ define Package/libsdl3
   CATEGORY:=Libraries
   TITLE:=Simple DirectMedia Layer 3
   URL:=https://www.libsdl.org
-  DEPENDS:=+libstdcpp +alsa-lib +libusb-1.0 +libudev-zero +pulseaudio +libmesa
+  DEPENDS:=+libstdcpp +alsa-lib +libusb-1.0 +libudev-zero +libpulse +libmesa
 endef
 
 define Package/libsdl3/description
