@@ -24,7 +24,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/src/gallium/drivers/zink/zink_screen.c
 +++ b/src/gallium/drivers/zink/zink_screen.c
-@@ -3882,10 +3882,15 @@ zink_render_rdev(int fd, int64_t *dev_ma
+@@ -3984,10 +3984,15 @@ zink_render_rdev(int fd, int64_t *dev_ma
     if (drmGetDevice2(fd, 0, &dev))
        return -1;
  
