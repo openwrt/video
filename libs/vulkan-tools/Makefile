@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=vulkan-tools
-PKG_VERSION:=1.4.357.0
+PKG_VERSION:=1.4.363.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=Vulkan-Tools-vulkan-sdk-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/KhronosGroup/Vulkan-Tools/tar.gz/vulkan-sdk-$(PKG_VERSION)?
-PKG_HASH:=6c94b86c850808aba316d999dd6742133d6197ae2135248d3a8aed9b32ebd1f7
+PKG_HASH:=6cbeb83294434e636a0c78760f1a6dfe3e50c1bab0cffa154603ce73e70508f1
 
 PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 PKG_LICENSE:=Apache-2.0
