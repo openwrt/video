@@ -1,0 +1,6 @@
+. /lib/functions.sh
+
+profile_d_retire xdr-runtime-dir.sh \
+	3262ec9e30eb01d3b63c1858240bc3221e477e42fc7a530c8620e786886710ee
+
+exit 0

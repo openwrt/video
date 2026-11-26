@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wayland
 PKG_VERSION:=1.26.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://gitlab.freedesktop.org/wayland/wayland/-/releases/$(PKG_VERSION)/downloads/
@@ -74,8 +74,10 @@ endef
 define Package/libwayland/install
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so.* $(1)/usr/lib/
-	$(INSTALL_DIR) $(1)/etc/profile.d
-	$(INSTALL_DATA) ./files/xdg-runtime-dir.profile $(1)/etc/profile.d/xdr-runtime-dir.sh
+	$(INSTALL_DIR) $(1)/usr/lib/profile.d
+	$(INSTALL_DATA) ./files/xdg-runtime-dir.profile $(1)/usr/lib/profile.d/xdr-runtime-dir.sh
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_DATA) ./files/libwayland.defaults $(1)/etc/uci-defaults/50-libwayland
 endef
 
 define Package/wayland-scanner/install
